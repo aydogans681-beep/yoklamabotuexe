@@ -265,9 +265,14 @@ const EMERGENCY_MEETING_DELAY_MS = 500;
 // Etkinlik sayaclari: TX Logs ile AYNI cekme altyapisini kullaniyor (tum
 // gecmis arka planda bellege aliniyor), ama ayri bir sekmede gosteriliyor ve
 // icerik yerine KISI BASINA MESAJ SAYISI hesaplaniyor.
+// personFrom: mesajin KIME sayilacagini belirler.
+//   'author'  -> mesaji yazan kisi. Etkinlik kanalinda yetkili kendi yaziyor.
+//   'mention' -> mesaj icindeki ILK kullanici etiketi. Ticket loglarini
+//                genelde bot atiyor ve ilgilenen yetkili mesajin icinde
+//                etiketleniyor; yazara gore saymak "Ticket Botu: 5000" verirdi.
 const ACTIVITY_CHANNELS = [
-    { key: 'etkinlik', label: 'Etkinlik', channelId: '1456032067325263965' },
-    { key: 'ticket', label: 'Ticket', channelId: '' }, // <-- kanal ID bekleniyor
+    { key: 'etkinlik', label: 'Etkinlik', channelId: '1456032067325263965', personFrom: 'author' },
+    { key: 'ticket', label: 'Ticket', channelId: '', personFrom: 'mention' }, // <-- kanal ID bekleniyor
 ];
 
 const LOG_CHANNELS = [
@@ -1089,6 +1094,9 @@ const ALL_CHANNELS = [
 ALL_CHANNELS.forEach((channel) => {
     logStore.set(channel.key, {
         kind: channel.kind,
+        personFrom: channel.personFrom || 'author',
+        dailyIndex: null,
+        unmatched: 0,
         key: channel.key,
         label: channel.label,
         channelId: channel.channelId,
@@ -1100,6 +1108,75 @@ ALL_CHANNELS.forEach((channel) => {
     });
     if (channel.channelId) logChannelIdToKey.set(channel.channelId, channel.key);
 });
+
+// --- GUNLUK SAYIM ---
+// Gun siniri Turkiye saatine gore; sunucu UTC calisiyor olabilir, gun
+// degisimi yanlis yerde olmasin diye sabit saat dilimi kullaniyoruz.
+const SAAT_DILIMI = 'Europe/Istanbul';
+const gunBicimi = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SAAT_DILIMI, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+function dayKey(ts) {
+    return gunBicimi.format(new Date(ts)); // YYYY-MM-DD
+}
+function bugununAnahtari() {
+    return dayKey(Date.now());
+}
+
+// Mesajin hangi kisiye sayilacagini bulur.
+function resolvePerson(store, entry) {
+    if (store.personFrom !== 'mention') return entry.authorId;
+    // Icerikte ve embed metinlerinde ilk <@123> / <@!123> etiketini ara.
+    const parcalar = [entry.content];
+    (entry.embeds || []).forEach((e) => {
+        parcalar.push(e.title, e.description);
+        (e.fields || []).forEach((f) => parcalar.push(f.name, f.value));
+    });
+    for (const parca of parcalar) {
+        if (!parca) continue;
+        const m = String(parca).match(/<@!?(\d+)>/);
+        if (m) return m[1];
+    }
+    return null; // kisi bulunamadi - sayimda "eslesmeyen" olarak gecer
+}
+
+// gun -> (kisi -> adet). Cekme bitince bir kez kuruluyor, yeni mesajlarda
+// artiriliyor; her istekte tum gecmisi taramak yerine.
+function buildDailyIndex(store) {
+    const index = new Map();
+    let eslesmeyen = 0;
+    store.messages.forEach((entry) => {
+        const kisi = resolvePerson(store, entry);
+        if (!kisi) { eslesmeyen += 1; return; }
+        const gun = dayKey(entry.createdTimestamp);
+        if (!index.has(gun)) index.set(gun, new Map());
+        const gunluk = index.get(gun);
+        const onceki = gunluk.get(kisi);
+        gunluk.set(kisi, {
+            c: (onceki ? onceki.c : 0) + 1,
+            last: Math.max(onceki ? onceki.last : 0, entry.createdTimestamp),
+        });
+    });
+    store.dailyIndex = index;
+    store.unmatched = eslesmeyen;
+    return index;
+}
+
+function addToDailyIndex(store, entry) {
+    if (!store.dailyIndex) return;
+    const kisi = resolvePerson(store, entry);
+    if (!kisi) { store.unmatched = (store.unmatched || 0) + 1; return null; }
+    const gun = dayKey(entry.createdTimestamp);
+    if (!store.dailyIndex.has(gun)) store.dailyIndex.set(gun, new Map());
+    const gunluk = store.dailyIndex.get(gun);
+    const onceki = gunluk.get(kisi);
+    const yeni = {
+        c: (onceki ? onceki.c : 0) + 1,
+        last: Math.max(onceki ? onceki.last : 0, entry.createdTimestamp),
+    };
+    gunluk.set(kisi, yeni);
+    return { gun, kisi, adet: yeni.c, last: yeni.last };
+}
 
 function serializeLogMessage(message) {
     return {
@@ -1207,6 +1284,7 @@ async function fetchAllChannelMessages(key) {
     store.messages = collected;
     store.loaded = collected.length;
     store.fetchedAt = Date.now();
+    if (store.kind === 'aktivite') buildDailyIndex(store);
     store.status = store.error ? 'hata' : 'hazir';
     broadcastLogStatus(store);
     console.log(`[Loglar] ${store.label}: ${collected.length} mesaj cekildi.`);
@@ -1244,6 +1322,17 @@ client.on('messageCreate', (message) => {
     store.messages.unshift(entry);
     store.loaded = store.messages.length;
     wsBroadcast({ type: 'log-yeni', key, entry: stripInternal(entry), loaded: store.loaded });
+
+    // Etkinlik/ticket kanallarinda gunluk sayaci ANLIK guncelle ve yayinla.
+    if (store.kind === 'aktivite') {
+        const artis = addToDailyIndex(store, entry);
+        if (artis) {
+            wsBroadcast({
+                type: 'etkinlik-artis',
+                key, gun: artis.gun, memberId: artis.kisi, count: artis.adet,
+            });
+        }
+    }
 });
 
 function stripInternal(entry) {
@@ -2064,6 +2153,84 @@ async function buildActivityReport(key) {
         members,
     };
 }
+
+// Belirli bir GUNUN kisi basina sayilari. Varsayilan bugun (Turkiye saati).
+async function buildDailyReport(key, gun) {
+    const store = logStore.get(key);
+    if (!store || store.kind !== 'aktivite') throw new Error('Bilinmeyen etkinlik menusu.');
+
+    const hedefGun = gun || bugununAnahtari();
+    const temel = {
+        key: store.key,
+        label: store.label,
+        configured: Boolean(store.channelId),
+        status: store.status,
+        personFrom: store.personFrom,
+        day: hedefGun,
+        today: bugununAnahtari(),
+    };
+    if (!store.channelId) {
+        return { ...temel, members: [], dayTotal: 0, unmatched: 0, availableDays: [] };
+    }
+    if (!store.dailyIndex) buildDailyIndex(store);
+
+    const gunluk = store.dailyIndex.get(hedefGun) || new Map();
+
+    let yetkililer = [];
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        yetkililer = [...guild.members.cache.values()].filter((member) => (
+            ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))
+        ));
+    } catch (error) {
+        console.log(`[Etkinlik] Gunluk rapor - yetkili listesi alinamadi: ${error.message}`);
+    }
+
+    const members = yetkililer.map((member) => ({
+        id: member.id,
+        displayName: member.displayName,
+        tag: member.user.tag,
+        avatarURL: member.displayAvatarURL({ size: 64 }),
+        count: (gunluk.get(member.id) || {}).c || 0,
+        lastAt: (gunluk.get(member.id) || {}).last || null,
+    }));
+    members.sort((a, b) => (b.count - a.count) || a.displayName.localeCompare(b.displayName, 'tr'));
+
+    const yetkiliIdleri = new Set(members.map((m) => m.id));
+    let digerToplam = 0;
+    gunluk.forEach((v, kisi) => { if (!yetkiliIdleri.has(kisi)) digerToplam += v.c; });
+
+    // Son 14 gunun toplamlari - tarih secicide hangi gunlerde veri var gostersin
+    const gunler = [...store.dailyIndex.keys()].sort().reverse().slice(0, 14).map((g) => {
+        let toplam = 0;
+        store.dailyIndex.get(g).forEach((v) => { toplam += v.c; });
+        return { day: g, total: toplam };
+    });
+
+    return {
+        ...temel,
+        members,
+        dayTotal: members.reduce((t, m) => t + m.count, 0) + digerToplam,
+        staffTotal: members.reduce((t, m) => t + m.count, 0),
+        otherTotal: digerToplam,
+        unmatched: store.unmatched || 0,
+        availableDays: gunler,
+    };
+}
+
+app.get('/api/etkinlik/:key/gunluk', requireAuth, async (req, res) => {
+    const gun = String(req.query.gun || '').trim();
+    if (gun && !/^\d{4}-\d{2}-\d{2}$/.test(gun)) {
+        return res.json({ ok: false, error: 'Tarih biçimi YYYY-AA-GG olmalı.' });
+    }
+    try {
+        return res.json({ ok: true, ...(await buildDailyReport(req.params.key, gun || null)) });
+    } catch (error) {
+        console.log(`[Etkinlik] Gunluk rapor hatasi (${req.params.key}): ${error.message}`);
+        return res.json({ ok: false, error: error.message });
+    }
+});
 
 app.get('/api/etkinlik', requireAuth, (req, res) => {
     res.json({

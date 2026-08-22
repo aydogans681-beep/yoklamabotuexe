@@ -155,6 +155,8 @@ function connectWebSocket() {
                 if (msg.asama) scanStatus.textContent = msg.asama;
             } else if (msg.type === 'uye-durum') {
                 uyeDurumGoster(msg);
+            } else if (msg.type === 'etkinlik-artis') {
+                onActivityIncrement(msg);
             } else if (msg.type === 'log-durum') {
                 onLogStatusUpdate(msg);
             } else if (msg.type === 'log-yeni') {
@@ -1774,7 +1776,9 @@ function renderActivityList() {
             <img src="${encodeURI(m.avatarURL)}" alt="">
             <span class="act-body">
                 <span class="act-name">${escapeHtml(m.displayName)}</span>
-                <span class="act-last">${m.lastAt ? `son: ${formatDate(m.lastAt)}` : 'hiç mesaj yok'}</span>
+                <span class="act-last">${m.lastAt
+                    ? `son: ${formatDate(m.lastAt)}`
+                    : (actMode === 'gunluk' ? 'bu gün hiç yok' : 'hiç mesaj yok')}</span>
             </span>
             <span class="act-count">${m.count}</span>`;
         btn.addEventListener('click', () => {
@@ -1789,6 +1793,7 @@ function renderActivityList() {
 
 async function loadActivityReport() {
     if (!actChannelKey) return;
+    if (actMode === 'gunluk') return loadDailyReport();
     activityList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
     activityStatus.textContent = '';
     try {
@@ -1891,4 +1896,112 @@ async function initActivityTab() {
     } catch (error) {
         activityStatus.textContent = `Hata: ${error.message}`;
     }
+}
+
+// ============================================================================
+// --- ETKİNLİK: GÜNLÜK GÖRÜNÜM + CANLI SAYAÇ ---
+// ============================================================================
+const actDayControls = document.getElementById('actDayControls');
+const actDayInput = document.getElementById('actDay');
+let actMode = 'toplam';   // 'toplam' | 'gunluk'
+let actDay = null;        // YYYY-MM-DD
+let actToday = null;
+
+function gunKaydir(gun, adim) {
+    const [y, a, g] = gun.split('-').map(Number);
+    const d = new Date(Date.UTC(y, a - 1, g));
+    d.setUTCDate(d.getUTCDate() + adim);
+    return d.toISOString().slice(0, 10);
+}
+
+document.querySelectorAll('[data-actmode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        actMode = btn.dataset.actmode;
+        document.querySelectorAll('[data-actmode]').forEach((b) => b.classList.toggle('active', b === btn));
+        actDayControls.style.display = actMode === 'gunluk' ? 'flex' : 'none';
+        actMemberId = null;
+        loadActivityReport();
+    });
+});
+document.getElementById('actDayPrev').addEventListener('click', () => {
+    if (!actDay) return; actDay = gunKaydir(actDay, -1); actDayInput.value = actDay; loadActivityReport();
+});
+document.getElementById('actDayNext').addEventListener('click', () => {
+    if (!actDay) return; actDay = gunKaydir(actDay, 1); actDayInput.value = actDay; loadActivityReport();
+});
+document.getElementById('actDayToday').addEventListener('click', () => {
+    actDay = actToday; actDayInput.value = actDay; loadActivityReport();
+});
+actDayInput.addEventListener('change', () => {
+    if (!actDayInput.value) return; actDay = actDayInput.value; loadActivityReport();
+});
+
+// Günlük moddaki raporu çeker. Tüm zamanlar modu mevcut loadActivityReport'u
+// kullanmaya devam ediyor - ikisi aynı listeyi besliyor.
+async function loadDailyReport() {
+    if (!actChannelKey) return;
+    activityList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    try {
+        const params = actDay ? `?gun=${encodeURIComponent(actDay)}` : '';
+        const res = await fetch(`/api/etkinlik/${actChannelKey}/gunluk${params}`);
+        if (res.status === 401) { showLogin(); return; }
+        const data = await okuJson(res);
+        if (!data.ok) { activityStatus.textContent = `Hata: ${data.error}`; return; }
+
+        actToday = data.today;
+        actDay = data.day;
+        actDayInput.value = actDay;
+        actDayInput.max = actToday;
+        actReport = data;
+
+        if (!data.configured) {
+            activityList.innerHTML = '<div class="empty-hint">Bu menü için kanal ID\'si girilmemiş.<br>server.js içindeki <b>ACTIVITY_CHANNELS</b> listesine ekle.</div>';
+            activityKpis.style.display = 'none';
+            return;
+        }
+
+        const yazan = data.members.filter((m) => m.count > 0).length;
+        document.getElementById('actTotal').textContent = data.dayTotal;
+        document.getElementById('actActive').textContent = yazan;
+        document.getElementById('actSilent').textContent = data.members.length - yazan;
+        activityKpis.style.display = 'flex';
+
+        const gunAdi = actDay === actToday ? 'Bugün' : actDay;
+        activityStatus.textContent = `${gunAdi}: ${data.dayTotal} kayıt`
+            + (data.otherTotal ? ` (${data.otherTotal} yetkili dışı)` : '')
+            + (data.unmatched ? ` · ${data.unmatched} mesajda kişi bulunamadı` : '');
+
+        renderActivityList();
+    } catch (error) {
+        activityList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+// Günlük modda sayaçlar anlık artsın - kullanıcı yenilemeyi beklemesin.
+function onActivityIncrement(msg) {
+    if (msg.key !== actChannelKey || !actReport) return;
+    if (actMode === 'gunluk' && msg.gun !== actDay) return;
+
+    const uye = actReport.members.find((m) => m.id === msg.memberId);
+    if (!uye) { loadActivityReport(); return; } // listede yoksa tazele
+    uye.count = actMode === 'gunluk' ? msg.count : uye.count + 1;
+    if (msg.last) uye.lastAt = msg.last;
+
+    const eskiSira = actReport.members.indexOf(uye);
+    actReport.members.sort((a, b) => (b.count - a.count) || a.displayName.localeCompare(b.displayName, 'tr'));
+    if (actReport.dayTotal !== undefined) actReport.dayTotal += 1;
+    if (actReport.totalMessages !== undefined) actReport.totalMessages += 1;
+
+    renderActivityList();
+    const satir = [...activityList.querySelectorAll('.act-row')]
+        .find((el) => el.querySelector('.act-name').textContent.trim() === uye.displayName);
+    if (satir) {
+        satir.classList.add('flash');
+        setTimeout(() => satir.classList.remove('flash'), 1500);
+    }
+    const yazan = actReport.members.filter((m) => m.count > 0).length;
+    document.getElementById('actTotal').textContent = actReport.dayTotal ?? actReport.totalMessages;
+    document.getElementById('actActive').textContent = yazan;
+    document.getElementById('actSilent').textContent = actReport.members.length - yazan;
+    void eskiSira;
 }

@@ -206,6 +206,20 @@
                 <span class="scanStatus" id="activityStatus"></span>
             </div>
 
+            <div class="toolbar" style="margin-bottom:12px;">
+                <div class="filter-chips">
+                    <button class="chip active" id="actModeToplam" data-actmode="toplam">Tüm zamanlar</button>
+                    <button class="chip" id="actModeGunluk" data-actmode="gunluk">Günlük</button>
+                </div>
+                <div class="toolbar" id="actDayControls" style="display:none; gap:7px;">
+                    <button class="secondary small" id="actDayPrev">←</button>
+                    <input type="date" class="text-search" id="actDay" style="flex:0 0 auto; min-width:0;">
+                    <button class="secondary small" id="actDayNext">→</button>
+                    <button class="secondary small" id="actDayToday">Bugün</button>
+                    <span class="live-dot" id="actLive" title="Yeni mesajlar anlık işleniyor">CANLI</span>
+                </div>
+            </div>
+
             <div class="kpi-row" id="activityKpis" style="margin-bottom:12px; display:none;">
                 <div class="kpi">
                     <span class="kpi-label">Toplam mesaj</span>
