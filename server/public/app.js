@@ -519,6 +519,7 @@ tabButtons.forEach((btn) => {
         if (btn.dataset.tab === 'ayarlar') refreshAccounts();
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
+        if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
     });
 });
 
@@ -1471,3 +1472,141 @@ roleSearch.addEventListener('input', () => {
     roleSearchTimer = setTimeout(renderRoleList, 200);
 });
 roleOnlyAssignable.addEventListener('change', renderRoleList);
+
+// ============================================================================
+// --- HESAP LOGLARI ---
+// Panelde kim ne yaptı: girişler, başarısız denemeler, hesap değişiklikleri ve
+// Discord'u etkileyen işlemler.
+// ============================================================================
+const auditList = document.getElementById('auditList');
+const auditEmpty = document.getElementById('auditEmpty');
+const auditStatus = document.getElementById('auditStatus');
+const auditSearch = document.getElementById('auditSearch');
+const auditFilters = document.getElementById('auditFilters');
+const auditRefreshBtn = document.getElementById('auditRefreshBtn');
+const auditPager = document.getElementById('auditPager');
+const auditPageInfo = document.getElementById('auditPageInfo');
+const auditPrevBtn = document.getElementById('auditPrevBtn');
+const auditNextBtn = document.getElementById('auditNextBtn');
+
+const AUDIT_PAGE = 100;
+const AUDIT_TYPES = {
+    'giris':          { label: 'Giriş',          sinif: 't-giris' },
+    'giris-hata':     { label: 'Başarısız Giriş', sinif: 't-girishata' },
+    'cikis':          { label: 'Çıkış',          sinif: 't-giris' },
+    'hesap-ekle':     { label: 'Hesap Ekleme',   sinif: 't-hesap' },
+    'hesap-sil':      { label: 'Hesap Silme',    sinif: 't-hesap' },
+    'hesap-guncelle': { label: 'Hesap Değişikliği', sinif: 't-hesap' },
+    'rol-ver':        { label: 'Rol Verme',      sinif: 't-islem' },
+    'rol-al':         { label: 'Rol Alma',       sinif: 't-islem' },
+    'uyari-ver':      { label: 'Uyarı',          sinif: 't-islem' },
+    'uyari-geri-al':  { label: 'Uyarı Geri Alma', sinif: 't-islem' },
+    'yoklama-al':     { label: 'Yoklamayı Al',   sinif: 't-islem' },
+    'acil-toplanti':  { label: 'Acil Toplantı',  sinif: 't-islem' },
+};
+
+let auditOffset = 0;
+let auditType = '';
+let auditSearchTimer = null;
+
+function renderAuditFilters(counts) {
+    const toplam = Object.values(counts).reduce((a, b) => a + b, 0);
+    let html = `<button class="chip${auditType === '' ? ' active' : ''}" data-atype="">Tümü ${toplam}</button>`;
+    Object.entries(AUDIT_TYPES).forEach(([key, bilgi]) => {
+        if (!counts[key]) return; // hiç yaşanmamış olay türünü göstermenin anlamı yok
+        html += `<button class="chip${auditType === key ? ' active' : ''}" data-atype="${key}">`
+            + `${escapeHtml(bilgi.label)} ${counts[key]}</button>`;
+    });
+    auditFilters.innerHTML = html;
+    auditFilters.querySelectorAll('[data-atype]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            auditType = btn.dataset.atype;
+            auditOffset = 0;
+            loadAudit();
+        });
+    });
+}
+
+async function loadAudit() {
+    try {
+        const params = new URLSearchParams({ offset: String(auditOffset), limit: String(AUDIT_PAGE) });
+        if (auditType) params.set('type', auditType);
+        if (auditSearch.value.trim()) params.set('q', auditSearch.value.trim());
+        const res = await fetch(`/api/hesap-loglari?${params.toString()}`);
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        if (!data.ok) { auditStatus.textContent = `Hata: ${data.error}`; return; }
+
+        renderAuditFilters(data.counts);
+        auditList.innerHTML = '';
+
+        if (data.entries.length === 0) {
+            auditEmpty.textContent = data.total === 0
+                ? 'Henüz kayıt yok. Girişler ve panelden yapılan işlemler burada birikecek.'
+                : 'Aramaya/filtreye uyan kayıt yok.';
+            auditEmpty.style.display = 'block';
+            auditPager.style.display = 'none';
+            auditStatus.textContent = `${data.total} kayıt`;
+            return;
+        }
+        auditEmpty.style.display = 'none';
+
+        data.entries.forEach((e) => {
+            const bilgi = AUDIT_TYPES[e.type] || { label: e.type, sinif: '' };
+            const div = document.createElement('div');
+            div.className = `audit-row ${bilgi.sinif}`;
+            div.innerHTML = `
+                <span class="audit-time">${formatDate(e.at)}</span>
+                <span class="audit-type">${escapeHtml(bilgi.label)}</span>
+                <span class="audit-actor">${escapeHtml(e.actor || '—')}</span>
+                <span class="audit-detail">${escapeHtml(e.detail || '')}</span>
+                <span class="p-spacer"></span>
+                ${e.ip ? `<span class="audit-ip">${escapeHtml(e.ip)}</span>` : ''}`;
+            auditList.appendChild(div);
+        });
+
+        const bas = data.offset + 1;
+        const son = data.offset + data.entries.length;
+        auditPageInfo.textContent = `${bas}-${son} / ${data.matched}`;
+        auditPrevBtn.disabled = data.offset === 0;
+        auditNextBtn.disabled = son >= data.matched;
+        auditPager.style.display = 'flex';
+        auditStatus.textContent = `toplam ${data.total} kayıt`;
+    } catch (error) {
+        auditStatus.textContent = `Hata: ${error.message}`;
+    }
+}
+
+auditSearch.addEventListener('input', () => {
+    clearTimeout(auditSearchTimer);
+    auditSearchTimer = setTimeout(() => { auditOffset = 0; loadAudit(); }, 250);
+});
+auditRefreshBtn.addEventListener('click', () => loadAudit());
+auditPrevBtn.addEventListener('click', () => { auditOffset = Math.max(0, auditOffset - AUDIT_PAGE); loadAudit(); });
+auditNextBtn.addEventListener('click', () => { auditOffset += AUDIT_PAGE; loadAudit(); });
+
+// ============================================================================
+// --- LOGO ETKİLEŞİMİ ---
+// ============================================================================
+// Kenar çubuğundaki logo: Yoklama sekmesine döner.
+document.getElementById('sideBrand').addEventListener('click', () => {
+    document.querySelector('.tab-btn[data-tab="yoklama"]').click();
+});
+
+// Giriş ekranındaki logo: fareyi izleyerek hafifçe eğilir.
+const loginBrand = document.getElementById('loginBrand');
+if (loginBrand) {
+    const loginCard = loginBrand.closest('.login-card');
+    loginCard.addEventListener('mousemove', (evt) => {
+        const k = loginCard.getBoundingClientRect();
+        const x = (evt.clientX - k.left) / k.width - 0.5;
+        const y = (evt.clientY - k.top) / k.height - 0.5;
+        loginBrand.style.transform =
+            `perspective(600px) rotateY(${x * 14}deg) rotateX(${-y * 14}deg) translateZ(12px)`;
+        loginBrand.style.filter = `drop-shadow(${-x * 16}px ${-y * 12 + 8}px 20px rgba(255,59,71,.4))`;
+    });
+    loginCard.addEventListener('mouseleave', () => {
+        loginBrand.style.transform = '';
+        loginBrand.style.filter = '';
+    });
+}

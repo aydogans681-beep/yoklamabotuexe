@@ -641,6 +641,51 @@ function addWarningHistoryEntry(entry) {
 // reason: hem duyuru mesajinda hem uyari gecmisinde kullanilir.
 // announceIndividually=false ise TEKLI duyuru mesaji atilmaz (toplu islemlerde
 // duyuru en sonda tek mesaj olarak atiliyor) ama sebep yine de gecmise yazilir.
+// ============================================================================
+// --- HESAP (DENETIM) GUNLUGU ---
+// Panelde kim ne yapti: girisler, basarisiz denemeler, hesap degisiklikleri ve
+// Discord'u etkileyen islemler (rol ver/al, uyari, yoklama, acil toplanti).
+// warning-history.json'dan ayri tutuluyor - o sadece uyari kayitlari icin.
+// ============================================================================
+const AUDIT_LOG_PATH = path.join(ROOT_DIR, 'panel-audit.json');
+const AUDIT_CAP = 2000;
+
+function loadAuditLog() {
+    try {
+        const data = JSON.parse(fs.readFileSync(AUDIT_LOG_PATH, 'utf8'));
+        return Array.isArray(data) ? data : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+const auditLog = loadAuditLog();
+
+function persistAuditLog() {
+    try {
+        fs.writeFileSync(AUDIT_LOG_PATH, JSON.stringify(auditLog));
+    } catch (error) {
+        console.log(`[HesapLog] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+// type: giris | giris-hata | cikis | hesap-ekle | hesap-sil | hesap-guncelle
+//     | rol-ver | rol-al | uyari-ver | uyari-geri-al | yoklama-al | acil-toplanti
+function addAudit(type, actor, detail, req) {
+    const entry = {
+        at: Date.now(),
+        type,
+        actor: actor || null,
+        detail: detail || '',
+        ip: req ? (req.ip || (req.socket && req.socket.remoteAddress) || null) : null,
+    };
+    auditLog.push(entry);
+    while (auditLog.length > AUDIT_CAP) auditLog.shift();
+    persistAuditLog();
+    wsBroadcast({ type: 'hesap-log-yeni', entry });
+    return entry;
+}
+
 async function giveNextWarningRole(memberId, reason, announceIndividually = true) {
     const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
     if (!guild) throw new Error('Sunucu bulunamadı, GUILD_ID hatalı olabilir.');
@@ -1339,7 +1384,7 @@ async function sendRoleCommand(kind, memberId, roleId) {
     const botReply = await replyPromise;
 
     console.log(`[Rol] ${member.user.tag} (${memberId}) icin "/${kind}" gonderildi: ${role.name} (${roleId}). Bot cevabi: ${botReply || '(yakalanamadi)'}`);
-    return { ok: true, roleName: role.name, botReply };
+    return { ok: true, roleName: role.name, memberTag: member.user.tag, botReply };
 }
 
 // ============================================================================
@@ -1370,6 +1415,7 @@ app.post('/api/login', (req, res) => {
     const throttle = loginThrottleCheck(ip);
     if (throttle.blocked) {
         console.log(`[Giriş] Çok fazla başarısız deneme, engellendi: ${ip}`);
+        addAudit('giris-hata', username || '(boş)', 'Çok fazla deneme - geçici engel', req);
         return res.status(429).json({
             ok: false,
             error: `Çok fazla başarısız deneme. ${Math.ceil(throttle.leftSec / 60)} dakika sonra tekrar dene.`,
@@ -1377,6 +1423,7 @@ app.post('/api/login', (req, res) => {
     }
     if (!verifyPanelPassword(username, password)) {
         loginNoteFailure(ip);
+        addAudit('giris-hata', username || '(boş)', 'Kullanıcı adı ya da şifre yanlış', req);
         return res.status(401).json({ ok: false, error: 'Kullanıcı adı ya da şifre yanlış.' });
     }
     loginNoteSuccess(ip);
@@ -1388,11 +1435,14 @@ app.post('/api/login', (req, res) => {
         maxAge: SESSION_TTL_MS,
     });
     console.log(`[Giriş] Web panele giriş yapıldı: ${username}`);
+    addAudit('giris', username, 'Panele giriş yapıldı', req);
     return res.json({ ok: true });
 });
 
 app.post('/api/logout', (req, res) => {
     const token = req.cookies && req.cookies[SESSION_COOKIE];
+    const session = token ? sessions.get(token) : null;
+    if (session) addAudit('cikis', session.username, 'Panelden çıkış yapıldı', req);
     if (token) sessions.delete(token);
     res.clearCookie(SESSION_COOKIE);
     return res.json({ ok: true });
@@ -1424,7 +1474,9 @@ app.get('/api/uyari-gecmisi', requireAuth, (req, res) => {
 app.post('/api/yoklama/rol-ver', requireAuth, async (req, res) => {
     const { memberId, reason } = req.body || {};
     try {
-        res.json(await giveNextWarningRole(memberId, reason));
+        const sonuc = await giveNextWarningRole(memberId, reason);
+        if (sonuc.ok) addAudit('uyari-ver', req.session.username, `${memberId} -> "${sonuc.givenLabel}"${reason ? ` (${reason})` : ''}`, req);
+        res.json(sonuc);
     } catch (error) {
         console.log(`[Yoklama] Rol verme hatası (${memberId}): ${error.message}`);
         res.json({ ok: false, error: error.message });
@@ -1434,7 +1486,9 @@ app.post('/api/yoklama/rol-ver', requireAuth, async (req, res) => {
 app.post('/api/yoklama/rol-geri-al', requireAuth, async (req, res) => {
     const { memberId } = req.body || {};
     try {
-        res.json(await undoLastWarning(memberId));
+        const sonuc = await undoLastWarning(memberId);
+        if (sonuc.ok) addAudit('uyari-geri-al', req.session.username, `${memberId} <- "${sonuc.removedLabel}" geri alındı`, req);
+        res.json(sonuc);
     } catch (error) {
         console.log(`[Yoklama] Geri alma hatası (${memberId}): ${error.message}`);
         res.json({ ok: false, error: error.message });
@@ -1444,7 +1498,10 @@ app.post('/api/yoklama/rol-geri-al', requireAuth, async (req, res) => {
 app.post('/api/yoklama/toplu-uyari-ver', requireAuth, async (req, res) => {
     const { memberIds, reason } = req.body || {};
     try {
-        res.json(await giveBulkWarning(memberIds || [], reason));
+        const sonuc = await giveBulkWarning(memberIds || [], reason);
+        addAudit('uyari-ver', req.session.username,
+            `Toplu uyarı: ${sonuc.warned.length} kişiye verildi, ${sonuc.skipped.length} atlandı, ${sonuc.failed.length} hata${reason ? ` (${reason})` : ''}`, req);
+        res.json(sonuc);
     } catch (error) {
         console.log(`[Yoklama] Toplu uyarı hatası: ${error.message}`);
         res.json({ ok: false, error: error.message });
@@ -1454,7 +1511,10 @@ app.post('/api/yoklama/toplu-uyari-ver', requireAuth, async (req, res) => {
 app.post('/api/yoklama/toplu-rol-geri-al', requireAuth, async (req, res) => {
     const { memberIds } = req.body || {};
     try {
-        res.json(await bulkUndoWarning(memberIds || []));
+        const sonuc = await bulkUndoWarning(memberIds || []);
+        addAudit('uyari-geri-al', req.session.username,
+            `Toplu geri alma: ${sonuc.removed.length} geri alındı, ${sonuc.skipped.length} atlandı, ${sonuc.failed.length} hata`, req);
+        res.json(sonuc);
     } catch (error) {
         console.log(`[Yoklama] Toplu geri alma hatası: ${error.message}`);
         res.json({ ok: false, error: error.message });
@@ -1463,7 +1523,10 @@ app.post('/api/yoklama/toplu-rol-geri-al', requireAuth, async (req, res) => {
 
 app.post('/api/yoklama/acil-toplanti', requireAuth, async (req, res) => {
     try {
-        res.json({ ok: true, data: await pullEveryoneToMyVoiceChannel() });
+        const veri = await pullEveryoneToMyVoiceChannel();
+        addAudit('acil-toplanti', req.session.username,
+            `${veri.moved.length} kişi çekildi, ${veri.failed.length} taşınamadı`, req);
+        res.json({ ok: true, data: veri });
     } catch (error) {
         console.log(`[Yoklama] Acil toplantı hatası: ${error.message}`);
         res.json({ ok: false, error: error.message });
@@ -1516,6 +1579,7 @@ app.post('/api/hesaplar/ekle', requireAuth, (req, res) => {
         return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
     }
     console.log(`[Hesap] Yeni panel hesabı eklendi: ${username} (ekleyen: ${req.session.username})`);
+    addAudit('hesap-ekle', req.session.username, `"${username}" hesabı eklendi`, req);
     return res.json({ ok: true });
 });
 
@@ -1538,6 +1602,7 @@ app.post('/api/hesaplar/sil', requireAuth, (req, res) => {
     }
     dropSessionsFor(username); // silinen hesabin acik oturumlari da dussun
     console.log(`[Hesap] Panel hesabı silindi: ${username} (silen: ${req.session.username})`);
+    addAudit('hesap-sil', req.session.username, `"${username}" hesabı silindi`, req);
     return res.json({ ok: true, selfDeleted: username === req.session.username });
 });
 
@@ -1588,6 +1653,10 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
         maxAge: SESSION_TTL_MS,
     });
     console.log(`[Hesap] Hesap güncellendi: ${me} -> ${newUsername}${newPassword ? ' (şifre değişti)' : ''}`);
+    addAudit('hesap-guncelle', me,
+        me === newUsername
+            ? `Şifre değiştirildi`
+            : `Kullanıcı adı "${me}" -> "${newUsername}"${newPassword ? ' ve şifre değiştirildi' : ''}`, req);
     return res.json({ ok: true, username: newUsername });
 });
 
@@ -1667,7 +1736,10 @@ app.post('/api/yoklama/al-uygula', requireAuth, async (req, res) => {
     }
     try {
         console.log(`[Yoklama] "Yoklamayı Al" uygulanıyor: ${memberIds.length} kişi (${req.session.username}).`);
-        return res.json(await giveBulkWarning(memberIds, String(reason).trim()));
+        const sonuc = await giveBulkWarning(memberIds, String(reason).trim());
+        addAudit('yoklama-al', req.session.username,
+            `${sonuc.warned.length} kişiye uyarı verildi, ${sonuc.skipped.length} atlandı, ${sonuc.failed.length} hata (${String(reason).trim()})`, req);
+        return res.json(sonuc);
     } catch (error) {
         console.log(`[Yoklama] Yoklamayı Al hatası: ${error.message}`);
         return res.json({ ok: false, error: error.message });
@@ -1697,7 +1769,9 @@ app.get('/api/yetkililer', requireAuth, async (req, res) => {
 app.post('/api/rol/ver', requireAuth, async (req, res) => {
     const { memberId, roleId } = req.body || {};
     try {
-        res.json(await sendRoleCommand('rol-ver', memberId, roleId));
+        const sonuc = await sendRoleCommand('rol-ver', memberId, roleId);
+        if (sonuc.ok) addAudit('rol-ver', req.session.username, `${sonuc.memberTag || memberId} -> "${sonuc.roleName}" verildi`, req);
+        res.json(sonuc);
     } catch (error) {
         console.log(`[Rol] Verme hatasi (${memberId} / ${roleId}): ${error.message}`);
         res.json({ ok: false, error: error.message });
@@ -1707,11 +1781,45 @@ app.post('/api/rol/ver', requireAuth, async (req, res) => {
 app.post('/api/rol/al', requireAuth, async (req, res) => {
     const { memberId, roleId } = req.body || {};
     try {
-        res.json(await sendRoleCommand('rol-al', memberId, roleId));
+        const sonuc = await sendRoleCommand('rol-al', memberId, roleId);
+        if (sonuc.ok) addAudit('rol-al', req.session.username, `${sonuc.memberTag || memberId} <- "${sonuc.roleName}" alındı`, req);
+        res.json(sonuc);
     } catch (error) {
         console.log(`[Rol] Alma hatasi (${memberId} / ${roleId}): ${error.message}`);
         res.json({ ok: false, error: error.message });
     }
+});
+
+// --- HESAP LOGLARI ---
+app.get('/api/hesap-loglari', requireAuth, (req, res) => {
+    const tur = String(req.query.type || '').trim();
+    const terim = String(req.query.q || '').trim().toLocaleLowerCase('tr');
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+
+    // en yeni ustte
+    let kayitlar = [...auditLog].reverse();
+    if (tur) kayitlar = kayitlar.filter((e) => e.type === tur);
+    if (terim) {
+        kayitlar = kayitlar.filter((e) => (
+            (e.actor || '').toLocaleLowerCase('tr').includes(terim)
+            || (e.detail || '').toLocaleLowerCase('tr').includes(terim)
+            || (e.ip || '').includes(terim)
+        ));
+    }
+
+    // tur basina sayac - arayuzdeki filtre cipleri icin
+    const sayac = {};
+    auditLog.forEach((e) => { sayac[e.type] = (sayac[e.type] || 0) + 1; });
+
+    res.json({
+        ok: true,
+        total: auditLog.length,
+        matched: kayitlar.length,
+        offset,
+        counts: sayac,
+        entries: kayitlar.slice(offset, offset + limit),
+    });
 });
 
 const server = http.createServer(app);

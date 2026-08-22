@@ -64,34 +64,74 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
-/* ---------- başlık ---------- */
-.header {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; margin-bottom: 16px; flex-shrink: 0; flex-wrap: wrap;
-}
-.header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
-.header p  { font-size: 11.5px; color: var(--ink-3); margin: 3px 0 0; }
+/* ---------- uygulama iskeleti: sol kenar çubuğu + içerik ---------- */
+#appWrap { flex: 1; min-height: 0; display: flex; gap: 16px; }
+#appWrap[style*="flex"] { display: flex !important; }
 
-.status-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2); }
+.sidebar {
+    width: 208px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 12px;
+}
+.main-area { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+
+/* --- logo --- */
+.brand-mark {
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px; border-radius: var(--radius-s);
+    /* interaktif: üzerine gelince hafifçe büyüyüp marka rengiyle parlıyor */
+    transition: transform .18s ease, filter .18s ease;
+}
+.brand-mark .brand-img { width: 100%; max-width: 132px; height: auto; display: block; }
+.brand-fallback {
+    display: flex; align-items: baseline; gap: 3px;
+    font-weight: 900; letter-spacing: -.02em; line-height: 1;
+}
+.brand-fallback span  { font-size: 30px; color: var(--accent); }
+.brand-fallback small { font-size: 13px; color: var(--ink-2); font-weight: 700; }
+
+button.brand-btn {
+    background: none; border: 1px solid transparent; cursor: pointer; width: 100%;
+}
+button.brand-btn:hover:not(:disabled) {
+    background: none; border-color: var(--accent-line);
+    transform: translateY(-2px) scale(1.03);
+    filter: drop-shadow(0 4px 14px rgba(255, 59, 71, .45));
+}
+button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
+
+/* Giriş ekranındaki büyük logo: fareyi izleyerek hafifçe eğiliyor (app.js) */
+.brand-mark-lg { margin: 0 auto 18px; max-width: 190px; will-change: transform; }
+.brand-mark-lg .brand-img { max-width: 190px; }
+.brand-mark-lg .brand-fallback span  { font-size: 52px; }
+.brand-mark-lg .brand-fallback small { font-size: 21px; }
+
+/* --- sol gezinme --- */
+.side-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.side-nav .tab-btn {
+    display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+    background: none; border: 1px solid transparent; border-radius: var(--radius-s);
+    color: var(--ink-3); padding: 9px 11px; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; font-family: inherit;
+    transition: color .12s, background .12s;
+}
+.side-nav .tab-btn .ico { font-size: 13px; width: 17px; text-align: center; flex-shrink: 0; }
+.side-nav .tab-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.side-nav .tab-btn.active,
+.side-nav .tab-btn.active:hover:not(:disabled) {
+    color: var(--ink); background: var(--surface-3);
+    border-color: var(--accent-line); box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* --- kenar çubuğu altı: bağlantı + kullanıcı --- */
+.side-foot { display: flex; flex-direction: column; gap: 9px; padding-top: 12px; border-top: 1px solid var(--border); }
+.side-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-2); }
+.side-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .status-dot.ok     { background: var(--ok);     box-shadow: 0 0 0 3px var(--ok-soft); }
 .status-dot.warn   { background: var(--attn);   box-shadow: 0 0 0 3px var(--attn-soft); }
 .status-dot.danger { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.who { color: var(--ink); font-weight: 600; }
-
-/* ---------- sekmeler: alt çizgili, dolgusuz ---------- */
-.tab-bar {
-    display: flex; gap: 2px; margin-bottom: 16px; flex-shrink: 0;
-    border-bottom: 1px solid var(--border); flex-wrap: wrap;
-}
-.tab-btn {
-    background: none; border: none; border-bottom: 2px solid transparent;
-    color: var(--ink-3); padding: 9px 15px; cursor: pointer;
-    font-size: 12.5px; font-weight: 600; font-family: inherit;
-    margin-bottom: -1px; transition: color .12s, border-color .12s;
-}
-.tab-bar .tab-btn:hover:not(:disabled) { color: var(--ink-2); background: none; }
-.tab-btn.active { color: var(--ink); border-bottom-color: var(--accent); }
+.who { color: var(--ink); font-weight: 700; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
 
 .tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; }
 .tab-panel.active { display: flex; }
@@ -522,3 +562,48 @@ select.role-add:disabled { opacity: .5; cursor: wait; }
 .staff-msg { font-size: 10.5px; color: var(--ink-3); }
 .staff-msg.ok    { color: var(--ok); }
 .staff-msg.error { color: var(--accent); }
+
+/* ==========================================================================
+   Hesap Logları
+   ========================================================================== */
+#auditWrap { flex: 1; min-height: 0; overflow-y: auto; }
+.audit-list { display: flex; flex-direction: column; gap: 5px; }
+
+.audit-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 13px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong); border-radius: var(--radius-s);
+}
+.audit-time { font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.audit-type {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    padding: 2px 7px; border-radius: 3px; white-space: nowrap;
+    background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--ink-3);
+}
+.audit-actor { font-size: 12px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.audit-detail { font-size: 11.5px; color: var(--ink-2); word-break: break-word; }
+.audit-ip { font-size: 10.5px; color: var(--ink-3); font-family: Consolas, monospace; white-space: nowrap; }
+
+/* Olay türüne göre sol şerit: başarısız giriş kırmızı, giriş/çıkış nötr,
+   Discord'u değiştiren işlemler amber - hangi satırın önemli olduğu
+   listeye bakar bakmaz ayırt edilsin. */
+.audit-row.t-giris        { border-left-color: var(--ok); }
+.audit-row.t-giris .audit-type { color: var(--ok); border-color: var(--ok-line); }
+.audit-row.t-girishata    { border-left-color: var(--accent); }
+.audit-row.t-girishata .audit-type { color: var(--accent); border-color: var(--accent-line); }
+.audit-row.t-hesap        { border-left-color: var(--attn); }
+.audit-row.t-hesap .audit-type { color: var(--attn); border-color: var(--attn-line); }
+.audit-row.t-islem        { border-left-color: var(--attn); }
+
+/* Dar ekran: kenar çubuğu üste taşınır, gezinme yatay kaydırılır */
+@media (max-width: 860px) {
+    #appWrap { flex-direction: column; gap: 12px; }
+    .sidebar { width: 100%; flex-direction: row; align-items: center; gap: 10px; padding: 10px; }
+    .brand-mark { max-width: 78px; padding: 0; }
+    .brand-mark .brand-img { max-width: 78px; }
+    button.brand-btn { width: auto; }
+    .side-nav { flex-direction: row; overflow-x: auto; gap: 4px; }
+    .side-nav .tab-btn { white-space: nowrap; }
+    .side-foot { flex-direction: row; align-items: center; gap: 10px; padding-top: 0; border-top: none; border-left: 1px solid var(--border); padding-left: 10px; }
+    .audit-row { flex-wrap: wrap; }
+}
