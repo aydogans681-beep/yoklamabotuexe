@@ -262,6 +262,14 @@ const EMERGENCY_MEETING_DELAY_MS = 500;
 // channelId'si bos olan menu arayuzde "kanal ID girilmemis" diye gorunur ve
 // veri cekmez - ID'yi buraya yazman disinda kod degisikligi gerekmez.
 // ============================================================================
+// Etkinlik sayaclari: TX Logs ile AYNI cekme altyapisini kullaniyor (tum
+// gecmis arka planda bellege aliniyor), ama ayri bir sekmede gosteriliyor ve
+// icerik yerine KISI BASINA MESAJ SAYISI hesaplaniyor.
+const ACTIVITY_CHANNELS = [
+    { key: 'etkinlik', label: 'Etkinlik', channelId: '1456032067325263965' },
+    { key: 'ticket', label: 'Ticket', channelId: '' }, // <-- kanal ID bekleniyor
+];
+
 const LOG_CHANNELS = [
     { key: 'ban', label: 'Ban', channelId: '1514634711413293197' },
     { key: 'unban', label: 'Unban', channelId: '1456027006964858901' },
@@ -1072,8 +1080,15 @@ async function pullEveryoneToMyVoiceChannel() {
 const logStore = new Map(); // key -> { ...meta, messages: [], status, loaded, error }
 const logChannelIdToKey = new Map();
 
-LOG_CHANNELS.forEach((channel) => {
+// Iki liste de ayni depoya giriyor; hangi sekmede gorunecegini "kind" belirliyor.
+const ALL_CHANNELS = [
+    ...LOG_CHANNELS.map((c) => ({ ...c, kind: 'log' })),
+    ...ACTIVITY_CHANNELS.map((c) => ({ ...c, kind: 'aktivite' })),
+];
+
+ALL_CHANNELS.forEach((channel) => {
     logStore.set(channel.key, {
+        kind: channel.kind,
         key: channel.key,
         label: channel.label,
         channelId: channel.channelId,
@@ -1205,7 +1220,7 @@ async function primeAllLogs() {
     console.log('[Loglar] Tum log kanallarinin gecmisi arka planda cekiliyor...');
     // Kanallari SIRAYLA cekiyoruz - hepsini ayni anda baslatmak Discord rate
     // limit'ini cok daha hizli tuketirdi.
-    for (const channel of LOG_CHANNELS) {
+    for (const channel of ALL_CHANNELS) {
         if (!channel.channelId) continue;
         try {
             // eslint-disable-next-line no-await-in-loop
@@ -1976,6 +1991,125 @@ app.post('/api/logo/sil', requireAuth, (req, res) => {
     }
     addAudit('logo-guncelle', req.session.username, 'Panel logosu kaldırıldı', req);
     return res.json({ ok: true });
+});
+
+// ============================================================================
+// --- ETKINLIK SAYACI ---
+// Etkinlik/ticket kanalindaki mesajlari yazara gore sayiyor. Yetkililerin
+// hepsi listeleniyor - hic mesaj atmayanlar da gorunsun diye (asil aranan
+// bilgi cogu zaman "kim hic yazmamis").
+// ============================================================================
+function countByAuthor(store) {
+    const sayac = new Map();
+    const sonMesaj = new Map();
+    store.messages.forEach((m) => {
+        if (!m.authorId) return;
+        sayac.set(m.authorId, (sayac.get(m.authorId) || 0) + 1);
+        const onceki = sonMesaj.get(m.authorId);
+        if (!onceki || m.createdTimestamp > onceki) sonMesaj.set(m.authorId, m.createdTimestamp);
+    });
+    return { sayac, sonMesaj };
+}
+
+async function buildActivityReport(key) {
+    const store = logStore.get(key);
+    if (!store || store.kind !== 'aktivite') throw new Error('Bilinmeyen etkinlik menusu.');
+
+    const temel = {
+        key: store.key,
+        label: store.label,
+        configured: Boolean(store.channelId),
+        status: store.status,
+        loaded: store.loaded,
+        error: store.error,
+        fetchedAt: store.fetchedAt,
+    };
+    if (!store.channelId) {
+        return { ...temel, totalMessages: 0, staffTotal: 0, otherTotal: 0, members: [] };
+    }
+
+    const { sayac, sonMesaj } = countByAuthor(store);
+
+    // Yetkilileri getir - hepsi listelensin, sayisi 0 olanlar dahil.
+    let yetkililer = [];
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        yetkililer = [...guild.members.cache.values()].filter((member) => (
+            ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))
+        ));
+    } catch (error) {
+        console.log(`[Etkinlik] Yetkili listesi alinamadi: ${error.message}`);
+    }
+
+    const yetkiliIdleri = new Set(yetkililer.map((m) => m.id));
+    const members = yetkililer.map((member) => ({
+        id: member.id,
+        displayName: member.displayName,
+        tag: member.user.tag,
+        avatarURL: member.displayAvatarURL({ size: 64 }),
+        count: sayac.get(member.id) || 0,
+        lastAt: sonMesaj.get(member.id) || null,
+    }));
+
+    // Cok yazandan az yazana; esitlikte ada gore.
+    members.sort((a, b) => (b.count - a.count) || a.displayName.localeCompare(b.displayName, 'tr'));
+
+    const staffTotal = members.reduce((t, m) => t + m.count, 0);
+    return {
+        ...temel,
+        totalMessages: store.messages.length,
+        staffTotal,
+        otherTotal: store.messages.length - staffTotal, // yetkili olmayanlarin mesajlari
+        members,
+    };
+}
+
+app.get('/api/etkinlik', requireAuth, (req, res) => {
+    res.json({
+        ok: true,
+        channels: ACTIVITY_CHANNELS.map((channel) => {
+            const store = logStore.get(channel.key);
+            return {
+                key: store.key,
+                label: store.label,
+                configured: Boolean(store.channelId),
+                status: store.status,
+                loaded: store.loaded,
+            };
+        }),
+    });
+});
+
+app.get('/api/etkinlik/:key', requireAuth, async (req, res) => {
+    try {
+        res.json({ ok: true, ...(await buildActivityReport(req.params.key)) });
+    } catch (error) {
+        console.log(`[Etkinlik] Rapor hatasi (${req.params.key}): ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// Bir kisinin o kanaldaki mesajlari - listede uzerine tiklayinca aciliyor.
+app.get('/api/etkinlik/:key/mesajlar', requireAuth, (req, res) => {
+    const store = logStore.get(req.params.key);
+    if (!store || store.kind !== 'aktivite') {
+        return res.status(404).json({ ok: false, error: 'Bilinmeyen etkinlik menüsü.' });
+    }
+    const memberId = String(req.query.memberId || '');
+    if (!memberId) return res.json({ ok: false, error: 'Kişi seçilmemiş.' });
+
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const kisininkiler = store.messages.filter((m) => m.authorId === memberId);
+
+    return res.json({
+        ok: true,
+        memberId,
+        total: kisininkiler.length,
+        offset,
+        messages: kisininkiler.slice(offset, offset + limit).map(stripInternal),
+    });
 });
 
 // --- HESAP LOGLARI ---

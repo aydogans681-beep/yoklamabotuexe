@@ -46,6 +46,7 @@
                 <button class="tab-btn active" data-tab="yoklama"><span class="ico">📋</span>Yoklama</button>
                 <button class="tab-btn" data-tab="yetkililer"><span class="ico">👥</span>Yetkililer</button>
                 <button class="tab-btn" data-tab="roller"><span class="ico">🏷️</span>Rol Ver/Al</button>
+                <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span>Etkinlik</button>
                 <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span>TX Logs</button>
                 <button class="tab-btn" data-tab="hesaploglari"><span class="ico">🔑</span>Hesap Logları</button>
                 <button class="tab-btn" data-tab="ayarlar"><span class="ico">⚙️</span>Ayarlar</button>
@@ -189,6 +190,60 @@
             <div id="roleListWrap">
                 <div class="empty-hint" id="roleEmpty">Önce Yetkililer sekmesinden bir kişi seç.</div>
                 <div class="role-list" id="roleList"></div>
+            </div>
+        </div>
+
+        <!-- ================= ETKİNLİK ================= -->
+        <!-- Etkinlik/ticket kanalında kim kaç mesaj atmış. Solda kişi listesi
+             (çok yazandan az yazana, hiç yazmayanlar dahil), sağda seçilen
+             kişinin o kanaldaki mesajları. -->
+        <div class="tab-panel" id="tab-etkinlik">
+            <div class="toolbar logs-toolbar" style="margin-bottom:12px;">
+                <span class="logs-title">Etkinlik</span>
+                <div class="filter-chips" id="activityChannels"></div>
+                <span class="grow"></span>
+                <button class="secondary small" id="activityRefreshBtn">Yenile</button>
+                <span class="scanStatus" id="activityStatus"></span>
+            </div>
+
+            <div class="kpi-row" id="activityKpis" style="margin-bottom:12px; display:none;">
+                <div class="kpi">
+                    <span class="kpi-label">Toplam mesaj</span>
+                    <span class="kpi-value" id="actTotal">0</span>
+                </div>
+                <div class="kpi is-ok">
+                    <span class="kpi-label">Yazan yetkili</span>
+                    <span class="kpi-value" id="actActive">0</span>
+                </div>
+                <div class="kpi is-attn">
+                    <span class="kpi-label">Hiç yazmayan</span>
+                    <span class="kpi-value" id="actSilent">0</span>
+                </div>
+            </div>
+
+            <div class="logs-layout">
+                <div class="activity-side">
+                    <div class="toolbar" style="margin-bottom:8px;">
+                        <input type="text" class="text-search" id="activitySearch" placeholder="Yetkili ara...">
+                    </div>
+                    <div class="activity-list" id="activityList">
+                        <div class="empty-hint">Yükleniyor...</div>
+                    </div>
+                </div>
+                <div class="logs-main">
+                    <div class="toolbar logs-toolbar">
+                        <span class="logs-title" id="activityWho">Soldan bir yetkili seç</span>
+                        <span class="scanStatus" id="activityWhoInfo"></span>
+                    </div>
+                    <div class="logs-list" id="activityMessages">
+                        <div class="empty-hint">Bir yetkiliye tıkla, o kanaldaki mesajları burada görünsün.</div>
+                    </div>
+                    <div class="toolbar logs-pager" id="activityPager" style="display:none;">
+                        <button class="secondary small" id="actPrevBtn">← Önceki</button>
+                        <span class="scanStatus" id="actPageInfo"></span>
+                        <button class="secondary small" id="actNextBtn">Sonraki →</button>
+                    </div>
+                </div>
             </div>
         </div>
 

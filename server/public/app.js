@@ -555,6 +555,7 @@ tabButtons.forEach((btn) => {
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
         if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
+        if (btn.dataset.tab === 'etkinlik') initActivityTab();
     });
 });
 
@@ -1708,3 +1709,186 @@ document.getElementById('logoRemoveBtn').addEventListener('click', async () => {
         logoMsg.textContent = `Hata: ${error.message}`;
     }
 });
+
+// ============================================================================
+// --- ETKİNLİK SAYACI ---
+// Etkinlik/ticket kanalında kim kaç mesaj atmış. Tıklanınca o kişinin
+// mesajları sağda açılıyor.
+// ============================================================================
+const activityChannels = document.getElementById('activityChannels');
+const activityList = document.getElementById('activityList');
+const activitySearch = document.getElementById('activitySearch');
+const activityStatus = document.getElementById('activityStatus');
+const activityRefreshBtn = document.getElementById('activityRefreshBtn');
+const activityKpis = document.getElementById('activityKpis');
+const activityWho = document.getElementById('activityWho');
+const activityWhoInfo = document.getElementById('activityWhoInfo');
+const activityMessages = document.getElementById('activityMessages');
+const activityPager = document.getElementById('activityPager');
+const actPageInfo = document.getElementById('actPageInfo');
+
+const ACT_PAGE = 50;
+let actChannelKey = null;
+let actReport = null;
+let actMemberId = null;
+let actOffset = 0;
+let actSearchTimer = null;
+
+function renderActivityChannels(kanallar) {
+    activityChannels.innerHTML = kanallar.map((c) => {
+        const etiket = c.configured ? escapeHtml(c.label) : `${escapeHtml(c.label)} (ID yok)`;
+        return `<button class="chip${c.key === actChannelKey ? ' active' : ''}" data-actch="${c.key}">${etiket}</button>`;
+    }).join('');
+    activityChannels.querySelectorAll('[data-actch]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            actChannelKey = btn.dataset.actch;
+            actMemberId = null;
+            loadActivityReport();
+        });
+    });
+}
+
+function renderActivityList() {
+    if (!actReport) return;
+    const terim = activitySearch.value.trim().toLocaleLowerCase('tr');
+    const liste = terim
+        ? actReport.members.filter((m) => m.displayName.toLocaleLowerCase('tr').includes(terim)
+            || m.tag.toLocaleLowerCase('tr').includes(terim))
+        : actReport.members;
+
+    activityList.innerHTML = '';
+    if (liste.length === 0) {
+        activityList.innerHTML = `<div class="empty-hint">${terim ? 'Aramaya uyan yetkili yok.' : 'Yetkili bulunamadı.'}</div>`;
+        return;
+    }
+
+    const enYuksek = actReport.members.length ? actReport.members[0].count : 0;
+    liste.forEach((m) => {
+        const btn = document.createElement('button');
+        let sinif = 'act-row';
+        if (m.count === 0) sinif += ' zero';
+        else if (m.count === enYuksek && enYuksek > 0) sinif += ' top';
+        if (m.id === actMemberId) sinif += ' active';
+        btn.className = sinif;
+        btn.innerHTML = `
+            <img src="${encodeURI(m.avatarURL)}" alt="">
+            <span class="act-body">
+                <span class="act-name">${escapeHtml(m.displayName)}</span>
+                <span class="act-last">${m.lastAt ? `son: ${formatDate(m.lastAt)}` : 'hiç mesaj yok'}</span>
+            </span>
+            <span class="act-count">${m.count}</span>`;
+        btn.addEventListener('click', () => {
+            actMemberId = m.id;
+            actOffset = 0;
+            renderActivityList();
+            loadActivityMessages(m);
+        });
+        activityList.appendChild(btn);
+    });
+}
+
+async function loadActivityReport() {
+    if (!actChannelKey) return;
+    activityList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    activityStatus.textContent = '';
+    try {
+        const res = await fetch(`/api/etkinlik/${actChannelKey}`);
+        if (res.status === 401) { showLogin(); return; }
+        const data = await okuJson(res);
+        if (!data.ok) { activityStatus.textContent = `Hata: ${data.error}`; return; }
+        actReport = data;
+
+        if (!data.configured) {
+            activityList.innerHTML = '<div class="empty-hint">Bu menü için kanal ID\'si girilmemiş.<br>server.js içindeki <b>ACTIVITY_CHANNELS</b> listesine ekle.</div>';
+            activityKpis.style.display = 'none';
+            activityStatus.textContent = '';
+            return;
+        }
+        if (data.status === 'bekliyor' || data.status === 'yukleniyor') {
+            activityStatus.textContent = data.status === 'bekliyor'
+                ? 'Kanal geçmişi henüz çekilmedi - sırada bekliyor.'
+                : `Geçmiş çekiliyor: ${data.loaded} mesaj...`;
+        } else {
+            activityStatus.textContent = `${data.totalMessages} mesaj · son güncelleme ${formatDate(data.fetchedAt)}`;
+        }
+
+        const yazan = data.members.filter((m) => m.count > 0).length;
+        document.getElementById('actTotal').textContent = data.totalMessages;
+        document.getElementById('actActive').textContent = yazan;
+        document.getElementById('actSilent').textContent = data.members.length - yazan;
+        activityKpis.style.display = 'flex';
+
+        renderActivityList();
+    } catch (error) {
+        activityList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+async function loadActivityMessages(member) {
+    activityWho.textContent = member.displayName;
+    activityMessages.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    try {
+        const params = new URLSearchParams({ memberId: member.id, offset: String(actOffset), limit: String(ACT_PAGE) });
+        const res = await fetch(`/api/etkinlik/${actChannelKey}/mesajlar?${params.toString()}`);
+        if (res.status === 401) { showLogin(); return; }
+        const data = await okuJson(res);
+        if (!data.ok) {
+            activityMessages.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(data.error)}</div>`;
+            return;
+        }
+        activityWhoInfo.textContent = `${data.total} mesaj`;
+
+        if (data.messages.length === 0) {
+            activityMessages.innerHTML = '<div class="empty-hint">Bu kişinin bu kanalda hiç mesajı yok.</div>';
+            activityPager.style.display = 'none';
+            return;
+        }
+        activityMessages.innerHTML = '';
+        data.messages.forEach((entry) => activityMessages.appendChild(renderLogEntry(entry)));
+        activityMessages.scrollTop = 0;
+
+        const bas = data.offset + 1;
+        const son = data.offset + data.messages.length;
+        actPageInfo.textContent = `${bas}-${son} / ${data.total}`;
+        document.getElementById('actPrevBtn').disabled = data.offset === 0;
+        document.getElementById('actNextBtn').disabled = son >= data.total;
+        activityPager.style.display = 'flex';
+    } catch (error) {
+        activityMessages.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function actSelectedMember() {
+    return actReport && actReport.members.find((m) => m.id === actMemberId);
+}
+document.getElementById('actPrevBtn').addEventListener('click', () => {
+    actOffset = Math.max(0, actOffset - ACT_PAGE);
+    const m = actSelectedMember(); if (m) loadActivityMessages(m);
+});
+document.getElementById('actNextBtn').addEventListener('click', () => {
+    actOffset += ACT_PAGE;
+    const m = actSelectedMember(); if (m) loadActivityMessages(m);
+});
+activitySearch.addEventListener('input', () => {
+    clearTimeout(actSearchTimer);
+    actSearchTimer = setTimeout(renderActivityList, 200);
+});
+activityRefreshBtn.addEventListener('click', () => loadActivityReport());
+
+async function initActivityTab() {
+    try {
+        const res = await fetch('/api/etkinlik');
+        if (res.status === 401) { showLogin(); return; }
+        const data = await okuJson(res);
+        if (!data.ok) return;
+        if (!actChannelKey) {
+            // Varsayilan: ID'si girilmis ilk menu
+            const ilk = data.channels.find((c) => c.configured) || data.channels[0];
+            actChannelKey = ilk ? ilk.key : null;
+        }
+        renderActivityChannels(data.channels);
+        await loadActivityReport();
+    } catch (error) {
+        activityStatus.textContent = `Hata: ${error.message}`;
+    }
+}

@@ -683,3 +683,47 @@ select.role-add:disabled { opacity: .5; cursor: wait; }
 }
 .logo-preview img { max-width: 100%; max-height: 100%; display: block; }
 .logo-actions { flex: 1; min-width: 220px; }
+
+/* ==========================================================================
+   Etkinlik sayacı
+   ========================================================================== */
+.activity-side { width: 310px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
+.activity-list {
+    flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+    background: rgba(0,0,0,.20); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 9px;
+}
+
+.act-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 11px;
+    border-radius: var(--radius-s); cursor: pointer; width: 100%; text-align: left;
+    background: var(--surface-2); border: 1px solid var(--border); box-shadow: var(--edge);
+    font-family: inherit; color: var(--ink);
+    transition: border-color .12s, background .12s;
+}
+.act-row:hover:not(:disabled) { background: var(--surface-3); border-color: var(--border-strong); }
+.act-row.active,
+.act-row.active:hover:not(:disabled) {
+    background: linear-gradient(90deg, var(--accent-soft), transparent 78%), var(--surface-3);
+    border-color: var(--accent-line);
+    box-shadow: inset 3px 0 0 var(--accent), 0 0 18px -8px var(--accent-glow);
+}
+.act-row img { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
+.act-body { flex: 1; min-width: 0; }
+.act-name { font-size: 12px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-last { font-size: 10px; color: var(--ink-3); }
+
+/* Mesaj sayısı: sağda tek başına duran sayı. Sıfır olanlar amber - "hiç
+   yazmamış" bu listenin asıl aradığı bilgi. */
+.act-count {
+    font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums;
+    padding: 3px 11px; border-radius: 999px; flex-shrink: 0;
+    background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--ink-2);
+}
+.act-row.zero .act-count { color: var(--attn); border-color: var(--attn-line); background: var(--attn-soft); }
+.act-row.top .act-count { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+
+@media (max-width: 860px) {
+    .activity-side { width: 100%; }
+    .activity-list { max-height: 300px; }
+}
