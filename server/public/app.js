@@ -155,6 +155,8 @@ function connectWebSocket() {
                 if (msg.asama) scanStatus.textContent = msg.asama;
             } else if (msg.type === 'uye-durum') {
                 uyeDurumGoster(msg);
+            } else if (msg.type === 'ticket-otomatik') {
+                loadTicketAuto();
             } else if (msg.type === 'etkinlik-artis') {
                 onActivityIncrement(msg);
             } else if (msg.type === 'log-durum') {
@@ -553,7 +555,7 @@ tabButtons.forEach((btn) => {
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
         if (btn.dataset.tab === 'loglar') refreshLogMenu();
-        if (btn.dataset.tab === 'ayarlar') refreshAccounts();
+        if (btn.dataset.tab === 'ayarlar') { refreshAccounts(); loadTicketAuto(); }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
         if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
@@ -1972,6 +1974,31 @@ async function loadDailyReport() {
             + (data.unmatched ? ` · ${data.unmatched} mesajda kişi bulunamadı` : '');
 
         renderActivityList();
+
+        // O gün hiç kayıt yoksa liste sıfırlarla dolu kalıyor ve veri
+        // silinmiş gibi görünüyor. Durumu açıkça yazıp veri olan son güne
+        // atlama kısayolu veriyoruz.
+        if (data.dayTotal === 0) {
+            const doluGunler = (data.availableDays || []).filter((g) => g.total > 0);
+            const sonGun = doluGunler.find((g) => g.day !== actDay);
+            const kutu = document.createElement('div');
+            kutu.className = 'empty-hint';
+            kutu.style.marginBottom = '8px';
+            kutu.innerHTML = doluGunler.length === 0
+                ? 'Bu kanalda hiç kayıt yok.'
+                : `<b>${escapeHtml(gunAdi)}</b> için henüz kayıt yok.<br>`
+                  + `Veri olan günler: ${doluGunler.slice(0, 5).map((g) => `${escapeHtml(g.day)} (${g.total})`).join(' · ')}`
+                  + (sonGun ? `<br><button class="secondary small" id="actJump" style="margin-top:9px;">${escapeHtml(sonGun.day)} gününe git</button>` : '');
+            activityList.prepend(kutu);
+            const atla = document.getElementById('actJump');
+            if (atla) {
+                atla.addEventListener('click', () => {
+                    actDay = sonGun.day;
+                    actDayInput.value = actDay;
+                    loadActivityReport();
+                });
+            }
+        }
     } catch (error) {
         activityList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
     }
@@ -2071,5 +2098,57 @@ document.getElementById('activityFormatBtn').addEventListener('click', async () 
         });
     } catch (error) {
         activityMessages.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+});
+
+// ============================================================================
+// --- YENİ TICKET'A OTOMATİK MESAJ (Ayarlar) ---
+// ============================================================================
+const ticketAutoEnabled = document.getElementById('ticketAutoEnabled');
+const ticketAutoMessage = document.getElementById('ticketAutoMessage');
+const ticketAutoMsg = document.getElementById('ticketAutoMsg');
+const ticketAutoTarget = document.getElementById('ticketAutoTarget');
+const ticketAutoRecent = document.getElementById('ticketAutoRecent');
+
+async function loadTicketAuto() {
+    try {
+        const res = await fetch('/api/ticket-otomatik');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) return;
+        ticketAutoEnabled.checked = d.enabled;
+        ticketAutoMessage.value = d.message;
+        ticketAutoTarget.innerHTML = `Kategori <b>${escapeHtml(d.categoryId)}</b>`
+            + (d.inGuild
+                ? ' · sunucuya bağlı ✓'
+                : ' · <span style="color:var(--attn)">⚠ hesap bu sunucuda görünmüyor, olay gelmez</span>');
+        renderTicketAutoRecent(d.recent);
+    } catch (error) {
+        ticketAutoMsg.textContent = `Hata: ${error.message}`;
+    }
+}
+
+function renderTicketAutoRecent(kayitlar) {
+    if (!kayitlar || kayitlar.length === 0) {
+        ticketAutoRecent.textContent = 'Henüz otomatik mesaj yazılmadı.';
+        return;
+    }
+    ticketAutoRecent.innerHTML = 'Son yazılanlar: '
+        + kayitlar.slice(0, 5).map((k) => `<span class="legend">#${escapeHtml(k.channelName)} · ${formatDate(k.at)}</span>`).join(' ');
+}
+
+document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () => {
+    ticketAutoMsg.textContent = 'Kaydediliyor...';
+    try {
+        const res = await fetch('/api/ticket-otomatik', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: ticketAutoEnabled.checked, message: ticketAutoMessage.value }),
+        });
+        const d = await okuJson(res);
+        if (!d.ok) { ticketAutoMsg.textContent = `Hata: ${d.error}`; return; }
+        ticketAutoMsg.textContent = d.enabled ? 'Kaydedildi — açık.' : 'Kaydedildi — kapalı.';
+    } catch (error) {
+        ticketAutoMsg.textContent = `Hata: ${error.message}`;
     }
 });

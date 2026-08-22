@@ -1495,6 +1495,139 @@ async function buildAttendancePreview() {
 }
 
 // ============================================================================
+// --- YENI TICKET'A OTOMATIK MESAJ ---
+// Belirtilen sunucudaki belirtilen KATEGORIDE yeni bir kanal acildiginda
+// (= yeni ticket) hazir mesaji yazip ticket'i acan kisiyi etiketler.
+// Discord'a kendiliginden mesaj attigi icin panelden acilip kapatilabiliyor
+// ve her gonderim hesap loglarina yaziliyor.
+// ============================================================================
+const TICKET_AUTO_GUILD = '1476217696331890818';
+const TICKET_AUTO_CATEGORY = '1476223556806512660';
+
+const VARSAYILAN_TICKET_MESAJI = [
+    '📢 **Yayıncı Sistemi Güncellendi**',
+    '',
+    '• Sunucumuzda 1 gün içerisinde minimum 2 saat yayın açan tüm yayıncılara Level 1 Panel verilecektir.',
+    '',
+    '• 3 farklı gün boyunca, her gün minimum 2 saat yayın yapan yayıncılar için kendilerine özel sınırsız yayıncı kanalı açılacaktır. Ve yayıncı paneli için belirli bir süre ve ya istatistiğe göre level 2 ye yükselme fırsatı doğacaktır',
+    '',
+    '• Yayıncı avantajlarından yararlanabilmek için belirtilen yayın sürelerinin eksiksiz tamamlanması gerekmektedir.',
+    '',
+    'Herkese bol şans ve iyi yayınlar! 🎥',
+].join('\n');
+
+const PANEL_SETTINGS_PATH = path.join(ROOT_DIR, 'panel-settings.json');
+
+function loadPanelSettings() {
+    try {
+        const d = JSON.parse(fs.readFileSync(PANEL_SETTINGS_PATH, 'utf8'));
+        return (d && typeof d === 'object') ? d : {};
+    } catch (error) {
+        return {};
+    }
+}
+const panelSettings = loadPanelSettings();
+if (typeof panelSettings.ticketAutoEnabled !== 'boolean') panelSettings.ticketAutoEnabled = true;
+if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAutoMessage = VARSAYILAN_TICKET_MESAJI;
+
+function savePanelSettings() {
+    try {
+        fs.writeFileSync(PANEL_SETTINGS_PATH, JSON.stringify(panelSettings, null, 2));
+    } catch (error) {
+        console.log(`[Ayar] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+// Ayni kanala iki kez yazmamak icin - channelCreate bazen tekrar gelebiliyor.
+const ticketAutoYazilan = new Set();
+// Beklenmedik bir durumda kategori yanlis eslesirse spam olmasin diye tavan.
+const TICKET_AUTO_DAKIKA_TAVANI = 12;
+let ticketAutoPencere = { dakika: 0, adet: 0 };
+const ticketAutoSonGonderimler = [];
+
+// Ticket'i acan kisi: kanala ozel olarak eklenen UYE izni. Ticket botu kanali
+// olusturduktan HEMEN SONRA bu izni ekliyor, yani channelCreate geldiginde
+// henuz orada olmayabiliyor.
+//
+// AYNI kanal nesnesini yokluyoruz, her denemede yeniden fetch etmiyoruz:
+// discord.js izin degisiminde onbellekteki kanal nesnesini yerinde
+// guncelliyor; yeniden fetch etmek gereksiz istek olmasinin yaninda baska
+// bir nesne dondurup guncellemeyi kacirabiliyor.
+function readOpenerFromOverwrites(channel) {
+    try {
+        const cache = channel.permissionOverwrites && channel.permissionOverwrites.cache;
+        if (!cache) return null;
+        const uye = [...cache.values()].find((o) => (
+            (o.type === 'member' || o.type === 1)
+            && o.id !== client.user.id
+            && o.id !== (channel.guild && channel.guild.id)
+        ));
+        return uye ? uye.id : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+async function findTicketOpener(channel) {
+    const TOPLAM_DENEME = 8;
+    const ARALIK_MS = 1000;
+    for (let i = 0; i < TOPLAM_DENEME; i += 1) {
+        const id = readOpenerFromOverwrites(channel);
+        if (id) return id;
+        // Bazi ticket botlari acani kanal konusuna da yaziyor.
+        if (channel.topic) {
+            const m = String(channel.topic).match(/(\d{17,20})/);
+            if (m) return m[1];
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, ARALIK_MS));
+    }
+    return null;
+}
+
+client.on('channelCreate', async (channel) => {
+    try {
+        if (!panelSettings.ticketAutoEnabled) return;
+        if (!channel || !channel.guild) return;
+        if (channel.guild.id !== TICKET_AUTO_GUILD) return;
+        if (channel.parentId !== TICKET_AUTO_CATEGORY) return;
+        if (ticketAutoYazilan.has(channel.id)) return;
+        ticketAutoYazilan.add(channel.id);
+
+        // dakikalik tavan
+        const dakika = Math.floor(Date.now() / 60000);
+        if (ticketAutoPencere.dakika !== dakika) ticketAutoPencere = { dakika, adet: 0 };
+        if (ticketAutoPencere.adet >= TICKET_AUTO_DAKIKA_TAVANI) {
+            console.log('[TicketOtomatik] Dakikalik tavan asildi, bu kanal atlandi:'
+                + ` #${channel.name}. Kategori dogru mu kontrol et.`);
+            return;
+        }
+        ticketAutoPencere.adet += 1;
+
+        const acan = await findTicketOpener(channel);
+        const metin = (acan ? `<@${acan}>\n\n` : '') + panelSettings.ticketAutoMessage;
+        await channel.send(metin);
+
+        const kayit = {
+            at: Date.now(),
+            channelId: channel.id,
+            channelName: channel.name,
+            openerId: acan,
+        };
+        ticketAutoSonGonderimler.unshift(kayit);
+        while (ticketAutoSonGonderimler.length > 25) ticketAutoSonGonderimler.pop();
+
+        console.log(`[TicketOtomatik] #${channel.name} kanalina mesaj yazildi`
+            + ` (acan: ${acan || 'bulunamadi'}).`);
+        addAudit('ticket-otomatik', 'sistem',
+            `#${channel.name} kanalına otomatik mesaj yazıldı${acan ? ` (açan: ${acan})` : ' (açan bulunamadı)'}`, null);
+        wsBroadcast({ type: 'ticket-otomatik', entry: kayit });
+    } catch (error) {
+        console.log(`[TicketOtomatik] Hata: ${error.message}`);
+    }
+});
+
+// ============================================================================
 // --- YETKILILER + ROL VER/AL ---
 // Roller sunucudaki hiyerarsi sirasina gore (position buyukten kucuge)
 // veriliyor. Rol vermek icin yine komut kanalindaki rol botuna /rol-ver ve
@@ -2426,6 +2559,40 @@ app.get('/api/etkinlik/:key/mesajlar', requireAuth, (req, res) => {
         offset,
         messages: kisininkiler.slice(offset, offset + limit).map(stripInternal),
     });
+});
+
+// --- YENI TICKET OTOMATIK MESAJI (ayarlar) ---
+app.get('/api/ticket-otomatik', requireAuth, (req, res) => {
+    res.json({
+        ok: true,
+        enabled: panelSettings.ticketAutoEnabled,
+        message: panelSettings.ticketAutoMessage,
+        guildId: TICKET_AUTO_GUILD,
+        categoryId: TICKET_AUTO_CATEGORY,
+        // Bot o sunucuda mi? Degilse olay hic gelmez, kullanici bunu bilsin.
+        inGuild: client.guilds.cache.has(TICKET_AUTO_GUILD),
+        recent: ticketAutoSonGonderimler,
+    });
+});
+
+app.post('/api/ticket-otomatik', requireAuth, (req, res) => {
+    const { enabled, message } = req.body || {};
+    if (typeof enabled === 'boolean') panelSettings.ticketAutoEnabled = enabled;
+    if (typeof message === 'string') {
+        const kirpik = message.trim();
+        if (!kirpik) return res.json({ ok: false, error: 'Mesaj boş bırakılamaz.' });
+        if (kirpik.length > 1800) {
+            return res.json({ ok: false, error: 'Mesaj 1800 karakterden uzun olamaz (Discord sınırı).' });
+        }
+        panelSettings.ticketAutoMessage = kirpik;
+    }
+    savePanelSettings();
+    addAudit('ticket-otomatik-ayar', req.session.username,
+        `Otomatik ticket mesajı ${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`
+        + (typeof message === 'string' ? ' · metin güncellendi' : ''), req);
+    console.log(`[TicketOtomatik] Ayar değişti (${req.session.username}): `
+        + `${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`);
+    return res.json({ ok: true, enabled: panelSettings.ticketAutoEnabled, message: panelSettings.ticketAutoMessage });
 });
 
 // --- HESAP LOGLARI ---

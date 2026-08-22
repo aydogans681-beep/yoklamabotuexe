@@ -8,6 +8,7 @@ config.env
 panel-auth.json
 warning-history.json
 panel-audit.json
+panel-settings.json
 
 # Loglar
 *.log

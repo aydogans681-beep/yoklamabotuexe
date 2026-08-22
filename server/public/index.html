@@ -324,6 +324,29 @@
                 </div>
             </div>
 
+            <div class="card accent-card">
+                <h2>Yeni Ticket'a Otomatik Mesaj</h2>
+                <p class="card-desc">
+                    Belirtilen kategoride yeni bir ticket açıldığında bu mesaj yazılır ve
+                    ticket'ı açan kişi etiketlenir. <b>Discord'a kendiliğinden mesaj atar</b> —
+                    kapatmak istersen aşağıdaki anahtarı kapat.
+                </p>
+                <div class="toolbar" style="margin-bottom:10px;">
+                    <label class="check-inline">
+                        <input type="checkbox" id="ticketAutoEnabled">
+                        Açık
+                    </label>
+                    <span class="scanStatus" id="ticketAutoTarget"></span>
+                </div>
+                <textarea id="ticketAutoMessage" class="text-search" rows="10"
+                          style="width:100%; resize:vertical; line-height:1.6;"></textarea>
+                <div class="toolbar" style="margin-top:10px;">
+                    <button id="ticketAutoSaveBtn">Kaydet</button>
+                    <span class="scanStatus" id="ticketAutoMsg"></span>
+                </div>
+                <div class="scanStatus" id="ticketAutoRecent" style="margin-top:10px;"></div>
+            </div>
+
             <div class="card">
                 <h2>Panel Logosu</h2>
                 <p class="card-desc">
