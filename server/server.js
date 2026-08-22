@@ -272,7 +272,20 @@ const EMERGENCY_MEETING_DELAY_MS = 500;
 //                etiketleniyor; yazara gore saymak "Ticket Botu: 5000" verirdi.
 const ACTIVITY_CHANNELS = [
     { key: 'etkinlik', label: 'Etkinlik', channelId: '1456032067325263965', personFrom: 'author' },
-    { key: 'ticket', label: 'Ticket', channelId: '1472697988479582411', personFrom: 'auto' },
+    // Ticket logunu bot atiyor ve embed'de IKI kisi geciyor:
+    //   "Ticket sahibi: @X"        -> ticket'i acan kisi (SAYILMAZ)
+    //   "Ticket'i silen kisi: @Y"  -> ticket'e bakan yetkili (SAYILAN BU)
+    // Ayrica altta "Kapatilan ticket - ID" satirinda ticket sahibinin ham
+    // ID'si de geciyor. Bu yuzden "ilk etiket" ya da "ham ID" gibi genel
+    // yontemler YANLIS kisiyi bulur; etiketli satira bakiyoruz.
+    {
+        key: 'ticket',
+        label: 'Ticket',
+        channelId: '1472697988479582411',
+        personFrom: 'label',
+        botId: '1538263121678827570',              // yalnizca bu botun mesajlari sayilir
+        personLabel: /silen|kapatan|kapat[ıi]ld[ıi]/i,
+    },
 ];
 
 const LOG_CHANNELS = [
@@ -1095,6 +1108,11 @@ ALL_CHANNELS.forEach((channel) => {
     logStore.set(channel.key, {
         kind: channel.kind,
         personFrom: channel.personFrom || 'author',
+        // Bunlar depoya TASINMALI - yoksa resolvePersonDetailed icindeki
+        // store.botId / store.personLabel undefined kalir ve bot filtresi
+        // sessizce devre disi olur.
+        botId: channel.botId || null,
+        personLabel: channel.personLabel || null,
         dailyIndex: null,
         unmatched: 0,
         key: channel.key,
@@ -1133,6 +1151,18 @@ function isStaffId(id) {
     return ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId));
 }
 
+// Metin parcalarini SATIR SATIR verir - etiketli satiri bulabilmek icin.
+function messageTextLines(entry) {
+    const satirlar = [];
+    messageTextParts(entry).forEach((parca) => {
+        String(parca).split('\n').forEach((satir) => {
+            const t = satir.trim();
+            if (t) satirlar.push(t);
+        });
+    });
+    return satirlar;
+}
+
 // Mesajin metin parcalari - icerik + embed baslik/aciklama/alanlar.
 function messageTextParts(entry) {
     const parcalar = [entry.content];
@@ -1149,6 +1179,25 @@ function messageTextParts(entry) {
 function resolvePersonDetailed(store, entry) {
     const mod = store.personFrom || 'author';
     if (mod === 'author') return { id: entry.authorId, via: 'yazar' };
+
+    // Belirli bir bot yapilandirilmissa baska yazarlarin mesajlari sayilmaz.
+    if (store.botId && entry.authorId !== store.botId) {
+        return { id: null, via: 'farklı yazar' };
+    }
+
+    // 'label': yalnizca etiketli satirdaki kisiyi al. Bilerek yedeksiz -
+    // ayni mesajda baska kisiler de geciyor, tahmin yurutmek yanlis kisiye
+    // sayardi. Etiket bulunamazsa "bulunamadi" deyip bicim kontrolunde
+    // gorunur olmasi daha dogru.
+    if (mod === 'label') {
+        const desen = store.personLabel || /silen|kapatan/i;
+        for (const satir of messageTextLines(entry)) {
+            if (!desen.test(satir)) continue;
+            const m = satir.match(/<@!?(\d+)>/);
+            if (m) return { id: m[1], via: 'etiketli satır' };
+        }
+        return { id: null, via: 'etiket satırı bulunamadı' };
+    }
 
     // 1) <@123> / <@!123> etiketi
     for (const parca of messageTextParts(entry)) {
