@@ -42,6 +42,22 @@ function escapeHtml(str) {
     }[c]));
 }
 
+// Sunucu JSON yerine HTML dondurdugunde ("<!DOCTYPE ...") ham bir ayristirma
+// hatasi yerine ne yapilmasi gerektigini soyleyen bir mesaj veriyoruz. Bu
+// pratikte tek bir anlama geliyor: dosyalar guncellendi ama Node sureci hala
+// eski kodu calistiriyor, yani cagrilan uc o surecte henuz yok.
+async function okuJson(res) {
+    const metin = await res.text();
+    try {
+        return JSON.parse(metin);
+    } catch (error) {
+        const html = metin.trim().startsWith('<');
+        throw new Error(html
+            ? 'Sunucu bu isteği tanımıyor. Güncelleme sonrası bot yeniden başlatılmamış olabilir - sunucuda botu kapatıp yeniden başlat.'
+            : `Sunucudan beklenmeyen cevap geldi (HTTP ${res.status}).`);
+    }
+}
+
 function showError(message) {
     errorBox.textContent = message;
     errorBox.style.display = 'block';
@@ -55,7 +71,7 @@ let currentUsername = null;
 
 async function checkSession() {
     const res = await fetch('/api/me');
-    const data = await res.json();
+    const data = await okuJson(res);
     if (data.loggedIn) {
         currentUsername = data.username;
         showApp();
@@ -91,7 +107,7 @@ async function doLogin() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password }),
         });
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) {
             loginError.textContent = data.error || 'Giriş başarısız.';
             loginError.style.display = 'block';
@@ -349,7 +365,7 @@ async function onRoleButtonClick(evt) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ memberId, reason }),
         });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok) {
             const text = result.reason === 'max' ? `Zaten en üst kademede.` : `Hata: ${result.error || 'bilinmeyen hata'}`;
             setRoleMsg(memberId, escapeHtml(text), 'error');
@@ -374,7 +390,7 @@ async function onUndoButtonClick(evt) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ memberId }),
         });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok) {
             setRoleMsg(memberId, escapeHtml(`Hata: ${result.error || 'bilinmeyen hata'}`), 'error');
             return;
@@ -398,7 +414,7 @@ bulkWarnBtn.addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ memberIds: [...selectedIds], reason }),
         });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok && result.error) {
             bulkProgress.textContent = `Hata: ${result.error}`;
             return;
@@ -423,7 +439,7 @@ bulkUndoBtn.addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ memberIds: [...selectedIds] }),
         });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok && result.error) {
             bulkProgress.textContent = `Hata: ${result.error}`;
             return;
@@ -442,7 +458,7 @@ emergencyBtn.addEventListener('click', async () => {
     emergencyStatus.textContent = 'Başlıyor...';
     try {
         const res = await fetch('/api/yoklama/acil-toplanti', { method: 'POST' });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok) {
             emergencyStatus.textContent = `Hata: ${result.error}`;
             return;
@@ -488,7 +504,7 @@ scanBtn.addEventListener('click', async () => {
     scanStatus.textContent = 'Tarama sürüyor, birkaç saniye sürebilir...';
     try {
         const res = await fetch('/api/yoklama/tara', { method: 'POST' });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (res.status === 401) { showLogin(); return; }
         if (!result.ok) {
             showError(`Tarama başarısız: ${result.error}`);
@@ -575,7 +591,7 @@ async function refreshLogMenu() {
     try {
         const res = await fetch('/api/loglar');
         if (res.status === 401) { showLogin(); return; }
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) return;
         logChannels = data.channels;
         renderLogMenu();
@@ -690,7 +706,7 @@ async function loadLogPage() {
         if (logSearchTerm) params.set('q', logSearchTerm);
         const res = await fetch(`/api/loglar/${activeLogKey}?${params.toString()}`);
         if (res.status === 401) { showLogin(); return; }
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) {
             logsList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(data.error || 'bilinmeyen')}</div>`;
             return;
@@ -785,7 +801,7 @@ async function refreshAccounts() {
     try {
         const res = await fetch('/api/hesaplar');
         if (res.status === 401) { showLogin(); return; }
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) return;
         accountList.innerHTML = '';
         data.users.forEach((user) => {
@@ -815,7 +831,7 @@ async function deleteAccount(username) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username }),
         });
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) { addAccountMsg.textContent = `Hata: ${data.error}`; return; }
         if (data.selfDeleted) { showLogin(); return; } // kendini sildi
         addAccountMsg.textContent = `"${username}" silindi.`;
@@ -833,7 +849,7 @@ document.getElementById('addAccountBtn').addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: addUsername.value.trim(), password: addPassword.value }),
         });
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) { addAccountMsg.textContent = `Hata: ${data.error}`; return; }
         addAccountMsg.textContent = 'Hesap eklendi.';
         addUsername.value = '';
@@ -856,7 +872,7 @@ document.getElementById('updateAccountBtn').addEventListener('click', async () =
                 newPassword: newPasswordEl.value,
             }),
         });
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) { accountMsg.textContent = `Hata: ${data.error}`; return; }
         currentUsername = data.username;
         document.getElementById('whoAmI').textContent = `· ${currentUsername}`;
@@ -923,7 +939,7 @@ attendanceBtn.addEventListener('click', async () => {
     try {
         const res = await fetch('/api/yoklama/al-onizleme', { method: 'POST' });
         if (res.status === 401) { showLogin(); return; }
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok) { attendanceStatus.textContent = `Hata: ${result.error}`; return; }
 
         const data = result.data;
@@ -969,7 +985,7 @@ previewApplyBtn.addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ memberIds: previewWarnIds, reason: attendanceReason.value.trim() }),
         });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (result.ok === false && result.error) {
             previewProgress.textContent = `Hata: ${result.error}`;
             previewApplyBtn.disabled = false;
@@ -1066,7 +1082,7 @@ async function loadGuildRoles(force) {
     try {
         const res = await fetch('/api/roller');
         if (res.status === 401) { showLogin(); return false; }
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) { staffStatus.textContent = `Roller alınamadı: ${data.error}`; return false; }
         guildRoles = data.roles;
         selfTopPosition = data.selfTopPosition;
@@ -1186,7 +1202,7 @@ async function staffRoleAction(kind, member, roleId, roleName) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ memberId: member.id, roleId }),
         });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok) {
             setStaffMsg(member.id, result.reason === 'zaten-var' ? 'Bu rol zaten var.'
                 : result.reason === 'yok' ? 'Bu rol kişide yok.'
@@ -1287,7 +1303,7 @@ async function loadStaff(roleId) {
         const url = roleId ? `/api/yetkililer?roleId=${encodeURIComponent(roleId)}` : '/api/yetkililer';
         const res = await fetch(url);
         if (res.status === 401) { showLogin(); return; }
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) {
             staffList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(data.error)}</div>`;
             return;
@@ -1442,7 +1458,7 @@ async function onRoleAction(btn) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ memberId: roleTargetMember.id, roleId }),
         });
-        const result = await res.json();
+        const result = await okuJson(res);
         if (!result.ok) {
             const metin = result.reason === 'zaten-var' ? 'Bu kişide zaten var.'
                 : result.reason === 'yok' ? 'Bu kişide bu rol yok.'
@@ -1534,7 +1550,7 @@ async function loadAudit() {
         if (auditSearch.value.trim()) params.set('q', auditSearch.value.trim());
         const res = await fetch(`/api/hesap-loglari?${params.toString()}`);
         if (res.status === 401) { showLogin(); return; }
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) { auditStatus.textContent = `Hata: ${data.error}`; return; }
 
         renderAuditFilters(data.counts);
@@ -1648,7 +1664,7 @@ logoFile.addEventListener('change', async () => {
             headers: { 'Content-Type': dosya.type || 'application/octet-stream' },
             body: dosya,
         });
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) { logoMsg.textContent = `Hata: ${data.error}`; return; }
         logoMsg.textContent = `Yüklendi: ${data.name} (${Math.round(data.size / 1024)} KB)`;
         refreshLogoImages();
@@ -1663,7 +1679,7 @@ document.getElementById('logoRemoveBtn').addEventListener('click', async () => {
     if (!window.confirm('Panel logosu kaldırılsın mı? Yerine yazı logosu görünecek.')) return;
     try {
         const res = await fetch('/api/logo/sil', { method: 'POST' });
-        const data = await res.json();
+        const data = await okuJson(res);
         if (!data.ok) { logoMsg.textContent = `Hata: ${data.error}`; return; }
         logoMsg.textContent = 'Logo kaldırıldı.';
         // 404 dönecek, onerror yedek yazı logosunu gösterecek
