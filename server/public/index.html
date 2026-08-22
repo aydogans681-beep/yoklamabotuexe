@@ -199,33 +199,28 @@
              "Aktif", atmayanlar "Aktif Değil". Pencere seçilebilir. -->
         <div class="tab-panel" id="tab-aktiflik">
             <div class="toolbar logs-toolbar" style="margin-bottom:12px;">
-                <span class="logs-title">Aktiflik</span>
-                <span class="scanStatus">Pencere:</span>
-                <div class="filter-chips" id="presenceWindows">
-                    <button class="chip" data-win="30">30 dk</button>
-                    <button class="chip active" data-win="60">1 saat</button>
-                    <button class="chip" data-win="120">2 saat</button>
-                    <button class="chip" data-win="360">6 saat</button>
-                    <button class="chip" data-win="1440">24 saat</button>
-                </div>
-                <span class="grow"></span>
+                <span class="logs-title">Seste Geçirilen Süre</span>
+                <button class="secondary small" id="presDayPrev">←</button>
+                <input type="date" class="text-search" id="presDay" style="flex:0 0 auto; min-width:0;">
+                <button class="secondary small" id="presDayNext">→</button>
+                <button class="secondary small" id="presDayToday">Bugün</button>
                 <span class="live-dot" id="presenceLive">CANLI</span>
-                <button class="secondary small" id="presenceFormatBtn" title="Bu kanala mesajları kim atıyor?">Biçim kontrolü</button>
+                <span class="grow"></span>
                 <button class="secondary small" id="presenceRefreshBtn">Yenile</button>
             </div>
 
             <div class="kpi-row" style="margin-bottom:12px;">
                 <div class="kpi is-ok">
-                    <span class="kpi-label">Aktif</span>
-                    <span class="kpi-value" id="presActive">0</span>
-                </div>
-                <div class="kpi is-attn">
-                    <span class="kpi-label">Aktif Değil</span>
-                    <span class="kpi-value" id="presInactive">0</span>
+                    <span class="kpi-label">Şu an seste</span>
+                    <span class="kpi-value" id="presInVoice">0</span>
                 </div>
                 <div class="kpi">
-                    <span class="kpi-label">Toplam yetkili</span>
-                    <span class="kpi-value" id="presTotal">0</span>
+                    <span class="kpi-label">Toplam süre</span>
+                    <span class="kpi-value" id="presTotalTime">—</span>
+                </div>
+                <div class="kpi is-attn">
+                    <span class="kpi-label">Hiç girmeyen</span>
+                    <span class="kpi-value" id="presZero">0</span>
                 </div>
             </div>
 
@@ -235,16 +230,7 @@
             </div>
 
             <div id="presenceWrap">
-                <div class="presence-cols">
-                    <div class="presence-col">
-                        <h3 class="presence-head ok">Aktif <span id="presActiveCount">0</span></h3>
-                        <div class="presence-list" id="presenceActive"></div>
-                    </div>
-                    <div class="presence-col">
-                        <h3 class="presence-head bad">Aktif Değil <span id="presInactiveCount">0</span></h3>
-                        <div class="presence-list" id="presenceInactive"></div>
-                    </div>
-                </div>
+                <div class="presence-list" id="presenceList"></div>
             </div>
         </div>
 

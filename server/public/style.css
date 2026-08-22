@@ -751,51 +751,51 @@ select.role-add:disabled { opacity: .5; cursor: wait; }
 input[type="date"].text-search { color-scheme: dark; padding: 8px 11px; }
 
 /* ==========================================================================
-   Aktiflik
+   Aktiflik - seste geçirilen süre
    ========================================================================== */
-#presenceWrap { flex: 1; min-height: 0; overflow: hidden; }
-.presence-cols { display: flex; gap: 12px; height: 100%; min-height: 0; }
-.presence-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-.presence-head {
-    display: flex; align-items: center; gap: 8px; margin: 0 0 8px;
-    font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .07em;
-}
-.presence-head span {
-    font-size: 11px; padding: 2px 9px; border-radius: 999px;
-    background: var(--surface-3); border: 1px solid var(--border-strong); font-variant-numeric: tabular-nums;
-}
-.presence-head.ok  { color: var(--ok); }
-.presence-head.ok span  { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
-.presence-head.bad { color: var(--attn); }
-.presence-head.bad span { color: var(--attn); border-color: var(--attn-line); background: var(--attn-soft); }
-
+#presenceWrap { flex: 1; min-height: 0; overflow: hidden; display: flex; }
 .presence-list {
     flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;
     background: rgba(0,0,0,.20); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 9px;
+    border-radius: var(--radius); padding: 10px;
 }
 .pres-row {
-    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    display: flex; align-items: center; gap: 11px; padding: 10px 13px;
     border-radius: var(--radius-s);
     background: var(--surface-2); border: 1px solid var(--border);
     border-left: 3px solid var(--border-strong); box-shadow: var(--edge);
 }
 .pres-row.on  { border-left-color: var(--ok); }
-.pres-row.off { border-left-color: var(--attn); }
-.pres-row img { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
+.pres-row.off { border-left-color: var(--attn); opacity: .78; }
+.pres-row img { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; }
 .pres-body { flex: 1; min-width: 0; }
-.pres-name { font-size: 12.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pres-sub { font-size: 10.5px; color: var(--ink-3); }
+.pres-name {
+    display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+    font-size: 12.5px; font-weight: 650;
+}
+.pres-live {
+    font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    color: var(--ok); background: var(--ok-soft); border: 1px solid var(--ok-line);
+}
+/* Süre çubuğu: en çok kalana göre oran - kim ne kadar kalmış tek bakışta. */
+.pres-bar {
+    display: block; height: 4px; margin-top: 7px; border-radius: 99px;
+    background: var(--surface-3); overflow: hidden;
+}
+.pres-bar-fill {
+    display: block; height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent-fill), var(--accent));
+}
+.pres-row.on .pres-bar-fill { background: linear-gradient(90deg, #24925580, var(--ok)); }
 .pres-ago {
-    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-    background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--ink-2);
+    font-size: 13px; font-weight: 750; padding: 5px 12px; border-radius: 999px; flex-shrink: 0;
+    font-variant-numeric: tabular-nums; min-width: 92px; text-align: center;
+    background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--ink);
 }
 .pres-row.on  .pres-ago { color: var(--ok);   border-color: var(--ok-line);   background: var(--ok-soft); }
-.pres-row.off .pres-ago { color: var(--attn); border-color: var(--attn-line); background: var(--attn-soft); }
+.pres-row.off .pres-ago { color: var(--ink-3); }
 .pres-row.flash { animation: parla 1.4s ease-out; }
 
 @media (max-width: 860px) {
-    .presence-cols { flex-direction: column; }
-    .presence-list { max-height: 280px; }
+    .pres-ago { min-width: 72px; font-size: 12px; }
 }

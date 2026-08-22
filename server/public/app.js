@@ -163,9 +163,6 @@ function connectWebSocket() {
                 onLogStatusUpdate(msg);
             } else if (msg.type === 'log-yeni') {
                 onLogNewMessage(msg);
-                if (msg.key === 'aktiflik' && presenceTabAcikMi()) {
-                    loadPresence(msg.entry && msg.entry.authorId);
-                }
             }
             // "Yoklamayı Al" uygulanırken ilerleme önizleme penceresinde de görünsün.
             if (msg.type === 'yoklama-toplu-uyari-ilerleme' && previewModal.style.display !== 'none') {
@@ -2168,94 +2165,113 @@ document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () 
 });
 
 // ============================================================================
-// --- AKTİFLİK ---
-// Seçilen pencere içinde aktiflik kanalına mesaj atan yetkililer "Aktif",
-// atmayanlar "Aktif Değil". Zamanla değişen bir durum olduğu için sekme
-// açıkken düzenli tazeleniyor ve yeni mesajda anlık güncelleniyor.
+// --- AKTİFLİK: SESTE GEÇİRİLEN SÜRE ---
+// Her yetkilinin seçilen günde ne kadar ses kanalında kaldığı.
 // ============================================================================
-const presenceActive = document.getElementById('presenceActive');
-const presenceInactive = document.getElementById('presenceInactive');
+const presenceList = document.getElementById('presenceList');
 const presenceSearch = document.getElementById('presenceSearch');
 const presenceStatus = document.getElementById('presenceStatus');
+const presDayInput = document.getElementById('presDay');
 
-let presWindow = 60;
 let presReport = null;
+let presDay = null;
+let presToday = null;
 let presTimer = null;
 let presSearchTimer = null;
 
-function sureMetni(dakika) {
-    if (dakika === null || dakika === undefined) return 'hiç';
-    if (dakika < 1) return 'şimdi';
-    if (dakika < 60) return `${dakika} dk`;
+// 3h 24m -> "3sa 24dk". Saniye sadece bir dakikanın altındayken anlamlı.
+function sureBicimle(saniye) {
+    if (!saniye || saniye < 60) return saniye ? `${Math.round(saniye)} sn` : '—';
+    const dakika = Math.floor(saniye / 60);
     const saat = Math.floor(dakika / 60);
-    if (saat < 24) return `${saat} sa`;
-    return `${Math.floor(saat / 24)} gün`;
+    if (saat === 0) return `${dakika} dk`;
+    return `${saat} sa ${dakika % 60} dk`;
 }
 
-function presRowHtml(m, aktif) {
-    return `
-        <img src="${encodeURI(m.avatarURL)}" alt="">
-        <span class="pres-body">
-            <span class="pres-name">${escapeHtml(m.displayName)}</span>
-            <span class="pres-sub">${m.lastAt ? `son mesaj: ${formatDate(m.lastAt)}` : 'bu kanalda hiç mesajı yok'}`
-        + ` · 24s: ${m.last24h}</span>
-        </span>
-        <span class="pres-ago">${aktif ? sureMetni(m.minutesAgo) : (m.lastAt ? sureMetni(m.minutesAgo) : '—')}</span>`;
+function presGunKaydir(gun, adim) {
+    const [y, a, g] = gun.split('-').map(Number);
+    const d = new Date(Date.UTC(y, a - 1, g));
+    d.setUTCDate(d.getUTCDate() + adim);
+    return d.toISOString().slice(0, 10);
 }
 
 function renderPresence() {
     if (!presReport) return;
     const terim = presenceSearch.value.trim().toLocaleLowerCase('tr');
-    const suz = (liste) => (terim
-        ? liste.filter((m) => m.displayName.toLocaleLowerCase('tr').includes(terim)
+    const liste = terim
+        ? presReport.members.filter((m) => m.displayName.toLocaleLowerCase('tr').includes(terim)
             || m.tag.toLocaleLowerCase('tr').includes(terim))
-        : liste);
+        : presReport.members;
 
-    const doldur = (kap, liste, aktif) => {
-        kap.innerHTML = '';
-        if (liste.length === 0) {
-            kap.innerHTML = `<div class="empty-hint">${terim ? 'Aramaya uyan kimse yok.' : (aktif ? 'Şu an aktif kimse yok.' : 'Herkes aktif.')}</div>`;
-            return;
-        }
-        liste.forEach((m) => {
-            const div = document.createElement('div');
-            div.className = `pres-row ${aktif ? 'on' : 'off'}`;
-            div.dataset.id = m.id;
-            div.innerHTML = presRowHtml(m, aktif);
-            kap.appendChild(div);
-        });
-    };
-    doldur(presenceActive, suz(presReport.active), true);
-    doldur(presenceInactive, suz(presReport.inactive), false);
+    presenceList.innerHTML = '';
+    if (liste.length === 0) {
+        presenceList.innerHTML = `<div class="empty-hint">${terim ? 'Aramaya uyan yetkili yok.' : 'Yetkili bulunamadı.'}</div>`;
+        return;
+    }
 
-    document.getElementById('presActive').textContent = presReport.activeCount;
-    document.getElementById('presInactive').textContent = presReport.inactiveCount;
-    document.getElementById('presTotal').textContent = presReport.total;
-    document.getElementById('presActiveCount').textContent = suz(presReport.active).length;
-    document.getElementById('presInactiveCount').textContent = suz(presReport.inactive).length;
+    const enYuksek = presReport.members.length ? presReport.members[0].seconds : 0;
+    liste.forEach((m) => {
+        const div = document.createElement('div');
+        let sinif = 'pres-row';
+        if (m.inVoice) sinif += ' on';
+        else if (m.seconds === 0) sinif += ' off';
+        div.className = sinif;
+        div.dataset.id = m.id;
+        // Süre çubuğu: en çok kalana göre oran - kim ne kadar kalmış tek
+        // bakışta görünsün.
+        const oran = enYuksek > 0 ? Math.round((m.seconds / enYuksek) * 100) : 0;
+        div.innerHTML = `
+            <img src="${encodeURI(m.avatarURL)}" alt="">
+            <span class="pres-body">
+                <span class="pres-name">${escapeHtml(m.displayName)}
+                    ${m.inVoice ? `<span class="pres-live">🔊 ${escapeHtml(m.channelName || 'seste')}${m.sessionSeconds ? ` · ${sureBicimle(m.sessionSeconds)}` : ''}</span>` : ''}
+                </span>
+                <span class="pres-bar"><span class="pres-bar-fill" style="width:${oran}%"></span></span>
+            </span>
+            <span class="pres-ago">${sureBicimle(m.seconds)}</span>`;
+        presenceList.appendChild(div);
+    });
 }
 
 async function loadPresence(vurgula) {
     try {
-        const res = await fetch(`/api/aktiflik?pencere=${presWindow}`);
+        const params = presDay ? `?gun=${encodeURIComponent(presDay)}` : '';
+        const res = await fetch(`/api/aktiflik${params}`);
         if (res.status === 401) { showLogin(); return; }
         const d = await okuJson(res);
         if (!d.ok) { presenceStatus.textContent = `Hata: ${d.error}`; return; }
         presReport = d;
+        presToday = d.today;
+        presDay = d.day;
+        presDayInput.value = presDay;
+        presDayInput.max = presToday;
 
-        if (!d.configured) {
-            presenceStatus.textContent = 'Kanal ID girilmemiş.';
-        } else if (d.status === 'bekliyor' || d.status === 'yukleniyor') {
-            presenceStatus.textContent = d.status === 'bekliyor'
-                ? 'Kanal geçmişi henüz çekilmedi - sırada bekliyor.'
-                : `Geçmiş çekiliyor: ${d.loaded} mesaj...`;
-        } else {
-            presenceStatus.textContent = `${d.loaded} mesaj · son ${sureMetni(d.windowMinutes)} içinde yazanlar aktif sayılıyor`;
-        }
+        const hicGirmeyen = d.members.filter((m) => m.seconds === 0).length;
+        document.getElementById('presInVoice').textContent = d.inVoiceCount;
+        document.getElementById('presTotalTime').textContent = sureBicimle(d.totalSeconds);
+        document.getElementById('presZero').textContent = hicGirmeyen;
+
+        const gunAdi = presDay === presToday ? 'Bugün' : presDay;
+        // Veri ne zamandan beri toplanıyor - geçmiş yok, bu özellik
+        // açıldığından beri birikiyor.
+        presenceStatus.textContent = `${gunAdi} · ${d.members.length} yetkili`
+            + (d.trackingSince ? ` · kayıt başlangıcı: ${d.trackingSince}` : ' · henüz kayıt yok');
+
         renderPresence();
 
+        if (d.totalSeconds === 0) {
+            const kutu = document.createElement('div');
+            kutu.className = 'empty-hint';
+            kutu.style.marginBottom = '8px';
+            kutu.innerHTML = d.trackingSince
+                ? `<b>${escapeHtml(gunAdi)}</b> için ses kaydı yok.`
+                  + `<br>Kayıt tutulan günler: ${(d.availableDays || []).slice(0, 5).map((g) => `${escapeHtml(g.day)} (${sureBicimle(g.total)})`).join(' · ')}`
+                : 'Ses süresi kaydı bu özellik açıldığından beri birikiyor - geçmiş veri yok.<br>Yetkililer ses kanallarına girdikçe burası dolacak.';
+            presenceList.prepend(kutu);
+        }
+
         if (vurgula) {
-            const satir = presenceActive.querySelector(`.pres-row[data-id="${vurgula}"]`);
+            const satir = presenceList.querySelector(`.pres-row[data-id="${vurgula}"]`);
             if (satir) { satir.classList.add('flash'); setTimeout(() => satir.classList.remove('flash'), 1500); }
         }
     } catch (error) {
@@ -2263,47 +2279,36 @@ async function loadPresence(vurgula) {
     }
 }
 
-document.querySelectorAll('#presenceWindows .chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('#presenceWindows .chip').forEach((b) => b.classList.toggle('active', b === btn));
-        presWindow = Number(btn.dataset.win);
-        loadPresence();
-    });
-});
 presenceSearch.addEventListener('input', () => {
     clearTimeout(presSearchTimer);
     presSearchTimer = setTimeout(renderPresence, 200);
 });
 document.getElementById('presenceRefreshBtn').addEventListener('click', () => loadPresence());
+document.getElementById('presDayPrev').addEventListener('click', () => {
+    if (!presDay) return; presDay = presGunKaydir(presDay, -1); loadPresence();
+});
+document.getElementById('presDayNext').addEventListener('click', () => {
+    if (!presDay) return; presDay = presGunKaydir(presDay, 1); loadPresence();
+});
+document.getElementById('presDayToday').addEventListener('click', () => {
+    presDay = presToday; loadPresence();
+});
+presDayInput.addEventListener('change', () => {
+    if (presDayInput.value) { presDay = presDayInput.value; loadPresence(); }
+});
 
-// Aktiflik ZAMANLA değişiyor: kimse yazmasa bile biri pencereden çıkabilir.
-// Bu yüzden sekme açıkken dakikada bir tazeleniyor.
+// Süre sürekli artıyor - sekme açıkken düzenli tazele.
 function presenceTabAcikMi() {
     return document.getElementById('tab-aktiflik').classList.contains('active');
 }
 function startPresenceTimer() {
     stopPresenceTimer();
-    presTimer = setInterval(() => { if (presenceTabAcikMi()) loadPresence(); }, 60000);
+    presTimer = setInterval(() => { if (presenceTabAcikMi()) loadPresence(); }, 30000);
 }
 function stopPresenceTimer() {
     if (presTimer) { clearInterval(presTimer); presTimer = null; }
 }
-
 async function initPresenceTab() {
     await loadPresence();
     startPresenceTimer();
 }
-
-// Biçim kontrolü - bu kanala mesajları kim atıyor?
-document.getElementById('presenceFormatBtn').addEventListener('click', async () => {
-    try {
-        const res = await fetch('/api/etkinlik/aktiflik/bicim');
-        const d = await okuJson(res);
-        if (!d.ok) { presenceStatus.textContent = `Hata: ${d.error}`; return; }
-        const yazarlar = d.topAuthors.map((a) => `${a.tag} (${a.count})`).join(', ');
-        presenceStatus.textContent = `${d.total} mesaj · ${d.distinctPeople} farklı kişi · `
-            + `yetkililere denk gelen: ${d.staffMatched} · en çok yazan: ${yazarlar}`;
-    } catch (error) {
-        presenceStatus.textContent = `Hata: ${error.message}`;
-    }
-});

@@ -288,13 +288,6 @@ const ACTIVITY_CHANNELS = [
     },
 ];
 
-// AKTIFLIK: yetkililerin duzenli (ornegin saatte bir) mesaj attigi kanal.
-// Belirlenen pencere icinde mesaj atan "Aktif", atmayan "Aktif Degil".
-const PRESENCE_CHANNELS = [
-    { key: 'aktiflik', label: 'Aktiflik', channelId: '1530743292524761148', personFrom: 'author' },
-];
-const AKTIFLIK_VARSAYILAN_PENCERE_DK = 60;
-
 const LOG_CHANNELS = [
     { key: 'ban', label: 'Ban', channelId: '1514634711413293197' },
     { key: 'unban', label: 'Unban', channelId: '1456027006964858901' },
@@ -1111,7 +1104,6 @@ const logChannelIdToKey = new Map();
 // kanallari once cekildigi icin, buyuk log kanallari olan sunucularda etkinlik
 // sayaclari yeniden baslatmadan sonra uzun sure bos gorunuyordu.
 const ALL_CHANNELS = [
-    ...PRESENCE_CHANNELS.map((c) => ({ ...c, kind: 'aktiflik' })),
     ...ACTIVITY_CHANNELS.map((c) => ({ ...c, kind: 'aktivite' })),
     ...LOG_CHANNELS.map((c) => ({ ...c, kind: 'log' })),
 ];
@@ -2526,33 +2518,102 @@ app.get('/api/etkinlik/:key/gunluk', requireAuth, async (req, res) => {
     }
 });
 
-// --- AKTIFLIK ---
-// Pencere icinde mesaj atan yetkililer "Aktif", atmayanlar "Aktif Degil".
-async function buildPresenceReport(pencereDk) {
-    const store = logStore.get('aktiflik');
-    if (!store) throw new Error('Aktiflik kanali yapilandirilmamis.');
+// ============================================================================
+// --- AKTIFLIK: SESTE GECIRILEN SURE ---
+// Her yetkilinin gunde ne kadar ses kanalinda kaldigini olcer.
+//
+// Yontem: katilma/ayrilma olaylarini saymak yerine belirli araliklarla
+// "su an seste kim var" diye bakip gecen sureyi o gune ekliyoruz. Bunun uc
+// avantaji var: bot yeniden baslatildiginda acik oturumlar kaybolmuyor,
+// gece yarisi devreden sure kendiliginden dogru gune yaziliyor, ve
+// kacirilan bir olay yuzunden birinin suresi sonsuza kadar sayilmiyor.
+// ============================================================================
+const VOICE_DATA_PATH = path.join(ROOT_DIR, 'voice-activity.json');
+const VOICE_TICK_MS = 30 * 1000;
+const VOICE_GUN_SINIRI = 90; // kac gunluk kayit tutulacak
 
+function loadVoiceData() {
+    try {
+        const d = JSON.parse(fs.readFileSync(VOICE_DATA_PATH, 'utf8'));
+        return (d && typeof d === 'object') ? d : {};
+    } catch (error) {
+        return {};
+    }
+}
+const voiceData = loadVoiceData(); // { "YYYY-MM-DD": { uyeId: saniye } }
+let voiceDirty = false;
+let voiceLastTick = Date.now();
+// Su an seste olanlarin bu oturuma ne zaman basladigi - "3 saattir seste"
+// bilgisini gosterebilmek icin.
+const voiceSessionStart = new Map();
+
+function persistVoiceData() {
+    if (!voiceDirty) return;
+    try {
+        fs.writeFileSync(VOICE_DATA_PATH, JSON.stringify(voiceData));
+        voiceDirty = false;
+    } catch (error) {
+        console.log(`[Aktiflik] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+function trimVoiceData() {
+    const gunler = Object.keys(voiceData).sort();
+    while (gunler.length > VOICE_GUN_SINIRI) {
+        delete voiceData[gunler.shift()];
+        voiceDirty = true;
+    }
+}
+
+function voiceTick() {
     const simdi = Date.now();
-    const pencereMs = Math.max(1, pencereDk) * 60 * 1000;
-    const sinir = simdi - pencereMs;
+    // Uzun duraklamalarda (surec askida kaldi, bilgisayar uyudu) tek seferde
+    // devasa sure eklenmesin diye tavan koyuyoruz.
+    const gecen = Math.min(simdi - voiceLastTick, VOICE_TICK_MS * 3);
+    voiceLastTick = simdi;
+    if (gecen <= 0) return;
 
-    // Kisi -> son mesaj zamani ve pencere icindeki adet
-    const sonMesaj = new Map();
-    const pencereAdedi = new Map();
-    const gunlukAdet = new Map();
-    const gunSiniri = simdi - 24 * 60 * 60 * 1000;
-    store.messages.forEach((m) => {
-        const kisi = resolvePerson(store, m);
-        if (!kisi) return;
-        const onceki = sonMesaj.get(kisi);
-        if (!onceki || m.createdTimestamp > onceki) sonMesaj.set(kisi, m.createdTimestamp);
-        if (m.createdTimestamp >= sinir) pencereAdedi.set(kisi, (pencereAdedi.get(kisi) || 0) + 1);
-        if (m.createdTimestamp >= gunSiniri) gunlukAdet.set(kisi, (gunlukAdet.get(kisi) || 0) + 1);
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) return;
+
+    const gun = dayKey(simdi);
+    if (!voiceData[gun]) voiceData[gun] = {};
+    const bugun = voiceData[gun];
+    const sesteOlanlar = new Set();
+
+    guild.channels.cache.forEach((channel) => {
+        if (channel.type !== 'GUILD_VOICE' && channel.type !== 'GUILD_STAGE_VOICE') return;
+        channel.members.forEach((member) => {
+            if (!ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))) return;
+            sesteOlanlar.add(member.id);
+            bugun[member.id] = (bugun[member.id] || 0) + gecen / 1000;
+            voiceDirty = true;
+            if (!voiceSessionStart.has(member.id)) voiceSessionStart.set(member.id, simdi - gecen);
+        });
     });
 
+    // Sesten cikanlarin oturum baslangicini temizle
+    [...voiceSessionStart.keys()].forEach((id) => {
+        if (!sesteOlanlar.has(id)) voiceSessionStart.delete(id);
+    });
+}
+
+// Kayit her tick'te diske yaziliyor: surec beklenmedik sekilde olurse
+// (kill -9, sunucu yeniden baslatma) en fazla bir tick'lik sure kaybolsun.
+// Dosya kucuk oldugu icin bu yazma maliyeti onemsiz.
+setInterval(() => { voiceTick(); persistVoiceData(); }, VOICE_TICK_MS);
+setInterval(trimVoiceData, 60 * 60 * 1000);
+process.on('exit', persistVoiceData);
+
+async function buildVoiceReport(gun) {
+    const hedefGun = gun || bugununAnahtari();
+    const gunVerisi = voiceData[hedefGun] || {};
+    const simdi = Date.now();
+
     let yetkililer = [];
+    let guild = null;
     try {
-        const guild = await getReadyGuild();
+        guild = await getReadyGuild();
         await ensureMembersFetched(guild);
         yetkililer = [...guild.members.cache.values()].filter((member) => (
             ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))
@@ -2561,50 +2622,55 @@ async function buildPresenceReport(pencereDk) {
         console.log(`[Aktiflik] Yetkili listesi alinamadi: ${error.message}`);
     }
 
-    const hepsi = yetkililer.map((member) => {
-        const son = sonMesaj.get(member.id) || null;
+    const bugunMu = hedefGun === bugununAnahtari();
+    const uyeler = yetkililer.map((member) => {
+        // Kanali distaki guild uzerinden aliyoruz - member.guild her ortamda
+        // dolu gelmiyor.
+        const sesKanali = guild && member.voice && member.voice.channelId
+            ? (guild.channels.cache.get(member.voice.channelId) || null)
+            : null;
+        const oturumBas = voiceSessionStart.get(member.id) || null;
         return {
             id: member.id,
             displayName: member.displayName,
             tag: member.user.tag,
             avatarURL: member.displayAvatarURL({ size: 64 }),
-            lastAt: son,
-            minutesAgo: son ? Math.floor((simdi - son) / 60000) : null,
-            inWindow: pencereAdedi.get(member.id) || 0,
-            last24h: gunlukAdet.get(member.id) || 0,
-            inVoice: Boolean(member.voice && member.voice.channelId),
+            seconds: Math.round(gunVerisi[member.id] || 0),
+            inVoice: bugunMu && Boolean(sesKanali),
+            channelName: sesKanali ? sesKanali.name : null,
+            sessionSeconds: bugunMu && oturumBas ? Math.round((simdi - oturumBas) / 1000) : 0,
         };
     });
 
-    // Aktif: en yeni mesaj once. Aktif degil: en uzun suredir yazmayan once.
-    const aktif = hepsi.filter((m) => m.lastAt && m.lastAt >= sinir)
-        .sort((a, b) => b.lastAt - a.lastAt);
-    const pasif = hepsi.filter((m) => !m.lastAt || m.lastAt < sinir)
-        .sort((a, b) => (a.lastAt || 0) - (b.lastAt || 0));
+    // Cok kalandan az kalana; esitlikte ada gore.
+    uyeler.sort((a, b) => (b.seconds - a.seconds) || a.displayName.localeCompare(b.displayName, 'tr'));
+
+    const gunler = Object.keys(voiceData).sort().reverse().slice(0, 14).map((g) => ({
+        day: g,
+        total: Math.round(Object.values(voiceData[g]).reduce((t, v) => t + v, 0)),
+    }));
 
     return {
-        label: store.label,
-        configured: Boolean(store.channelId),
-        status: store.status,
-        loaded: store.loaded,
-        fetchedAt: store.fetchedAt,
-        windowMinutes: pencereDk,
-        now: simdi,
-        total: hepsi.length,
-        activeCount: aktif.length,
-        inactiveCount: pasif.length,
-        active: aktif,
-        inactive: pasif,
+        day: hedefGun,
+        today: bugununAnahtari(),
+        trackingSince: Object.keys(voiceData).sort()[0] || null,
+        members: uyeler,
+        totalSeconds: uyeler.reduce((t, m) => t + m.seconds, 0),
+        inVoiceCount: uyeler.filter((m) => m.inVoice).length,
+        availableDays: gunler,
     };
 }
 
 app.get('/api/aktiflik', requireAuth, async (req, res) => {
-    const pencere = Math.min(24 * 60, Math.max(5, Number(req.query.pencere) || AKTIFLIK_VARSAYILAN_PENCERE_DK));
+    const gun = String(req.query.gun || '').trim();
+    if (gun && !/^\d{4}-\d{2}-\d{2}$/.test(gun)) {
+        return res.json({ ok: false, error: 'Tarih biçimi YYYY-AA-GG olmalı.' });
+    }
     try {
-        res.json({ ok: true, ...(await buildPresenceReport(pencere)) });
+        return res.json({ ok: true, ...(await buildVoiceReport(gun || null)) });
     } catch (error) {
         console.log(`[Aktiflik] Rapor hatasi: ${error.message}`);
-        res.json({ ok: false, error: error.message });
+        return res.json({ ok: false, error: error.message });
     }
 });
 
