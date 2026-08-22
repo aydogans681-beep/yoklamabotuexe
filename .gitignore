@@ -19,6 +19,4 @@ Thumbs.db
 # Sunucu logosu - kullanicinin kendi dosyasi. Depoda tutulmuyor ki guncelleme
 # sirasinda uzerine yazilmasin; ayrica takip edilmeyen dosya olarak kalsaydi
 # guncelle.ps1'in "yerel degisiklik var" kontrolu her seferinde takilirdi.
-server/public/logo.png
-server/public/logo.jpg
-server/public/logo.webp
+server/public/logo.*

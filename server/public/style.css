@@ -607,3 +607,13 @@ select.role-add:disabled { opacity: .5; cursor: wait; }
     .side-foot { flex-direction: row; align-items: center; gap: 10px; padding-top: 0; border-top: none; border-left: 1px solid var(--border); padding-left: 10px; }
     .audit-row { flex-wrap: wrap; }
 }
+
+/* --- Ayarlar: logo yükleme --- */
+.logo-settings { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.logo-preview {
+    width: 150px; height: 110px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; padding: 10px;
+    background: var(--surface-2); border: 1px dashed var(--border-strong); border-radius: var(--radius-s);
+}
+.logo-preview img { max-width: 100%; max-height: 100%; display: block; }
+.logo-actions { flex: 1; min-width: 220px; }

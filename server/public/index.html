@@ -13,7 +13,7 @@
             <!-- Logo: server/public/logo.png. Dosya yoksa onerror ile yazı
                  logosuna düşüyor, panel logosuz da çalışmaya devam ediyor. -->
             <div class="brand-mark brand-mark-lg" id="loginBrand">
-                <img src="logo.png" alt="MD PvP" class="brand-img"
+                <img src="/logo" alt="MD PvP" class="brand-img"
                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                 <div class="brand-fallback" style="display:none;"><span>MD</span><small>PvP</small></div>
             </div>
@@ -37,7 +37,7 @@
         <!-- Sol kenar çubuğu: logo, gezinme, altta bağlantı durumu -->
         <aside class="sidebar">
             <button class="brand-mark brand-btn" id="sideBrand" title="Yoklama sekmesine dön">
-                <img src="logo.png" alt="MD PvP" class="brand-img"
+                <img src="/logo" alt="MD PvP" class="brand-img"
                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                 <div class="brand-fallback" style="display:none;"><span>MD</span><small>PvP</small></div>
             </button>
@@ -251,6 +251,28 @@
                 <div class="toolbar">
                     <button id="updateAccountBtn">Kaydet</button>
                     <span class="scanStatus" id="accountMsg"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Panel Logosu</h2>
+                <p class="card-desc">
+                    Giriş ekranında ve sol menüde görünen logo. PNG, JPG, WEBP ya da GIF;
+                    en fazla 3 MB. Dosyayı elle kopyalamana gerek yok, buradan yükle.
+                </p>
+                <div class="logo-settings">
+                    <div class="logo-preview" id="logoPreview">
+                        <img src="/logo" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="brand-fallback" style="display:none;"><span>MD</span><small>PvP</small></div>
+                    </div>
+                    <div class="logo-actions">
+                        <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none;">
+                        <div class="toolbar">
+                            <button id="logoPickBtn">Logo Seç ve Yükle</button>
+                            <button class="secondary small" id="logoRemoveBtn">Logoyu Kaldır</button>
+                        </div>
+                        <div class="scanStatus" id="logoMsg" style="margin-top:8px;"></div>
+                    </div>
                 </div>
             </div>
 

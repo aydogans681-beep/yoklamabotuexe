@@ -1610,3 +1610,65 @@ if (loginBrand) {
         loginBrand.style.filter = '';
     });
 }
+
+// ============================================================================
+// --- PANEL LOGOSU (Ayarlar) ---
+// Logo sunucudan /logo ucuyla geliyor; dosya adı ve uzantısı ne olursa olsun
+// sunucu buluyor. Buradan yüklenince elle dosya kopyalamak gerekmiyor.
+// ============================================================================
+const logoFile = document.getElementById('logoFile');
+const logoMsg = document.getElementById('logoMsg');
+
+// Yükleme/silme sonrası tarayıcının eski görseli göstermemesi için tüm logo
+// kaynaklarını yeni bir sorgu parametresiyle tazeliyoruz.
+function refreshLogoImages() {
+    const v = Date.now();
+    document.querySelectorAll('.brand-img, #logoPreview img').forEach((img) => {
+        img.style.display = '';
+        const yedek = img.nextElementSibling;
+        if (yedek && yedek.classList.contains('brand-fallback')) yedek.style.display = 'none';
+        img.src = `/logo?v=${v}`;
+    });
+}
+
+document.getElementById('logoPickBtn').addEventListener('click', () => logoFile.click());
+
+logoFile.addEventListener('change', async () => {
+    const dosya = logoFile.files && logoFile.files[0];
+    if (!dosya) return;
+    if (dosya.size > 3 * 1024 * 1024) {
+        logoMsg.textContent = 'Dosya 3 MB üstü, daha küçük bir görsel seç.';
+        logoFile.value = '';
+        return;
+    }
+    logoMsg.textContent = `Yükleniyor... (${Math.round(dosya.size / 1024)} KB)`;
+    try {
+        const res = await fetch('/api/logo', {
+            method: 'POST',
+            headers: { 'Content-Type': dosya.type || 'application/octet-stream' },
+            body: dosya,
+        });
+        const data = await res.json();
+        if (!data.ok) { logoMsg.textContent = `Hata: ${data.error}`; return; }
+        logoMsg.textContent = `Yüklendi: ${data.name} (${Math.round(data.size / 1024)} KB)`;
+        refreshLogoImages();
+    } catch (error) {
+        logoMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        logoFile.value = '';
+    }
+});
+
+document.getElementById('logoRemoveBtn').addEventListener('click', async () => {
+    if (!window.confirm('Panel logosu kaldırılsın mı? Yerine yazı logosu görünecek.')) return;
+    try {
+        const res = await fetch('/api/logo/sil', { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) { logoMsg.textContent = `Hata: ${data.error}`; return; }
+        logoMsg.textContent = 'Logo kaldırıldı.';
+        // 404 dönecek, onerror yedek yazı logosunu gösterecek
+        refreshLogoImages();
+    } catch (error) {
+        logoMsg.textContent = `Hata: ${error.message}`;
+    }
+});

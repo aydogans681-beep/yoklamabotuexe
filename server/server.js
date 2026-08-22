@@ -1790,6 +1790,114 @@ app.post('/api/rol/al', requireAuth, async (req, res) => {
     }
 });
 
+// ============================================================================
+// --- PANEL LOGOSU ---
+// Dosya adiyla ugrasmamak icin logo sunucudan servis ediliyor: public/ icinde
+// "logo.*" ne varsa o bulunuyor (buyuk/kucuk harf farketmez). Boylece
+// logo.png / Logo.PNG / logo.jpg hepsi calisiyor. Panelden de yuklenebiliyor,
+// o zaman dosyayi elle kopyalamak hic gerekmiyor.
+// ============================================================================
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const LOGO_TYPES = {
+    '.png':  'image/png',
+    '.jpg':  'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif':  'image/gif',
+};
+const LOGO_MAX_BYTES = 3 * 1024 * 1024;
+
+function findLogoFile() {
+    let names;
+    try {
+        names = fs.readdirSync(PUBLIC_DIR);
+    } catch (error) {
+        return null;
+    }
+    // "logo.png.png" gibi cift uzantili dosyalari da yakalamak icin adin
+    // "logo" ile baslamasi yeterli sayiliyor.
+    const aday = names.find((name) => {
+        const alt = name.toLowerCase();
+        if (!alt.startsWith('logo')) return false;
+        return Object.keys(LOGO_TYPES).some((ext) => alt.endsWith(ext));
+    });
+    if (!aday) return null;
+    const ext = Object.keys(LOGO_TYPES).find((e) => aday.toLowerCase().endsWith(e));
+    return { file: path.join(PUBLIC_DIR, aday), name: aday, mime: LOGO_TYPES[ext] };
+}
+
+// Yuklenen dosyanin gercekten resim oldugunu icerigine bakarak dogrula -
+// uzantiya guvenmek yeterli degil.
+function detectImageExt(buf) {
+    if (buf.length < 12) return null;
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return '.png';
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return '.jpg';
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return '.gif';
+    if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') return '.webp';
+    return null;
+}
+
+app.get('/logo', (req, res) => {
+    const logo = findLogoFile();
+    if (!logo) return res.status(404).end();
+    res.setHeader('Content-Type', logo.mime);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.sendFile(logo.file);
+});
+
+app.get('/api/logo/durum', requireAuth, (req, res) => {
+    const logo = findLogoFile();
+    let boyut = null;
+    if (logo) {
+        try { boyut = fs.statSync(logo.file).size; } catch (error) { boyut = null; }
+    }
+    res.json({ ok: true, var: Boolean(logo), name: logo ? logo.name : null, size: boyut });
+});
+
+app.post('/api/logo', requireAuth, express.raw({ type: '*/*', limit: '3mb' }), (req, res) => {
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || buf.length === 0) {
+        return res.json({ ok: false, error: 'Dosya alınamadı.' });
+    }
+    if (buf.length > LOGO_MAX_BYTES) {
+        return res.json({ ok: false, error: 'Dosya 3 MB üstü, daha küçük bir görsel seç.' });
+    }
+    const ext = detectImageExt(buf);
+    if (!ext) {
+        return res.json({ ok: false, error: 'Bu bir resim dosyası değil. PNG, JPG, WEBP ya da GIF olmalı.' });
+    }
+
+    try {
+        // Once eski logo dosyalarini temizle - yoksa logo.png ve logo.jpg
+        // birlikte kalir, hangisinin gosterildigi belirsiz olurdu.
+        fs.readdirSync(PUBLIC_DIR)
+            .filter((name) => name.toLowerCase().startsWith('logo')
+                && Object.keys(LOGO_TYPES).some((e) => name.toLowerCase().endsWith(e)))
+            .forEach((name) => {
+                try { fs.unlinkSync(path.join(PUBLIC_DIR, name)); } catch (error) { /* yoksay */ }
+            });
+        fs.writeFileSync(path.join(PUBLIC_DIR, `logo${ext}`), buf);
+    } catch (error) {
+        return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
+    }
+
+    console.log(`[Logo] Panel logosu güncellendi (${req.session.username}, ${buf.length} bayt, logo${ext}).`);
+    addAudit('logo-guncelle', req.session.username, `Panel logosu yüklendi (logo${ext}, ${Math.round(buf.length / 1024)} KB)`, req);
+    return res.json({ ok: true, name: `logo${ext}`, size: buf.length });
+});
+
+app.post('/api/logo/sil', requireAuth, (req, res) => {
+    const logo = findLogoFile();
+    if (!logo) return res.json({ ok: false, error: 'Zaten logo yok.' });
+    try {
+        fs.unlinkSync(logo.file);
+    } catch (error) {
+        return res.json({ ok: false, error: `Silinemedi: ${error.message}` });
+    }
+    addAudit('logo-guncelle', req.session.username, 'Panel logosu kaldırıldı', req);
+    return res.json({ ok: true });
+});
+
 // --- HESAP LOGLARI ---
 app.get('/api/hesap-loglari', requireAuth, (req, res) => {
     const tur = String(req.query.type || '').trim();
