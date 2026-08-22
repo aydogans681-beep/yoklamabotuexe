@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MD PvP Yoklama Botu - Web Paneli</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- --- GİRİŞ EKRANI --- -->
+    <div class="login-wrap" id="loginWrap">
+        <div class="login-card">
+            <h1>MD PvP Yoklama Botu</h1>
+            <p class="desc">Devam etmek için kullanıcı adını ve şifreni gir.</p>
+            <div id="loginError" style="display:none; background: rgba(255,45,61,0.12); color:#ff6b6b; border:1px solid rgba(255,45,61,0.4); padding:10px 12px; border-radius:6px; font-size:12px; margin-bottom:14px;"></div>
+            <div class="field">
+                <label>Kullanıcı Adı</label>
+                <input type="text" id="loginUsername" autocomplete="username">
+            </div>
+            <div class="field">
+                <label>Şifre</label>
+                <input type="password" id="loginPassword" autocomplete="current-password">
+            </div>
+            <button class="primary" id="loginBtn">Giriş Yap</button>
+        </div>
+    </div>
+
+    <!-- --- ANA PANEL (giriş sonrası) --- -->
+    <div id="appWrap" style="display:none; flex:1; flex-direction:column; min-height:0;">
+        <div class="header">
+            <div>
+                <h1>MD PvP Yoklama Botu <span style="color:var(--text-muted); font-weight:400;">(web)</span></h1>
+                <p>Sesde olanlar/olmayanlar, mazaretler, uyarılar</p>
+            </div>
+            <div class="status-row">
+                <span class="status-dot warn" id="statusDot"></span>
+                <span>Discord:</span>
+                <span id="statusText">Bağlanıyor...</span>
+                <span class="who" id="whoAmI"></span>
+                <button class="secondary small" id="logoutBtn" style="margin-left:12px;">Çıkış</button>
+            </div>
+        </div>
+
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="yoklama">Yoklama</button>
+            <button class="tab-btn" data-tab="loglar">TX Logs</button>
+            <button class="tab-btn" data-tab="ayarlar">Ayarlar</button>
+        </div>
+
+        <div id="errorBox"></div>
+
+        <!-- ================= YOKLAMA ================= -->
+        <div class="tab-panel active" id="tab-yoklama">
+            <div class="toolbar" style="background:var(--bg-card); border:1px solid var(--accent-dim); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
+                <span style="font-size:11.5px; color:var(--text-muted);">🚨 Sesteki tüm yetkilileri bulunduğun ses kanalına çeker</span>
+                <button class="secondary small" id="emergencyBtn">Acil Toplantı</button>
+                <span id="emergencyStatus" style="font-size:11px; color:var(--accent); margin-left:auto;"></span>
+            </div>
+
+            <div class="card">
+                <h2>Tarama</h2>
+                <div class="toolbar">
+                    <button id="scanBtn">Taramayı Başlat</button>
+                    <button class="secondary small" id="copyReportBtn" disabled>Panoya Kopyala</button>
+                    <span class="scanStatus" id="scanStatus">Henüz tarama yapılmadı - "Taramayı Başlat"a bas.</span>
+                </div>
+                <div class="summary" id="summaryText"></div>
+            </div>
+
+            <!-- YENİ: tepkilere göre otomatik yoklama -->
+            <div class="card accent-card">
+                <h2>Yoklamayı Al</h2>
+                <p class="card-desc">
+                    Tarama yapar ve <b>seste olmayan</b> herkesi mazeret tepkilerine göre ayırır:
+                    <span class="legend ok">✅ onaylı → uyarı yok</span>
+                    <span class="legend bad">❌ reddedilmiş → uyarı</span>
+                    <span class="legend bad">tepkisiz / mazeretsiz → uyarı</span>
+                    Uygulamadan önce kimin uyarı alacağını gösterir.
+                </p>
+                <div class="toolbar">
+                    <input type="text" class="text-search" id="attendanceReason" placeholder="Uyarı sebebi (örn: Yoklamaya katılmadı)...">
+                    <button id="attendanceBtn">Yoklamayı Al!</button>
+                    <span class="scanStatus" id="attendanceStatus"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Toplu Uyarı</h2>
+                <div class="toolbar" style="margin-bottom:8px;">
+                    <span style="font-size:11px; color:var(--text-muted);" id="selectedCount">0 kişi seçili</span>
+                    <button class="secondary small" id="selectVisibleBtn" type="button">Görüneni Seç</button>
+                    <button class="secondary small" id="clearSelectionBtn" type="button">Seçimi Temizle</button>
+                    <button class="secondary small" id="bulkUndoBtn" type="button" disabled>Seçilenleri Geri Al</button>
+                </div>
+                <div class="toolbar">
+                    <input type="text" class="text-search" id="bulkReason" placeholder="Uyarı sebebi...">
+                    <button id="bulkWarnBtn" disabled>Toplu Uyarı Ver</button>
+                </div>
+                <div class="scanStatus" id="bulkProgress"></div>
+            </div>
+
+            <div class="filter-row">
+                <input type="text" class="text-search" id="searchInput" placeholder="İsim veya etiket ara...">
+                <div class="filter-chips">
+                    <button class="chip active" data-filter="all">Tümü</button>
+                    <button class="chip" data-filter="out">Sesde Değil</button>
+                    <button class="chip" data-filter="in">Sesde</button>
+                </div>
+            </div>
+
+            <div id="listWrap">
+                <div class="empty-hint" id="emptyState">Kontrol edilecek rollerde kimse bulunamadı.</div>
+                <div id="list"></div>
+            </div>
+        </div>
+
+        <!-- ================= TX LOGS ================= -->
+        <div class="tab-panel" id="tab-loglar">
+            <div class="logs-layout">
+                <div class="logs-menu" id="logsMenu"></div>
+                <div class="logs-main">
+                    <div class="toolbar logs-toolbar">
+                        <span class="logs-title" id="logTitle">Bir log menüsü seç</span>
+                        <input type="text" class="text-search" id="logSearch" placeholder="Log içinde ara..." disabled>
+                        <button class="secondary small" id="logRefreshBtn" disabled>Yenile</button>
+                        <span class="scanStatus" id="logStatus"></span>
+                    </div>
+                    <div class="logs-list" id="logsList">
+                        <div class="empty-hint">Soldan bir log menüsü seç.</div>
+                    </div>
+                    <div class="toolbar logs-pager" id="logPager" style="display:none;">
+                        <button class="secondary small" id="logPrevBtn">← Önceki</button>
+                        <span class="scanStatus" id="logPageInfo"></span>
+                        <button class="secondary small" id="logNextBtn">Sonraki →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= AYARLAR ================= -->
+        <div class="tab-panel" id="tab-ayarlar">
+            <div class="card">
+                <h2>Kendi Hesabım</h2>
+                <p class="card-desc">
+                    Kullanıcı adını ve/veya şifreni değiştir. Değişiklikten sonra bu hesabın
+                    diğer tüm açık oturumları düşer.
+                </p>
+                <div class="settings-grid">
+                    <div class="field"><label>Mevcut Şifre</label><input type="password" id="curPassword" autocomplete="current-password"></div>
+                    <div class="field"><label>Yeni Kullanıcı Adı <span class="muted">(boş = değişmesin)</span></label><input type="text" id="newUsername" autocomplete="username"></div>
+                    <div class="field"><label>Yeni Şifre <span class="muted">(boş = değişmesin)</span></label><input type="password" id="newPassword" autocomplete="new-password"></div>
+                </div>
+                <div class="toolbar">
+                    <button id="updateAccountBtn">Kaydet</button>
+                    <span class="scanStatus" id="accountMsg"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Panel Hesapları</h2>
+                <p class="card-desc">
+                    Panele giriş yapabilen hesaplar. <b>Ana hesap</b> masaüstü uygulamasının
+                    da kullandığı hesaptır - listenin başında durur.
+                </p>
+                <div id="accountList" class="account-list"></div>
+                <div class="toolbar" style="margin-top:10px;">
+                    <input type="text" class="text-search" id="addUsername" placeholder="Yeni kullanıcı adı">
+                    <input type="password" class="text-search" id="addPassword" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
+                    <button id="addAccountBtn">Hesap Ekle</button>
+                    <span class="scanStatus" id="addAccountMsg"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- --- YOKLAMAYI AL ÖNİZLEME PENCERESİ --- -->
+    <div class="modal-backdrop" id="previewModal" style="display:none;">
+        <div class="modal">
+            <div class="modal-head">
+                <h2 id="previewTitle">Yoklama Önizleme</h2>
+                <button class="secondary small" id="previewCloseBtn">Kapat</button>
+            </div>
+            <div class="modal-summary" id="previewSummary"></div>
+            <div class="modal-body" id="previewBody"></div>
+            <div class="modal-foot">
+                <span class="scanStatus" id="previewProgress"></span>
+                <button class="secondary small" id="previewCancelBtn">Vazgeç</button>
+                <button id="previewApplyBtn">Uyarıları Uygula</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "yoklama-botu-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MD PvP Yoklama Botu - web paneli (masaüstü Electron uygulamasının sunucuda 7/24 çalışan, tarayıcıdan erişilebilen sürümü). İş mantığının çoğu ../main.js'ten birebir taşınıyor.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "discord.js-selfbot-v13": "^2.15.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.19.2",
+    "cookie-parser": "^1.4.6",
+    "ws": "^8.17.0"
+  }
+}

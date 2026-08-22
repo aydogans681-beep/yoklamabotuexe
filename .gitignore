@@ -1,0 +1,17 @@
+# Bağımlılıklar
+node_modules/
+
+# GİZLİ: Discord kullanıcı token'ı burada - asla commit edilmez
+config.env
+
+# Panel hesapları (scrypt hash içerir) ve uyarı geçmişi - sunucuda oluşur
+panel-auth.json
+warning-history.json
+
+# Loglar
+*.log
+server/debug-web.log
+
+# İşletim sistemi
+.DS_Store
+Thumbs.db
