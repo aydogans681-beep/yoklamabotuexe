@@ -1231,10 +1231,11 @@ async function staffRoleAction(kind, member, roleId, roleName) {
         // Yerel listeyi guncelle - rol sirasi hiyerarsiye gore korunuyor
         if (kind === 'ver') {
             const role = guildRoles.find((r) => r.id === roleId);
-            member.roles.push({ id: role.id, name: role.name, color: role.color });
+            member.roles.push({ id: role.id, name: role.name, color: role.color, position: role.position });
+            // Sunucudan gelen sıra hiyerarşik; yeni rolü de doğru yere koy.
             member.roles.sort((a, b) => {
-                const pa = (guildRoles.find((r) => r.id === a.id) || {}).position || 0;
-                const pb = (guildRoles.find((r) => r.id === b.id) || {}).position || 0;
+                const pa = a.position ?? (guildRoles.find((r) => r.id === a.id) || {}).position ?? 0;
+                const pb = b.position ?? (guildRoles.find((r) => r.id === b.id) || {}).position ?? 0;
                 return pb - pa;
             });
         } else {

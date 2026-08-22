@@ -1326,8 +1326,25 @@ function getSelfHighestPosition(guild) {
     const me = guild.members.cache.get(client.user.id);
     if (!me) return 0;
     let highest = 0;
-    me.roles.cache.forEach((role) => { if (role.position > highest) highest = role.position; });
+    me.roles.cache.forEach((role) => { const p = rolePos(role); if (p > highest) highest = p; });
     return highest;
+}
+
+// role.position discord.js'te hesaplanan bir getter; rol onbellegi tam
+// dolmadan bazi rollerde undefined gelebiliyor. O durumda "b.position -
+// a.position" NaN uretir, NaN donen karsilastirici ile V8 siralamayi HIC
+// degistirmez - yani hiyerarsi sessizce bozulur. Sayiya zorluyoruz.
+function rolePos(role) {
+    if (typeof role.position === 'number' && Number.isFinite(role.position)) return role.position;
+    if (typeof role.rawPosition === 'number' && Number.isFinite(role.rawPosition)) return role.rawPosition;
+    return 0;
+}
+
+// Yuksekten dusuge (hiyerarside ustteki once). Esitlikte ada gore.
+function byHierarchyDesc(a, b) {
+    const fark = rolePos(b) - rolePos(a);
+    if (fark !== 0) return fark;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'tr');
 }
 
 function serializeRole(role, selfTop) {
@@ -1335,7 +1352,7 @@ function serializeRole(role, selfTop) {
         id: role.id,
         name: role.name,
         color: role.hexColor && role.hexColor !== '#000000' ? role.hexColor : null,
-        position: role.position,
+        position: rolePos(role),
         memberCount: role.members ? role.members.size : 0,
         managed: Boolean(role.managed), // bot/entegrasyon rolu - kimseye verilemez
         assignable: !role.managed && role.position < selfTop,
@@ -1354,7 +1371,7 @@ async function listGuildRoles() {
     const selfTop = getSelfHighestPosition(guild);
     const roles = [...guild.roles.cache.values()]
         .filter((role) => role.id !== guild.id) // @everyone haric
-        .sort((a, b) => b.position - a.position) // hiyerarsi: ustten alta
+        .sort(byHierarchyDesc) // hiyerarsi: yuksekten dusuge
         .map((role) => serializeRole(role, selfTop));
     return { selfTopPosition: selfTop, roles };
 }
@@ -1363,11 +1380,12 @@ function serializeStaffMember(member, guild) {
     const tierIndex = getWarningTierIndex(member);
     const roles = [...member.roles.cache.values()]
         .filter((role) => role.id !== guild.id)
-        .sort((a, b) => b.position - a.position)
+        .sort(byHierarchyDesc)
         .map((role) => ({
             id: role.id,
             name: role.name,
             color: role.hexColor && role.hexColor !== '#000000' ? role.hexColor : null,
+            position: rolePos(role),
         }));
     return {
         id: member.id,
@@ -1425,7 +1443,7 @@ async function sendRoleCommand(kind, memberId, roleId) {
     if (role.managed) throw new Error(`"${role.name}" bir bot/entegrasyon rolu, elle verilemez.`);
 
     const selfTop = getSelfHighestPosition(guild);
-    if (role.position >= selfTop) {
+    if (rolePos(role) >= selfTop) {
         throw new Error(`"${role.name}" senin en ust rolunun uzerinde ya da ayni seviyede - verilemez.`);
     }
 
