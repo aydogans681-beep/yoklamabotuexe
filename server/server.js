@@ -1813,6 +1813,32 @@ app.use(express.static(path.join(__dirname, 'public'), {
     setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
 }));
 
+// Surum/teshis ucu - GIRIS GEREKTIRMEZ ki tarayiciya yapistirip bakabilesin.
+// Yalnizca sunucunun ne zaman baslatildigini ve server.js'in disk zamanini
+// donduruyor; gizli bilgi icermiyor. "Guncelledim ama eski kod mu calisiyor?"
+// sorusunu kesin cevaplamak icin.
+const SUNUCU_BASLANGIC = Date.now();
+app.get('/api/surum', (req, res) => {
+    let dosyaZamani = null;
+    try {
+        dosyaZamani = fs.statSync(__filename).mtime.toISOString();
+    } catch (error) { /* yoksay */ }
+    res.json({
+        ok: true,
+        baslatildi: new Date(SUNUCU_BASLANGIC).toISOString(),
+        calismaSuresiSn: Math.round((Date.now() - SUNUCU_BASLANGIC) / 1000),
+        serverJsTarihi: dosyaZamani,
+        // Bu listedeki uclar surumle birlikte gelir; eksikse kod eskidir.
+        ucVar: {
+            aktiflik: true,
+            aktiflikTani: true,
+            etkinlik: true,
+            hesapLoglari: true,
+            ticketOtomatik: true,
+        },
+    });
+});
+
 app.post('/api/login', (req, res) => {
     const username = String((req.body && req.body.username) || '').trim();
     const password = String((req.body && req.body.password) || '');
@@ -2900,6 +2926,10 @@ server.listen(PORT, () => {
     const mb = (n) => Math.round(n / 1024 / 1024);
     const limitMB = Math.round(require('v8').getHeapStatistics().heap_size_limit / 1024 / 1024);
     console.log(`[Sistem] Node bellek siniri: ${limitMB} MB · su anki rss: ${mb(process.memoryUsage().rss)} MB`);
+    try {
+        console.log(`[Sistem] Calisan kod: ${__filename} (${fs.statSync(__filename).mtime.toISOString()})`);
+    } catch (error) { /* yoksay */ }
+    console.log('[Sistem] Surum kontrolu: http://localhost:' + PORT + '/api/surum');
 });
 
 // Bellek kullanimini periyodik olarak logla - yavaslamanin bellek baskisindan
