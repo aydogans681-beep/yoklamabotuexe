@@ -52,9 +52,13 @@ async function okuJson(res) {
         return JSON.parse(metin);
     } catch (error) {
         const html = metin.trim().startsWith('<');
+        // Hangi ucun eksik oldugunu da yaziyoruz - yeniden baslatmaya ragmen
+        // devam ederse hangi surumun calistigi buradan anlasilir.
+        let yol = '';
+        try { yol = new URL(res.url).pathname; } catch (e) { yol = res.url || ''; }
         throw new Error(html
-            ? 'Sunucu bu isteği tanımıyor. Güncelleme sonrası bot yeniden başlatılmamış olabilir - sunucuda botu kapatıp yeniden başlat.'
-            : `Sunucudan beklenmeyen cevap geldi (HTTP ${res.status}).`);
+            ? `Sunucu "${yol}" isteğini tanımıyor. Güncelleme sonrası bot yeniden başlatılmamış olabilir - sunucuda botu kapatıp yeniden başlat.`
+            : `Sunucudan beklenmeyen cevap geldi (HTTP ${res.status}, ${yol}).`);
     }
 }
 

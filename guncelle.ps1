@@ -113,12 +113,60 @@ if ($pm2Kayitli) {
     Write-Host "    pm2 start server.js --name yoklama"
     Write-Host "    pm2 save"
 } else {
-    Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Bot pm2 ile yonetilmiyor; su an calisan 'node server.js' penceresini" -ForegroundColor Yellow
-    Write-Host "kapatip su klasorde yeniden baslatman gerekiyor:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "    cd `"$sunucuDizini`""
-    Write-Host "    node server.js"
+    # pm2 yoksa calisan node surecini kendimiz bulup yeniden baslatiyoruz.
+    # Elle yeniden baslatmayi unutmak en sik yasanan sorundu: dosyalar
+    # guncelleniyor ama surec eski kodu calistirmaya devam ediyor ve panel
+    # "Sunucu bu istegi tanimiyor" hatasi veriyordu.
+    $nodeSurecleri = @()
+    try {
+        $nodeSurecleri = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction Stop |
+            Where-Object { $_.CommandLine -and $_.CommandLine -match 'server\.js' })
+    } catch {
+        $nodeSurecleri = @()
+    }
+
+    if ($nodeSurecleri.Count -eq 1) {
+        $eskiPid = $nodeSurecleri[0].ProcessId
+        Write-Host "Calisan bot sureci bulundu (PID $eskiPid), yeniden baslatiliyor..." -ForegroundColor Green
+        try {
+            Stop-Process -Id $eskiPid -Force -ErrorAction Stop
+            Start-Sleep -Seconds 2
+            Start-Process -FilePath 'node' -ArgumentList 'server.js' `
+                          -WorkingDirectory $sunucuDizini -WindowStyle Minimized
+            Start-Sleep -Seconds 3
+            Write-Host ""
+            Write-Host "TAMAM - bot yeniden baslatildi." -ForegroundColor Cyan
+            Write-Host "Yeni pencere simge durumunda acildi. Kapatirsan bot durur -" -ForegroundColor DarkGray
+            Write-Host "kalici olmasi icin pm2'ye gecmeni oneririm:" -ForegroundColor DarkGray
+            Write-Host "    npm install -g pm2" -ForegroundColor DarkGray
+            Write-Host "    cd `"$sunucuDizini`"; pm2 start server.js --name yoklama; pm2 save" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "Yeniden baslatilamadi: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Elle yap:  cd `"$sunucuDizini`"  sonra  node server.js" -ForegroundColor Yellow
+        }
+    } elseif ($nodeSurecleri.Count -eq 0) {
+        Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
+        Write-Host "Calisan bot sureci bulunamadi, baslatiliyor..." -ForegroundColor Yellow
+        try {
+            Start-Process -FilePath 'node' -ArgumentList 'server.js' `
+                          -WorkingDirectory $sunucuDizini -WindowStyle Minimized
+            Start-Sleep -Seconds 3
+            Write-Host "Bot baslatildi." -ForegroundColor Cyan
+        } catch {
+            Write-Host "Baslatilamadi: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Elle yap:  cd `"$sunucuDizini`"  sonra  node server.js" -ForegroundColor Yellow
+        }
+    } else {
+        # Birden fazla node sureci var - hangisinin bot oldugunu bilemeyiz,
+        # yanlis olani kapatmaktansa kullaniciya birakiyoruz.
+        Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Birden fazla node sureci calisiyor, hangisinin bot oldugu belirsiz." -ForegroundColor Yellow
+        $nodeSurecleri | ForEach-Object { Write-Host "   PID $($_.ProcessId): $($_.CommandLine)" -ForegroundColor DarkGray }
+        Write-Host ""
+        Write-Host "Bot penceresini kapatip elle baslat:" -ForegroundColor Yellow
+        Write-Host "    cd `"$sunucuDizini`""
+        Write-Host "    node server.js"
+    }
 }
 Write-Host ""
