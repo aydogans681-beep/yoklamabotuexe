@@ -46,6 +46,7 @@
                 <button class="tab-btn active" data-tab="yoklama"><span class="ico">📋</span>Yoklama</button>
                 <button class="tab-btn" data-tab="yetkililer"><span class="ico">👥</span>Yetkililer</button>
                 <button class="tab-btn" data-tab="roller"><span class="ico">🏷️</span>Rol Ver/Al</button>
+                <button class="tab-btn" data-tab="aktiflik"><span class="ico">🟢</span>Aktiflik</button>
                 <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span>Etkinlik</button>
                 <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span>TX Logs</button>
                 <button class="tab-btn" data-tab="hesaploglari"><span class="ico">🔑</span>Hesap Logları</button>
@@ -190,6 +191,60 @@
             <div id="roleListWrap">
                 <div class="empty-hint" id="roleEmpty">Önce Yetkililer sekmesinden bir kişi seç.</div>
                 <div class="role-list" id="roleList"></div>
+            </div>
+        </div>
+
+        <!-- ================= AKTİFLİK ================= -->
+        <!-- Belirlenen pencere içinde aktiflik kanalına mesaj atan yetkililer
+             "Aktif", atmayanlar "Aktif Değil". Pencere seçilebilir. -->
+        <div class="tab-panel" id="tab-aktiflik">
+            <div class="toolbar logs-toolbar" style="margin-bottom:12px;">
+                <span class="logs-title">Aktiflik</span>
+                <span class="scanStatus">Pencere:</span>
+                <div class="filter-chips" id="presenceWindows">
+                    <button class="chip" data-win="30">30 dk</button>
+                    <button class="chip active" data-win="60">1 saat</button>
+                    <button class="chip" data-win="120">2 saat</button>
+                    <button class="chip" data-win="360">6 saat</button>
+                    <button class="chip" data-win="1440">24 saat</button>
+                </div>
+                <span class="grow"></span>
+                <span class="live-dot" id="presenceLive">CANLI</span>
+                <button class="secondary small" id="presenceFormatBtn" title="Bu kanala mesajları kim atıyor?">Biçim kontrolü</button>
+                <button class="secondary small" id="presenceRefreshBtn">Yenile</button>
+            </div>
+
+            <div class="kpi-row" style="margin-bottom:12px;">
+                <div class="kpi is-ok">
+                    <span class="kpi-label">Aktif</span>
+                    <span class="kpi-value" id="presActive">0</span>
+                </div>
+                <div class="kpi is-attn">
+                    <span class="kpi-label">Aktif Değil</span>
+                    <span class="kpi-value" id="presInactive">0</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Toplam yetkili</span>
+                    <span class="kpi-value" id="presTotal">0</span>
+                </div>
+            </div>
+
+            <div class="toolbar" style="margin-bottom:10px;">
+                <input type="text" class="text-search" id="presenceSearch" placeholder="Yetkili ara...">
+                <span class="scanStatus" id="presenceStatus"></span>
+            </div>
+
+            <div id="presenceWrap">
+                <div class="presence-cols">
+                    <div class="presence-col">
+                        <h3 class="presence-head ok">Aktif <span id="presActiveCount">0</span></h3>
+                        <div class="presence-list" id="presenceActive"></div>
+                    </div>
+                    <div class="presence-col">
+                        <h3 class="presence-head bad">Aktif Değil <span id="presInactiveCount">0</span></h3>
+                        <div class="presence-list" id="presenceInactive"></div>
+                    </div>
+                </div>
             </div>
         </div>
 

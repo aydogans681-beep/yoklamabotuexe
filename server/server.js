@@ -288,6 +288,13 @@ const ACTIVITY_CHANNELS = [
     },
 ];
 
+// AKTIFLIK: yetkililerin duzenli (ornegin saatte bir) mesaj attigi kanal.
+// Belirlenen pencere icinde mesaj atan "Aktif", atmayan "Aktif Degil".
+const PRESENCE_CHANNELS = [
+    { key: 'aktiflik', label: 'Aktiflik', channelId: '1530743292524761148', personFrom: 'author' },
+];
+const AKTIFLIK_VARSAYILAN_PENCERE_DK = 60;
+
 const LOG_CHANNELS = [
     { key: 'ban', label: 'Ban', channelId: '1514634711413293197' },
     { key: 'unban', label: 'Unban', channelId: '1456027006964858901' },
@@ -1104,6 +1111,7 @@ const logChannelIdToKey = new Map();
 // kanallari once cekildigi icin, buyuk log kanallari olan sunucularda etkinlik
 // sayaclari yeniden baslatmadan sonra uzun sure bos gorunuyordu.
 const ALL_CHANNELS = [
+    ...PRESENCE_CHANNELS.map((c) => ({ ...c, kind: 'aktiflik' })),
     ...ACTIVITY_CHANNELS.map((c) => ({ ...c, kind: 'aktivite' })),
     ...LOG_CHANNELS.map((c) => ({ ...c, kind: 'log' })),
 ];
@@ -2453,8 +2461,8 @@ async function buildDailyReport(key, gun) {
 // dondurur - ekran goruntusu beklemeden teshis edilebilsin diye.
 app.get('/api/etkinlik/:key/bicim', requireAuth, async (req, res) => {
     const store = logStore.get(req.params.key);
-    if (!store || store.kind !== 'aktivite') {
-        return res.status(404).json({ ok: false, error: 'Bilinmeyen etkinlik menüsü.' });
+    if (!store || (store.kind !== 'aktivite' && store.kind !== 'aktiflik')) {
+        return res.status(404).json({ ok: false, error: 'Bilinmeyen menü.' });
     }
     if (!store.channelId) return res.json({ ok: false, error: 'Bu menü için kanal ID girilmemiş.' });
 
@@ -2518,6 +2526,88 @@ app.get('/api/etkinlik/:key/gunluk', requireAuth, async (req, res) => {
     }
 });
 
+// --- AKTIFLIK ---
+// Pencere icinde mesaj atan yetkililer "Aktif", atmayanlar "Aktif Degil".
+async function buildPresenceReport(pencereDk) {
+    const store = logStore.get('aktiflik');
+    if (!store) throw new Error('Aktiflik kanali yapilandirilmamis.');
+
+    const simdi = Date.now();
+    const pencereMs = Math.max(1, pencereDk) * 60 * 1000;
+    const sinir = simdi - pencereMs;
+
+    // Kisi -> son mesaj zamani ve pencere icindeki adet
+    const sonMesaj = new Map();
+    const pencereAdedi = new Map();
+    const gunlukAdet = new Map();
+    const gunSiniri = simdi - 24 * 60 * 60 * 1000;
+    store.messages.forEach((m) => {
+        const kisi = resolvePerson(store, m);
+        if (!kisi) return;
+        const onceki = sonMesaj.get(kisi);
+        if (!onceki || m.createdTimestamp > onceki) sonMesaj.set(kisi, m.createdTimestamp);
+        if (m.createdTimestamp >= sinir) pencereAdedi.set(kisi, (pencereAdedi.get(kisi) || 0) + 1);
+        if (m.createdTimestamp >= gunSiniri) gunlukAdet.set(kisi, (gunlukAdet.get(kisi) || 0) + 1);
+    });
+
+    let yetkililer = [];
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        yetkililer = [...guild.members.cache.values()].filter((member) => (
+            ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))
+        ));
+    } catch (error) {
+        console.log(`[Aktiflik] Yetkili listesi alinamadi: ${error.message}`);
+    }
+
+    const hepsi = yetkililer.map((member) => {
+        const son = sonMesaj.get(member.id) || null;
+        return {
+            id: member.id,
+            displayName: member.displayName,
+            tag: member.user.tag,
+            avatarURL: member.displayAvatarURL({ size: 64 }),
+            lastAt: son,
+            minutesAgo: son ? Math.floor((simdi - son) / 60000) : null,
+            inWindow: pencereAdedi.get(member.id) || 0,
+            last24h: gunlukAdet.get(member.id) || 0,
+            inVoice: Boolean(member.voice && member.voice.channelId),
+        };
+    });
+
+    // Aktif: en yeni mesaj once. Aktif degil: en uzun suredir yazmayan once.
+    const aktif = hepsi.filter((m) => m.lastAt && m.lastAt >= sinir)
+        .sort((a, b) => b.lastAt - a.lastAt);
+    const pasif = hepsi.filter((m) => !m.lastAt || m.lastAt < sinir)
+        .sort((a, b) => (a.lastAt || 0) - (b.lastAt || 0));
+
+    return {
+        label: store.label,
+        configured: Boolean(store.channelId),
+        status: store.status,
+        loaded: store.loaded,
+        fetchedAt: store.fetchedAt,
+        windowMinutes: pencereDk,
+        now: simdi,
+        total: hepsi.length,
+        activeCount: aktif.length,
+        inactiveCount: pasif.length,
+        active: aktif,
+        inactive: pasif,
+    };
+}
+
+app.get('/api/aktiflik', requireAuth, async (req, res) => {
+    const pencere = Math.min(24 * 60, Math.max(5, Number(req.query.pencere) || AKTIFLIK_VARSAYILAN_PENCERE_DK));
+    try {
+        res.json({ ok: true, ...(await buildPresenceReport(pencere)) });
+    } catch (error) {
+        console.log(`[Aktiflik] Rapor hatasi: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
 app.get('/api/etkinlik', requireAuth, (req, res) => {
     res.json({
         ok: true,
@@ -2546,8 +2636,8 @@ app.get('/api/etkinlik/:key', requireAuth, async (req, res) => {
 // Bir kisinin o kanaldaki mesajlari - listede uzerine tiklayinca aciliyor.
 app.get('/api/etkinlik/:key/mesajlar', requireAuth, (req, res) => {
     const store = logStore.get(req.params.key);
-    if (!store || store.kind !== 'aktivite') {
-        return res.status(404).json({ ok: false, error: 'Bilinmeyen etkinlik menüsü.' });
+    if (!store || (store.kind !== 'aktivite' && store.kind !== 'aktiflik')) {
+        return res.status(404).json({ ok: false, error: 'Bilinmeyen menü.' });
     }
     const memberId = String(req.query.memberId || '');
     if (!memberId) return res.json({ ok: false, error: 'Kişi seçilmemiş.' });
