@@ -23,7 +23,7 @@ Write-Host "Klasor: $kok"
 Write-Host ""
 
 # --- 0) Gizli dosyalar yerinde mi? ---
-if (-not (Test-Path "$kok\config.env")) {
+if (-not (Test-Path (Join-Path $kok "config.env"))) {
     Write-Host "UYARI: config.env bulunamadi. Bot token olmadan baslamaz." -ForegroundColor Yellow
 }
 
@@ -48,7 +48,8 @@ if ($LASTEXITCODE -ne 0) { Write-Host "git pull basarisiz oldu." -ForegroundColo
 # --- 3) Bagimliliklar ---
 Write-Host ""
 Write-Host "[2/3] Bagimliliklar kontrol ediliyor..." -ForegroundColor Green
-Set-Location "$kok\server"
+$sunucuDizini = Join-Path $kok "server"
+Set-Location $sunucuDizini
 npm install --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { Write-Host "npm install basarisiz oldu." -ForegroundColor Red; exit 1 }
 
@@ -73,7 +74,7 @@ if ($pm2Kayitli) {
     Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
     Write-Host "Bot pm2 ile yonetilmiyor; su an calisan 'node server.js' penceresini" -ForegroundColor Yellow
     Write-Host "kapatip su klasorde yeniden baslatman gerekiyor:" -ForegroundColor Yellow
-    Write-Host "    cd `"$kok\server`""
+    Write-Host "    cd `"$sunucuDizini`""
     Write-Host "    node server.js"
 }
 Write-Host ""
