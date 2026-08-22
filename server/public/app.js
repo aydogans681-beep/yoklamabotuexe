@@ -625,6 +625,16 @@ async function refreshLogMenu() {
 }
 
 function onLogStatusUpdate(msg) {
+    // Etkinlik/ticket kanali hazir olunca acik olan Etkinlik sekmesini
+    // kendiliginden tazele - kullanici "veri yok" ekranina bakip kalmasin.
+    if (msg.key === actChannelKey && document.getElementById('tab-etkinlik').classList.contains('active')) {
+        if (msg.status === 'hazir') {
+            loadActivityReport();
+        } else if (msg.status === 'yukleniyor') {
+            activityStatus.textContent = `Geçmiş çekiliyor: ${msg.loaded} mesaj...`;
+        }
+    }
+
     const channel = logChannels.find((c) => c.key === msg.key);
     if (channel) {
         channel.status = msg.status;

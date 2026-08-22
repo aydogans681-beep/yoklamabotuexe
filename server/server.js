@@ -1099,9 +1099,13 @@ const logStore = new Map(); // key -> { ...meta, messages: [], status, loaded, e
 const logChannelIdToKey = new Map();
 
 // Iki liste de ayni depoya giriyor; hangi sekmede gorunecegini "kind" belirliyor.
+// SIRA ONEMLI: etkinlik/ticket kanallari ONCE cekiliyor. Bunlar gunluk takip
+// icin kullaniliyor, TX Logs ise gerektiginde bakilan bir arsiv. Onceden log
+// kanallari once cekildigi icin, buyuk log kanallari olan sunucularda etkinlik
+// sayaclari yeniden baslatmadan sonra uzun sure bos gorunuyordu.
 const ALL_CHANNELS = [
-    ...LOG_CHANNELS.map((c) => ({ ...c, kind: 'log' })),
     ...ACTIVITY_CHANNELS.map((c) => ({ ...c, kind: 'aktivite' })),
+    ...LOG_CHANNELS.map((c) => ({ ...c, kind: 'log' })),
 ];
 
 ALL_CHANNELS.forEach((channel) => {
@@ -1380,7 +1384,7 @@ let logPrimingStarted = false;
 async function primeAllLogs() {
     if (logPrimingStarted) return;
     logPrimingStarted = true;
-    console.log('[Loglar] Tum log kanallarinin gecmisi arka planda cekiliyor...');
+    console.log('[Loglar] Kanal gecmisleri arka planda cekiliyor (once etkinlik/ticket)...');
     // Kanallari SIRAYLA cekiyoruz - hepsini ayni anda baslatmak Discord rate
     // limit'ini cok daha hizli tuketirdi.
     for (const channel of ALL_CHANNELS) {
