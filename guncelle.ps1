@@ -57,23 +57,52 @@ if ($LASTEXITCODE -ne 0) { Write-Host "npm install basarisiz oldu." -ForegroundC
 Write-Host ""
 Write-Host "[3/3] Bot yeniden baslatiliyor..." -ForegroundColor Green
 
-$pm2Var = Get-Command pm2 -ErrorAction SilentlyContinue
+# pm2 var mi, "yoklama" surecini taniyor mu?
+# DIKKAT: ErrorActionPreference="Stop" acikken, ciktisi yonlendirilen bir dis
+# komutun stderr'e yazmasi PowerShell'de sonlandirici hataya donusuyor.
+# "pm2 describe" kayitli olmayan surec icin stderr'e WARN yaziyor - bu yuzden
+# tespit blogu boyunca hata tercihini gecici olarak Continue'ya aliyoruz.
+$pm2Kurulu  = [bool](Get-Command pm2 -ErrorAction SilentlyContinue)
 $pm2Kayitli = $false
-if ($pm2Var) {
-    pm2 describe yoklama *> $null
-    if ($LASTEXITCODE -eq 0) { $pm2Kayitli = $true }
+
+if ($pm2Kurulu) {
+    $eskiEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & pm2 describe yoklama 2>&1 | Out-Null
+        $pm2Kayitli = ($LASTEXITCODE -eq 0)
+    } catch {
+        $pm2Kayitli = $false
+    } finally {
+        $ErrorActionPreference = $eskiEAP
+        $global:LASTEXITCODE = 0
+    }
 }
 
+Write-Host ""
 if ($pm2Kayitli) {
-    pm2 restart yoklama
-    Write-Host ""
+    $eskiEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & pm2 restart yoklama 2>&1 | Out-Null
+    $ErrorActionPreference = $eskiEAP
     Write-Host "TAMAM - bot pm2 uzerinden yeniden baslatildi." -ForegroundColor Cyan
     Write-Host "Loglari gormek icin:  pm2 logs yoklama"
-} else {
-    Write-Host ""
+} elseif ($pm2Kurulu) {
     Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "pm2 kurulu ama 'yoklama' surecini tanimiyor - hic kaydedilmemis." -ForegroundColor Yellow
+    Write-Host "Botu pm2'ye bir kez kaydedersen bundan sonra bu script kendisi" -ForegroundColor Yellow
+    Write-Host "yeniden baslatir (ve bot pencere kapaninca olmez):" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "    cd `"$sunucuDizini`""
+    Write-Host "    pm2 start server.js --name yoklama"
+    Write-Host "    pm2 save"
+} else {
+    Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
+    Write-Host ""
     Write-Host "Bot pm2 ile yonetilmiyor; su an calisan 'node server.js' penceresini" -ForegroundColor Yellow
     Write-Host "kapatip su klasorde yeniden baslatman gerekiyor:" -ForegroundColor Yellow
+    Write-Host ""
     Write-Host "    cd `"$sunucuDizini`""
     Write-Host "    node server.js"
 }
