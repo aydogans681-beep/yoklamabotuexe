@@ -7,6 +7,7 @@ config.env
 # Panel hesapları (scrypt hash içerir) ve uyarı geçmişi - sunucuda oluşur
 panel-auth.json
 warning-history.json
+panel-audit.json
 
 # Loglar
 *.log

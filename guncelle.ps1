@@ -28,16 +28,31 @@ if (-not (Test-Path (Join-Path $kok "config.env"))) {
 }
 
 # --- 1) Yerel degisiklik var mi? ---
-# VDS'te dosyalari elle duzenlediysen git pull catisir. Once uyariyoruz.
-$degisen = git status --porcelain
-if ($degisen) {
-    Write-Host "DUR: Bu klasorde kaydedilmemis yerel degisiklikler var:" -ForegroundColor Red
-    git status --short
+# SADECE takip edilen dosyalardaki degisiklikler guncellemeyi engelliyor -
+# git pull yalnizca onlarla catisir. Takip edilmeyen dosyalar (?? ile
+# baslayanlar: sunucunun urettigi kayit dosyalari, logo vs.) pull'u
+# engellemez, o yuzden sadece bilgi olarak yaziliyor. Onlara "git checkout"
+# zaten islemez; eskiden yanlislikla onlar da yolu kapatiyordu.
+# DIKKAT: PowerShell'de -like icinde "?" joker karakterdir, yani '??*' her
+# satiri eslestirir. Takipsiz dosyalari ayirmak icin duz metin karsilastirmasi
+# (StartsWith) kullaniliyor.
+$durum = @(git status --porcelain)
+$takipsiz = @($durum | Where-Object { $_.StartsWith('??') })
+$degisen  = @($durum | Where-Object { -not $_.StartsWith('??') })
+
+if ($degisen.Count -gt 0) {
+    Write-Host "DUR: Takip edilen dosyalarda kaydedilmemis degisiklik var:" -ForegroundColor Red
+    $degisen | ForEach-Object { Write-Host "   $_" }
     Write-Host ""
-    Write-Host "Bunlari saklamak istiyorsan:   git stash" -ForegroundColor Yellow
-    Write-Host "Atmak istiyorsan:              git checkout -- ." -ForegroundColor Yellow
+    Write-Host "Saklamak istiyorsan:   git stash" -ForegroundColor Yellow
+    Write-Host "Atmak istiyorsan:      git checkout -- ." -ForegroundColor Yellow
     Write-Host "Sonra bu scripti tekrar calistir."
     exit 1
+}
+if ($takipsiz.Count -gt 0) {
+    Write-Host "Not: Depoda olmayan $($takipsiz.Count) dosya var (guncellemeyi etkilemez):" -ForegroundColor DarkGray
+    $takipsiz | ForEach-Object { Write-Host "   $_" -ForegroundColor DarkGray }
+    Write-Host ""
 }
 
 # --- 2) Yeni surumu cek ---
