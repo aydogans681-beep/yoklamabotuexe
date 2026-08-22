@@ -51,55 +51,69 @@
 
         <!-- ================= YOKLAMA ================= -->
         <div class="tab-panel active" id="tab-yoklama">
-            <div class="toolbar" style="background:var(--bg-card); border:1px solid var(--accent-dim); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
-                <span style="font-size:11.5px; color:var(--text-muted);">🚨 Sesteki tüm yetkilileri bulunduğun ses kanalına çeker</span>
-                <button class="secondary small" id="emergencyBtn">Acil Toplantı</button>
-                <span id="emergencyStatus" style="font-size:11px; color:var(--accent); margin-left:auto;"></span>
+            <!-- Eylem cubugu: tarama + ozet sayilar + acil toplanti tek satirda.
+                 Eskiden bunlar ayri ayri kartlardi ve asil icerik olan kisi
+                 listesi ekranin cok altinda kaliyordu. -->
+            <div class="action-bar">
+                <button id="scanBtn">Taramayı Başlat</button>
+                <button class="secondary small" id="copyReportBtn" disabled>Panoya Kopyala</button>
+                <span class="scanStatus" id="scanStatus">Henüz tarama yapılmadı.</span>
+                <span class="grow"></span>
+                <div class="kpi-row" id="kpiRow" style="display:none;">
+                    <div class="kpi">
+                        <span class="kpi-label">Kontrol edilen</span>
+                        <span class="kpi-value" id="kpiChecked">0</span>
+                    </div>
+                    <div class="kpi is-ok">
+                        <span class="kpi-label">Sesde</span>
+                        <span class="kpi-value" id="kpiInVoice">0</span>
+                    </div>
+                    <div class="kpi is-attn">
+                        <span class="kpi-label">Sesde değil</span>
+                        <span class="kpi-value" id="kpiOut">0</span>
+                    </div>
+                </div>
+                <span class="sep"></span>
+                <button class="secondary small" id="emergencyBtn" title="Sesteki tüm yetkilileri bulunduğun ses kanalına çeker">🚨 Acil Toplantı</button>
+                <span class="scanStatus" id="emergencyStatus"></span>
             </div>
 
-            <div class="card">
-                <h2>Tarama</h2>
-                <div class="toolbar">
-                    <button id="scanBtn">Taramayı Başlat</button>
-                    <button class="secondary small" id="copyReportBtn" disabled>Panoya Kopyala</button>
-                    <span class="scanStatus" id="scanStatus">Henüz tarama yapılmadı - "Taramayı Başlat"a bas.</span>
+            <div class="card-grid">
+                <div class="card accent-card">
+                    <h2>Yoklamayı Al</h2>
+                    <p class="card-desc" style="margin-bottom:8px;">
+                        Seste olmayanları mazeret tepkilerine göre ayırır, uygulamadan önce önizleme gösterir.
+                    </p>
+                    <div class="legend-row">
+                        <span class="legend ok">✅ onaylı → uyarı yok</span>
+                        <span class="legend bad">❌ reddedilmiş → uyarı</span>
+                        <span class="legend bad">tepkisiz / mazeretsiz → uyarı</span>
+                    </div>
+                    <div class="toolbar">
+                        <input type="text" class="text-search" id="attendanceReason" placeholder="Uyarı sebebi (örn: Yoklamaya katılmadı)...">
+                        <button id="attendanceBtn">Yoklamayı Al!</button>
+                    </div>
+                    <div class="scanStatus" id="attendanceStatus" style="margin-top:8px;"></div>
                 </div>
-                <div class="summary" id="summaryText"></div>
+
+                <div class="card">
+                    <h2>Toplu Uyarı</h2>
+                    <p class="card-desc">Listeden <b>+</b> ile seçtiğin kişilere topluca uyarı verir ya da geri alır.</p>
+                    <div class="toolbar" style="margin-bottom:9px;">
+                        <span class="scanStatus" id="selectedCount">0 kişi seçili</span>
+                        <button class="ghost small" id="selectVisibleBtn" type="button">Görüneni Seç</button>
+                        <button class="ghost small" id="clearSelectionBtn" type="button">Temizle</button>
+                        <button class="secondary small" id="bulkUndoBtn" type="button" disabled>Seçilenleri Geri Al</button>
+                    </div>
+                    <div class="toolbar">
+                        <input type="text" class="text-search" id="bulkReason" placeholder="Uyarı sebebi...">
+                        <button id="bulkWarnBtn" disabled>Toplu Uyarı Ver</button>
+                    </div>
+                    <div class="scanStatus" id="bulkProgress" style="margin-top:8px;"></div>
+                </div>
             </div>
 
-            <!-- YENİ: tepkilere göre otomatik yoklama -->
-            <div class="card accent-card">
-                <h2>Yoklamayı Al</h2>
-                <p class="card-desc">
-                    Tarama yapar ve <b>seste olmayan</b> herkesi mazeret tepkilerine göre ayırır:
-                    <span class="legend ok">✅ onaylı → uyarı yok</span>
-                    <span class="legend bad">❌ reddedilmiş → uyarı</span>
-                    <span class="legend bad">tepkisiz / mazeretsiz → uyarı</span>
-                    Uygulamadan önce kimin uyarı alacağını gösterir.
-                </p>
-                <div class="toolbar">
-                    <input type="text" class="text-search" id="attendanceReason" placeholder="Uyarı sebebi (örn: Yoklamaya katılmadı)...">
-                    <button id="attendanceBtn">Yoklamayı Al!</button>
-                    <span class="scanStatus" id="attendanceStatus"></span>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Toplu Uyarı</h2>
-                <div class="toolbar" style="margin-bottom:8px;">
-                    <span style="font-size:11px; color:var(--text-muted);" id="selectedCount">0 kişi seçili</span>
-                    <button class="secondary small" id="selectVisibleBtn" type="button">Görüneni Seç</button>
-                    <button class="secondary small" id="clearSelectionBtn" type="button">Seçimi Temizle</button>
-                    <button class="secondary small" id="bulkUndoBtn" type="button" disabled>Seçilenleri Geri Al</button>
-                </div>
-                <div class="toolbar">
-                    <input type="text" class="text-search" id="bulkReason" placeholder="Uyarı sebebi...">
-                    <button id="bulkWarnBtn" disabled>Toplu Uyarı Ver</button>
-                </div>
-                <div class="scanStatus" id="bulkProgress"></div>
-            </div>
-
-            <div class="filter-row">
+            <div class="filter-row" style="margin-top:12px;">
                 <input type="text" class="text-search" id="searchInput" placeholder="İsim veya etiket ara...">
                 <div class="filter-chips">
                     <button class="chip active" data-filter="all">Tümü</button>
@@ -109,7 +123,7 @@
             </div>
 
             <div id="listWrap">
-                <div class="empty-hint" id="emptyState">Kontrol edilecek rollerde kimse bulunamadı.</div>
+                <div class="empty-hint" id="emptyState">Taramayı başlat, sonuçlar burada listelenecek.</div>
                 <div id="list"></div>
             </div>
         </div>

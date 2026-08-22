@@ -18,7 +18,10 @@ const errorBox = document.getElementById('errorBox');
 
 const scanBtn = document.getElementById('scanBtn');
 const scanStatus = document.getElementById('scanStatus');
-const summaryText = document.getElementById('summaryText');
+const kpiRow = document.getElementById('kpiRow');
+const kpiChecked = document.getElementById('kpiChecked');
+const kpiInVoice = document.getElementById('kpiInVoice');
+const kpiOut = document.getElementById('kpiOut');
 const listEl = document.getElementById('list');
 const emptyState = document.getElementById('emptyState');
 const searchInput = document.getElementById('searchInput');
@@ -455,7 +458,13 @@ emergencyBtn.addEventListener('click', async () => {
 function renderResults(data) {
     lastResults = data.members;
     copyReportBtn.disabled = data.members.length === 0;
-    summaryText.innerHTML = `Kontrol edilen: <b>${data.totalChecked}</b> · Sesde: <span class="green-num">${data.totalInVoice}</span> · Sesde değil: <span class="red-num">${data.totalChecked - data.totalInVoice}</span>`;
+    // Ozet sayilar: grafik degil, KPI kutucuklari - uc basligin isi tek bir
+    // sayiyi okutmak. Renkler durum paleti (yesil "sesde", amber "sesde
+    // degil"), her biri yazili etiketiyle birlikte.
+    kpiChecked.textContent = data.totalChecked;
+    kpiInVoice.textContent = data.totalInVoice;
+    kpiOut.textContent = data.totalChecked - data.totalInVoice;
+    kpiRow.style.display = 'flex';
     applyFilters();
 }
 
@@ -612,13 +621,37 @@ function selectLog(key) {
     loadLogPage();
 }
 
+// Discord mesajlari markdown iceriyor (**kalin**, *egik*, `kod`, ~~ustu cizili~~).
+// Ham haliyle basinca log satirlarinda yildizlar gorunuyordu. Once HTML kacisi
+// yapiliyor, SONRA markdown uygulaniyor - sira onemli, tersi XSS acardi.
+function renderDiscordMarkdown(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/```([\s\S]*?)```/g, (m, kod) => `<code class="md-block">${kod.trim()}</code>`);
+    out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    out = out.replace(/\*\*\*([^*\n]+)\*\*\*/g, '<b><i>$1</i></b>');
+    out = out.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+    out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+    out = out.replace(/__([^_\n]+)__/g, '<u>$1</u>');
+    out = out.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+    out = out.replace(/&lt;@!?(\d+)&gt;/g, '<span class="md-mention">@$1</span>');
+    out = out.replace(/&lt;@&amp;(\d+)&gt;/g, '<span class="md-mention">@rol</span>');
+    out = out.replace(/&lt;#(\d+)&gt;/g, '<span class="md-mention">#kanal</span>');
+    out = out.replace(/\n/g, '<br>');
+    return out;
+}
+
 function renderEmbed(embed) {
-    const fields = embed.fields
-        .map((f) => `<div class="embed-field"><b>${escapeHtml(f.name)}</b><br>${escapeHtml(f.value)}</div>`)
-        .join('');
+    // Alanlar eskiden alt alta iki satir kapliyordu (ad, sonra deger); yan yana
+    // tek satira alindi - 180 mesajlik bir logda ekrana sigan satir sayisi
+    // bunu dogrudan belirliyor.
+    const fields = embed.fields.length
+        ? `<div class="embed-fields">${embed.fields
+            .map((f) => `<span class="embed-field"><b>${escapeHtml(f.name)}:</b> ${renderDiscordMarkdown(f.value)}</span>`)
+            .join('')}</div>`
+        : '';
     return `<div class="log-embed">
         ${embed.title ? `<div class="embed-title">${escapeHtml(embed.title)}</div>` : ''}
-        ${embed.description ? `<div class="embed-desc">${escapeHtml(embed.description)}</div>` : ''}
+        ${embed.description ? `<div class="embed-desc">${renderDiscordMarkdown(embed.description)}</div>` : ''}
         ${fields}
     </div>`;
 }
@@ -639,7 +672,7 @@ function renderLogEntry(entry) {
                 <span class="log-author">${escapeHtml(entry.authorTag)}</span>
                 <span class="log-time">${formatDate(entry.createdTimestamp)}</span>
             </div>
-            ${entry.content ? `<div class="log-content">${escapeHtml(entry.content)}</div>` : ''}
+            ${entry.content ? `<div class="log-content">${renderDiscordMarkdown(entry.content)}</div>` : ''}
             ${embeds}
             ${attachments}
         </div>`;
