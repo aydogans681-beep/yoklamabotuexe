@@ -361,7 +361,6 @@ code.md-block { display: block; padding: 6px 8px; margin: 4px 0; white-space: pr
     font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
     border: 1px solid var(--border-strong); color: var(--ink-3);
 }
-.account-row .acc-spacer { flex: 1; }
 
 /* ---------- giriş ekranı ---------- */
 .login-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -413,7 +412,7 @@ button.primary { width: 100%; padding: 10px; font-size: 13px; margin-top: 4px; }
 .preview-row img { width: 24px; height: 24px; border-radius: 50%; }
 .preview-row .p-name { font-size: 12px; font-weight: 600; }
 .preview-row .p-tag { font-size: 10.5px; color: var(--ink-3); }
-.preview-row .p-spacer { flex: 1; }
+.p-spacer, .acc-spacer { flex: 1; }
 .preview-row .p-reason { font-size: 11px; color: var(--ink-3); }
 .preview-row .p-next {
     font-size: 10.5px; font-weight: 700; color: var(--accent);
@@ -428,4 +427,68 @@ button.primary { width: 100%; padding: 10px; font-size: 13px; margin-top: 4px; }
     .logs-menu { width: 100%; flex-direction: row; overflow-x: auto; }
     .row { grid-template-columns: 30px 1fr; }
     .action { grid-column: 1 / -1; flex-direction: row; align-items: center; flex-wrap: wrap; }
+}
+
+/* ==========================================================================
+   Yetkililer + Rol Ver/Al
+   ========================================================================== */
+
+.role-dot {
+    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    display: inline-block; margin-right: 6px; vertical-align: -1px;
+}
+.log-menu-item .role-name { display: flex; align-items: center; min-width: 0; }
+.log-menu-item .role-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- yetkili satırı --- */
+.staff-entry { align-items: center; }
+.staff-avatar { width: 32px; height: 32px; }
+.staff-name { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.staff-joined { font-size: 10.5px; color: var(--ink-3); margin-top: 4px; }
+.staff-actions { display: flex; align-items: center; flex-shrink: 0; }
+
+.role-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.role-chip {
+    display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--ink-2);
+}
+.role-chip.muted { color: var(--ink-3); font-weight: 400; }
+
+/* --- rol ver/al --- */
+.role-target { display: flex; align-items: center; gap: 11px; }
+.role-target img { width: 40px; height: 40px; border-radius: 50%; }
+
+.check-inline {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--ink-2); cursor: pointer; white-space: nowrap;
+}
+.check-inline input { accent-color: var(--accent); cursor: pointer; }
+
+#roleListWrap { flex: 1; min-height: 0; overflow-y: auto; }
+.role-list { display: flex; flex-direction: column; gap: 5px; }
+
+.role-row {
+    display: flex; align-items: center; gap: 8px; padding: 9px 13px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-s);
+}
+.role-row-name { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.role-row.has-role { border-color: var(--ok-line); background: var(--ok-soft); }
+/* Verilemeyen roller gizlenmiyor, soluklaştırılıyor - hiyerarşideki yerini
+   görmek "neden veremiyorum" sorusunu kendiliğinden cevaplıyor. */
+.role-row.locked { opacity: .55; }
+.role-row-msg { font-size: 10.5px; }
+
+.role-tag {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    padding: 2px 6px; border-radius: 3px;
+    background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--ink-3);
+}
+.role-tag.has { color: var(--ok); border-color: var(--ok-line); background: transparent; }
+.role-locked-msg { font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+
+@media (max-width: 760px) {
+    .staff-entry { align-items: flex-start; }
+    .role-row { flex-wrap: wrap; }
 }

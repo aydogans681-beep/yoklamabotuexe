@@ -517,6 +517,8 @@ tabButtons.forEach((btn) => {
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
         if (btn.dataset.tab === 'loglar') refreshLogMenu();
         if (btn.dataset.tab === 'ayarlar') refreshAccounts();
+        if (btn.dataset.tab === 'yetkililer') initStaffTab();
+        if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
     });
 });
 
@@ -1035,3 +1037,306 @@ copyReportBtn.addEventListener('click', async () => {
 });
 
 checkSession();
+
+// ============================================================================
+// --- YETKİLİLER ---
+// Solda hiyerarşi sıralı roller, sağda seçilen roldeki kişiler.
+// ============================================================================
+const staffRoleMenu = document.getElementById('staffRoleMenu');
+const staffList = document.getElementById('staffList');
+const staffTitle = document.getElementById('staffTitle');
+const staffStatus = document.getElementById('staffStatus');
+const staffSearch = document.getElementById('staffSearch');
+const staffRefreshBtn = document.getElementById('staffRefreshBtn');
+
+let guildRoles = [];          // hiyerarşi sırasında (üstten alta)
+let selfTopPosition = 0;
+let staffMembers = [];
+let activeStaffRoleId = null;
+let staffLoaded = false;
+let staffSearchTimer = null;
+
+function roleDot(color) {
+    return `<span class="role-dot" style="background:${color ? escapeHtml(color) : 'var(--ink-3)'}"></span>`;
+}
+
+async function loadGuildRoles(force) {
+    if (guildRoles.length && !force) return true;
+    try {
+        const res = await fetch('/api/roller');
+        if (res.status === 401) { showLogin(); return false; }
+        const data = await res.json();
+        if (!data.ok) { staffStatus.textContent = `Roller alınamadı: ${data.error}`; return false; }
+        guildRoles = data.roles;
+        selfTopPosition = data.selfTopPosition;
+        return true;
+    } catch (error) {
+        staffStatus.textContent = `Hata: ${error.message}`;
+        return false;
+    }
+}
+
+function renderStaffRoleMenu() {
+    staffRoleMenu.innerHTML = '';
+    const hepsi = document.createElement('button');
+    hepsi.className = `log-menu-item${activeStaffRoleId === null ? ' active' : ''}`;
+    hepsi.innerHTML = '<span>Tüm Yetkililer</span>';
+    hepsi.addEventListener('click', () => selectStaffRole(null));
+    staffRoleMenu.appendChild(hepsi);
+
+    guildRoles.forEach((role) => {
+        if (role.memberCount === 0) return; // boş rolleri listede taşımanın anlamı yok
+        const btn = document.createElement('button');
+        btn.className = `log-menu-item${role.id === activeStaffRoleId ? ' active' : ''}`;
+        btn.innerHTML = `<span class="role-name">${roleDot(role.color)}${escapeHtml(role.name)}</span>`
+            + `<span class="count">${role.memberCount}</span>`;
+        btn.title = `${role.name} · ${role.memberCount} kişi · hiyerarşi ${role.position}`;
+        btn.addEventListener('click', () => selectStaffRole(role.id));
+        staffRoleMenu.appendChild(btn);
+    });
+}
+
+function staffRowHtml(member) {
+    const roller = member.roles.length
+        ? member.roles.slice(0, 8).map((r) => `<span class="role-chip">${roleDot(r.color)}${escapeHtml(r.name)}</span>`).join('')
+          + (member.roles.length > 8 ? `<span class="role-chip muted">+${member.roles.length - 8}</span>` : '')
+        : '<span class="role-chip muted">Rol yok</span>';
+    return `
+        <img class="log-avatar staff-avatar" src="${encodeURI(member.avatarURL)}" alt="">
+        <div class="log-body">
+            <div class="log-meta">
+                <span class="staff-name">${escapeHtml(member.displayName)}</span>
+                <span class="log-time">${escapeHtml(member.tag)}</span>
+                <span class="voiceLabel ${member.inVoice ? 'in' : 'out'}">${member.inVoice ? 'Sesde ✅' : 'Sesde Değil ❌'}</span>
+                ${member.currentTierLabel ? `<span class="tier-badge">${escapeHtml(member.currentTierLabel)}</span>` : ''}
+            </div>
+            <div class="role-chips">${roller}</div>
+            ${member.joinedAt ? `<div class="staff-joined">Katılım: ${formatDate(member.joinedAt)}</div>` : ''}
+        </div>
+        <div class="staff-actions">
+            <button class="secondary small" data-role-target="${member.id}">Rol Ver/Al</button>
+        </div>`;
+}
+
+function renderStaffList() {
+    const term = staffSearch.value.trim().toLocaleLowerCase('tr');
+    const filtered = term
+        ? staffMembers.filter((m) => m.displayName.toLocaleLowerCase('tr').includes(term)
+            || m.tag.toLocaleLowerCase('tr').includes(term)
+            || m.id.includes(term))
+        : staffMembers;
+
+    staffList.innerHTML = '';
+    if (filtered.length === 0) {
+        staffList.innerHTML = `<div class="empty-hint">${term ? 'Aramaya uyan kimse yok.' : 'Bu rolde kimse yok.'}</div>`;
+        return;
+    }
+    filtered.forEach((member) => {
+        const div = document.createElement('div');
+        div.className = 'log-entry staff-entry';
+        div.innerHTML = staffRowHtml(member);
+        staffList.appendChild(div);
+    });
+    staffList.querySelectorAll('[data-role-target]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const member = staffMembers.find((m) => m.id === btn.dataset.roleTarget);
+            if (member) openRoleTabFor(member);
+        });
+    });
+    staffStatus.textContent = term
+        ? `${filtered.length} / ${staffMembers.length} kişi`
+        : `${staffMembers.length} kişi`;
+}
+
+async function loadStaff(roleId) {
+    staffList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    staffStatus.textContent = '';
+    try {
+        const url = roleId ? `/api/yetkililer?roleId=${encodeURIComponent(roleId)}` : '/api/yetkililer';
+        const res = await fetch(url);
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        if (!data.ok) {
+            staffList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(data.error)}</div>`;
+            return;
+        }
+        staffMembers = data.members;
+        staffTitle.textContent = data.roleName ? `${data.roleName}` : 'Tüm Yetkililer';
+        renderStaffList();
+    } catch (error) {
+        staffList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function selectStaffRole(roleId) {
+    activeStaffRoleId = roleId;
+    renderStaffRoleMenu();
+    loadStaff(roleId);
+}
+
+async function initStaffTab(force) {
+    if (staffLoaded && !force) return;
+    staffLoaded = true;
+    if (!(await loadGuildRoles(force))) return;
+    renderStaffRoleMenu();
+    await loadStaff(activeStaffRoleId);
+}
+
+staffSearch.addEventListener('input', () => {
+    clearTimeout(staffSearchTimer);
+    staffSearchTimer = setTimeout(renderStaffList, 200);
+});
+staffRefreshBtn.addEventListener('click', () => initStaffTab(true));
+
+// ============================================================================
+// --- ROL VER / AL ---
+// Sunucudaki tüm roller hiyerarşi sırasında. Hesabın kendi en üst rolünün
+// üstündeki roller görünür ama verilemez olarak işaretlenir.
+// ============================================================================
+const roleTarget = document.getElementById('roleTarget');
+const roleTargetHint = document.getElementById('roleTargetHint');
+const roleList = document.getElementById('roleList');
+const roleEmpty = document.getElementById('roleEmpty');
+const roleSearch = document.getElementById('roleSearch');
+const roleStatus = document.getElementById('roleStatus');
+const roleOnlyAssignable = document.getElementById('roleOnlyAssignable');
+
+let roleTargetMember = null;
+let roleSearchTimer = null;
+
+function openRoleTabFor(member) {
+    roleTargetMember = member;
+    document.querySelector('.tab-btn[data-tab="roller"]').click();
+    renderRoleTarget();
+    renderRoleList();
+}
+
+function renderRoleTarget() {
+    if (!roleTargetMember) {
+        roleTarget.style.display = 'none';
+        roleTargetHint.style.display = 'block';
+        roleSearch.disabled = true;
+        return;
+    }
+    roleTargetHint.style.display = 'none';
+    roleSearch.disabled = false;
+    roleTarget.style.display = 'flex';
+    roleTarget.innerHTML = `
+        <img src="${encodeURI(roleTargetMember.avatarURL)}" alt="">
+        <div>
+            <div class="staff-name">${escapeHtml(roleTargetMember.displayName)}</div>
+            <div class="log-time">${escapeHtml(roleTargetMember.tag)} · ${escapeHtml(roleTargetMember.id)}</div>
+        </div>
+        <span class="p-spacer"></span>
+        <span class="scanStatus">${roleTargetMember.roles.length} rolü var</span>
+        <button class="ghost small" id="roleClearTargetBtn">Seçimi bırak</button>`;
+    document.getElementById('roleClearTargetBtn').addEventListener('click', () => {
+        roleTargetMember = null;
+        renderRoleTarget();
+        renderRoleList();
+    });
+}
+
+function renderRoleList() {
+    roleList.innerHTML = '';
+    if (!roleTargetMember) {
+        roleEmpty.textContent = 'Önce Yetkililer sekmesinden bir kişi seç.';
+        roleEmpty.style.display = 'block';
+        roleStatus.textContent = '';
+        return;
+    }
+    const term = roleSearch.value.trim().toLocaleLowerCase('tr');
+    const sahipOlunan = new Set(roleTargetMember.roles.map((r) => r.id));
+
+    const gorunecek = guildRoles.filter((role) => {
+        if (roleOnlyAssignable.checked && !role.assignable) return false;
+        if (term && !role.name.toLocaleLowerCase('tr').includes(term)) return false;
+        return true;
+    });
+
+    if (gorunecek.length === 0) {
+        roleEmpty.textContent = term ? 'Aramaya uyan rol yok.' : 'Gösterilecek rol yok.';
+        roleEmpty.style.display = 'block';
+        return;
+    }
+    roleEmpty.style.display = 'none';
+
+    gorunecek.forEach((role) => {
+        const var_ = sahipOlunan.has(role.id);
+        const row = document.createElement('div');
+        row.className = `role-row${var_ ? ' has-role' : ''}${role.assignable ? '' : ' locked'}`;
+        row.dataset.roleId = role.id;
+
+        let neden = '';
+        if (role.managed) neden = 'Bot/entegrasyon rolü — elle verilemez';
+        else if (!role.assignable) neden = 'Senin en üst rolünün üzerinde — verilemez';
+
+        row.innerHTML = `
+            ${roleDot(role.color)}
+            <span class="role-row-name">${escapeHtml(role.name)}</span>
+            ${role.isAttendance ? '<span class="role-tag">yoklama</span>' : ''}
+            ${role.isWarning ? '<span class="role-tag">uyarı</span>' : ''}
+            ${var_ ? '<span class="role-tag has">bu kişide var</span>' : ''}
+            <span class="p-spacer"></span>
+            <span class="scanStatus role-row-msg"></span>
+            ${neden ? `<span class="role-locked-msg">🔒 ${escapeHtml(neden)}</span>`
+                    : `<button class="${var_ ? 'secondary' : ''} small" data-act="${var_ ? 'al' : 'ver'}">${var_ ? 'Rolü Al' : 'Rolü Ver'}</button>`}`;
+        roleList.appendChild(row);
+    });
+
+    roleList.querySelectorAll('button[data-act]').forEach((btn) => {
+        btn.addEventListener('click', () => onRoleAction(btn));
+    });
+    roleStatus.textContent = `${gorunecek.length} rol gösteriliyor`;
+}
+
+async function onRoleAction(btn) {
+    const row = btn.closest('.role-row');
+    const roleId = row.dataset.roleId;
+    const act = btn.dataset.act;
+    const role = guildRoles.find((r) => r.id === roleId);
+    const msgEl = row.querySelector('.role-row-msg');
+
+    const soru = act === 'ver'
+        ? `"${role.name}" rolü ${roleTargetMember.displayName} kişisine verilecek. Onaylıyor musun?`
+        : `"${role.name}" rolü ${roleTargetMember.displayName} kişisinden alınacak. Onaylıyor musun?`;
+    if (!window.confirm(soru)) return;
+
+    btn.disabled = true;
+    msgEl.textContent = 'Gönderiliyor...';
+    try {
+        const res = await fetch(act === 'ver' ? '/api/rol/ver' : '/api/rol/al', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ memberId: roleTargetMember.id, roleId }),
+        });
+        const result = await res.json();
+        if (!result.ok) {
+            const metin = result.reason === 'zaten-var' ? 'Bu kişide zaten var.'
+                : result.reason === 'yok' ? 'Bu kişide bu rol yok.'
+                : `Hata: ${result.error || 'bilinmeyen'}`;
+            msgEl.textContent = metin;
+            btn.disabled = false;
+            return;
+        }
+        // Yerel durumu güncelle ki düğme "Ver" <-> "Al" arasında dönsün
+        if (act === 'ver') {
+            roleTargetMember.roles.push({ id: role.id, name: role.name, color: role.color });
+        } else {
+            roleTargetMember.roles = roleTargetMember.roles.filter((r) => r.id !== roleId);
+        }
+        renderRoleTarget();
+        renderRoleList();
+        const yeni = roleList.querySelector(`.role-row[data-role-id="${roleId}"] .role-row-msg`);
+        if (yeni) yeni.textContent = act === 'ver' ? 'Verildi.' : 'Alındı.';
+    } catch (error) {
+        msgEl.textContent = `Hata: ${error.message}`;
+        btn.disabled = false;
+    }
+}
+
+roleSearch.addEventListener('input', () => {
+    clearTimeout(roleSearchTimer);
+    roleSearchTimer = setTimeout(renderRoleList, 200);
+});
+roleOnlyAssignable.addEventListener('change', renderRoleList);

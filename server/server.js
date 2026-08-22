@@ -1199,6 +1199,150 @@ async function buildAttendancePreview() {
 }
 
 // ============================================================================
+// --- YETKILILER + ROL VER/AL ---
+// Roller sunucudaki hiyerarsi sirasina gore (position buyukten kucuge)
+// veriliyor. Rol vermek icin yine komut kanalindaki rol botuna /rol-ver ve
+// /rol-al gonderiliyor - bot rolleri kendisi eklemiyor, mevcut tasarim boyle.
+// ============================================================================
+async function getReadyGuild() {
+    const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+    if (!guild) throw new Error('Sunucu bulunamadi, GUILD_ID hatali olabilir.');
+    if (!(await waitForGuildShard(guild))) {
+        throw new Error('Bu sunucu icin gateway baglantisi (shard) uzun suredir hazir degil.');
+    }
+    return guild;
+}
+
+// Hesabin kendi en ust rolunun konumu. Bunun ustundeki roller Discord'da
+// verilemiyor; arayuzde gorunur ama "verilemez" diye isaretleniyor.
+function getSelfHighestPosition(guild) {
+    const me = guild.members.cache.get(client.user.id);
+    if (!me) return 0;
+    let highest = 0;
+    me.roles.cache.forEach((role) => { if (role.position > highest) highest = role.position; });
+    return highest;
+}
+
+function serializeRole(role, selfTop) {
+    return {
+        id: role.id,
+        name: role.name,
+        color: role.hexColor && role.hexColor !== '#000000' ? role.hexColor : null,
+        position: role.position,
+        memberCount: role.members ? role.members.size : 0,
+        managed: Boolean(role.managed), // bot/entegrasyon rolu - kimseye verilemez
+        assignable: !role.managed && role.position < selfTop,
+        isAttendance: ATTENDANCE_ROLE_IDS.includes(role.id),
+        isWarning: WARNING_ROLES.some((w) => w.id === role.id),
+    };
+}
+
+async function listGuildRoles() {
+    const guild = await getReadyGuild();
+    try {
+        await ensureMembersFetched(guild);
+    } catch (error) {
+        console.log(`[Roller] Uye listesi alinamadi: ${error.message}`);
+    }
+    const selfTop = getSelfHighestPosition(guild);
+    const roles = [...guild.roles.cache.values()]
+        .filter((role) => role.id !== guild.id) // @everyone haric
+        .sort((a, b) => b.position - a.position) // hiyerarsi: ustten alta
+        .map((role) => serializeRole(role, selfTop));
+    return { selfTopPosition: selfTop, roles };
+}
+
+function serializeStaffMember(member, guild) {
+    const tierIndex = getWarningTierIndex(member);
+    const roles = [...member.roles.cache.values()]
+        .filter((role) => role.id !== guild.id)
+        .sort((a, b) => b.position - a.position)
+        .map((role) => ({
+            id: role.id,
+            name: role.name,
+            color: role.hexColor && role.hexColor !== '#000000' ? role.hexColor : null,
+        }));
+    return {
+        id: member.id,
+        displayName: member.displayName,
+        tag: member.user.tag,
+        avatarURL: member.displayAvatarURL({ size: 64 }),
+        joinedAt: member.joinedTimestamp || null,
+        roles,
+        currentTierLabel: tierIndex >= 0 ? WARNING_ROLES[tierIndex].label : null,
+        inVoice: Boolean(member.voice && member.voice.channelId),
+    };
+}
+
+// roleId verilirse o roldeki herkes, verilmezse yoklama rollerindeki herkes.
+async function listStaff(roleId) {
+    const guild = await getReadyGuild();
+    try {
+        await ensureMembersFetched(guild);
+    } catch (error) {
+        throw new Error(`Uye listesi alinamadi: ${error.message}`);
+    }
+
+    const matches = guild.members.cache.filter((member) => (
+        roleId
+            ? member.roles.cache.has(roleId)
+            : ATTENDANCE_ROLE_IDS.some((id) => member.roles.cache.has(id))
+    ));
+
+    const members = [...matches.values()]
+        .map((member) => serializeStaffMember(member, guild))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName, 'tr'));
+
+    let roleName = null;
+    if (roleId) {
+        const role = guild.roles.cache.get(roleId);
+        roleName = role ? role.name : roleId;
+    }
+    return { roleId: roleId || null, roleName, total: members.length, members };
+}
+
+// Tek bir rolu rol botu uzerinden verir ya da alir.
+async function sendRoleCommand(kind, memberId, roleId) {
+    if (kind !== 'rol-ver' && kind !== 'rol-al') throw new Error('Gecersiz komut.');
+    const guild = await getReadyGuild();
+
+    let member;
+    try {
+        member = await guild.members.fetch(memberId);
+    } catch (error) {
+        throw new Error(`Kisi bilgisi alinamadi: ${error.message}`);
+    }
+
+    const role = guild.roles.cache.get(roleId);
+    if (!role) throw new Error('Rol bulunamadi.');
+    if (role.managed) throw new Error(`"${role.name}" bir bot/entegrasyon rolu, elle verilemez.`);
+
+    const selfTop = getSelfHighestPosition(guild);
+    if (role.position >= selfTop) {
+        throw new Error(`"${role.name}" senin en ust rolunun uzerinde ya da ayni seviyede - verilemez.`);
+    }
+
+    const has = member.roles.cache.has(roleId);
+    if (kind === 'rol-ver' && has) return { ok: false, reason: 'zaten-var', roleName: role.name };
+    if (kind === 'rol-al' && !has) return { ok: false, reason: 'yok', roleName: role.name };
+
+    let commandChannel;
+    try {
+        commandChannel = await client.channels.fetch(ROLE_COMMAND_CHANNEL_ID);
+    } catch (error) {
+        throw new Error(`Komut kanali alinamadi: ${error.message}`);
+    }
+    if (!commandChannel) throw new Error('Komut kanali bulunamadi.');
+
+    const replyPromise = waitForRoleBotReply();
+    await commandChannel.sendSlash(ROLE_BOT_ID, kind, memberId, roleId);
+    const botReply = await replyPromise;
+
+    console.log(`[Rol] ${member.user.tag} (${memberId}) icin "/${kind}" gonderildi: ${role.name} (${roleId}). Bot cevabi: ${botReply || '(yakalanamadi)'}`);
+    return { ok: true, roleName: role.name, botReply };
+}
+
+// ============================================================================
 // --- HTTP + WEBSOCKET SUNUCUSU ---
 // ============================================================================
 const app = express();
@@ -1527,6 +1671,46 @@ app.post('/api/yoklama/al-uygula', requireAuth, async (req, res) => {
     } catch (error) {
         console.log(`[Yoklama] Yoklamayı Al hatası: ${error.message}`);
         return res.json({ ok: false, error: error.message });
+    }
+});
+
+// --- YETKILILER + ROL VER/AL ---
+app.get('/api/roller', requireAuth, async (req, res) => {
+    try {
+        res.json({ ok: true, ...(await listGuildRoles()) });
+    } catch (error) {
+        console.log(`[Roller] Liste hatasi: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.get('/api/yetkililer', requireAuth, async (req, res) => {
+    const roleId = req.query.roleId ? String(req.query.roleId) : null;
+    try {
+        res.json({ ok: true, ...(await listStaff(roleId)) });
+    } catch (error) {
+        console.log(`[Yetkililer] Liste hatasi: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/rol/ver', requireAuth, async (req, res) => {
+    const { memberId, roleId } = req.body || {};
+    try {
+        res.json(await sendRoleCommand('rol-ver', memberId, roleId));
+    } catch (error) {
+        console.log(`[Rol] Verme hatasi (${memberId} / ${roleId}): ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/rol/al', requireAuth, async (req, res) => {
+    const { memberId, roleId } = req.body || {};
+    try {
+        res.json(await sendRoleCommand('rol-al', memberId, roleId));
+    } catch (error) {
+        console.log(`[Rol] Alma hatasi (${memberId} / ${roleId}): ${error.message}`);
+        res.json({ ok: false, error: error.message });
     }
 });
 

@@ -43,6 +43,8 @@
 
         <div class="tab-bar">
             <button class="tab-btn active" data-tab="yoklama">Yoklama</button>
+            <button class="tab-btn" data-tab="yetkililer">Yetkililer</button>
+            <button class="tab-btn" data-tab="roller">Rol Ver/Al</button>
             <button class="tab-btn" data-tab="loglar">TX Logs</button>
             <button class="tab-btn" data-tab="ayarlar">Ayarlar</button>
         </div>
@@ -125,6 +127,53 @@
             <div id="listWrap">
                 <div class="empty-hint" id="emptyState">Taramayı başlat, sonuçlar burada listelenecek.</div>
                 <div id="list"></div>
+            </div>
+        </div>
+
+        <!-- ================= YETKİLİLER ================= -->
+        <!-- Solda hiyerarşi sıralı rol listesi, sağda seçilen roldeki kişiler.
+             Rol seçilmeden girildiğinde yoklama rollerindeki herkes gelir. -->
+        <div class="tab-panel" id="tab-yetkililer">
+            <div class="logs-layout">
+                <div class="logs-menu" id="staffRoleMenu"></div>
+                <div class="logs-main">
+                    <div class="toolbar logs-toolbar">
+                        <span class="logs-title" id="staffTitle">Tüm Yetkililer</span>
+                        <input type="text" class="text-search" id="staffSearch" placeholder="İsim, etiket veya ID ara...">
+                        <button class="secondary small" id="staffRefreshBtn">Yenile</button>
+                        <span class="scanStatus" id="staffStatus"></span>
+                    </div>
+                    <div class="logs-list" id="staffList">
+                        <div class="empty-hint">Yükleniyor...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= ROL VER / AL ================= -->
+        <div class="tab-panel" id="tab-roller">
+            <div class="card" id="roleTargetCard">
+                <h2>Seçili Kişi</h2>
+                <p class="card-desc" id="roleTargetHint">
+                    Henüz kimse seçilmedi. <b>Yetkililer</b> sekmesinden bir kişinin
+                    "Rol Ver/Al" düğmesine bas, o kişi burada açılsın.
+                </p>
+                <div class="role-target" id="roleTarget" style="display:none;"></div>
+            </div>
+
+            <div class="toolbar logs-toolbar" style="margin-bottom:10px;">
+                <span class="logs-title">Sunucu Rolleri</span>
+                <input type="text" class="text-search" id="roleSearch" placeholder="Rol ara..." disabled>
+                <label class="check-inline">
+                    <input type="checkbox" id="roleOnlyAssignable" checked>
+                    Sadece verilebilenler
+                </label>
+                <span class="scanStatus" id="roleStatus"></span>
+            </div>
+
+            <div id="roleListWrap">
+                <div class="empty-hint" id="roleEmpty">Önce Yetkililer sekmesinden bir kişi seç.</div>
+                <div class="role-list" id="roleList"></div>
             </div>
         </div>
 
