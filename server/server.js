@@ -367,8 +367,12 @@ function markConnected(source) {
         readyPollTimer = null;
     }
     broadcastStatus();
-    // Discord hazir - TX Logs sekmesinin verisini arka planda hazirlamaya basla.
-    primeAllLogs().catch((error) => console.log(`[Loglar] Arka plan yuklemesi hata verdi: ${error.message}`));
+    // Discord hazir. Once uye listesi (tarama bunu bekliyor), sonra TX Logs.
+    // Sirali: ikisini ayni anda baslatmak Discord rate limit'ini daha hizli
+    // tuketir ve uye listesini de geciktirirdi.
+    primeMembers()
+        .then(() => primeAllLogs())
+        .catch((error) => console.log(`[Hazirlik] Arka plan yuklemesi hata verdi: ${error.message}`));
 }
 
 function startReadyPolling() {
@@ -398,14 +402,53 @@ client.on('disconnect', () => {
 });
 
 let membersFetchPromise = null;
+// Uye listesi durumu - arayuze "hazirlaniyor" bilgisi verebilmek icin.
+let membersState = { status: 'bekliyor', count: 0, ms: null }; // bekliyor | yukleniyor | hazir | hata
+
+function broadcastMembersState() {
+    wsBroadcast({ type: 'uye-durum', ...membersState });
+}
+
+// DIKKAT: guild.members.fetch() argumansiz cagrildiginda sunucudaki TUM
+// uyeleri gateway uzerinden indiriyor. Buyuk bir sunucuda bu on binlerce uye
+// demek ve dakikalar surebiliyor. Sonuc onbellege alindigi icin bedeli yalnizca
+// ILK cagriya cikiyordu - yani "Taramayi Baslat"a ilk basan kisi bekliyordu.
+// Artik bagalanti kurulur kurulmaz arka planda baslatiliyor; butona basildiginda
+// liste cogu zaman hazir oluyor.
 function ensureMembersFetched(guild) {
     if (!membersFetchPromise) {
-        membersFetchPromise = guild.members.fetch().catch((error) => {
-            membersFetchPromise = null;
-            throw error;
-        });
+        const basladi = Date.now();
+        membersState = { status: 'yukleniyor', count: 0, ms: null };
+        broadcastMembersState();
+        membersFetchPromise = guild.members.fetch()
+            .then((uyeler) => {
+                const sure = Date.now() - basladi;
+                membersState = { status: 'hazir', count: uyeler.size, ms: sure };
+                broadcastMembersState();
+                console.log(`[Uyeler] ${uyeler.size} uye ${(sure / 1000).toFixed(1)} sn'de cekildi.`);
+                return uyeler;
+            })
+            .catch((error) => {
+                membersFetchPromise = null;
+                membersState = { status: 'hata', count: 0, ms: null };
+                broadcastMembersState();
+                throw error;
+            });
     }
     return membersFetchPromise;
+}
+
+// Bagalanti kurulunca uye listesini onden hazirla.
+async function primeMembers() {
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+        if (!guild) return;
+        if (!(await waitForGuildShard(guild))) return;
+        console.log('[Uyeler] Uye listesi arka planda cekiliyor...');
+        await ensureMembersFetched(guild);
+    } catch (error) {
+        console.log(`[Uyeler] Onden cekme basarisiz: ${error.message}`);
+    }
 }
 
 function repairGuildShardId(guild) {
@@ -498,6 +541,10 @@ function fetchRecentLongExcuses() {
 }
 
 async function runYoklamaScan() {
+    const t0 = Date.now();
+    const sureler = {};
+    const asama = (ad) => wsBroadcast({ type: 'yoklama-asama', asama: ad });
+
     let guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) {
         try {
@@ -511,11 +558,14 @@ async function runYoklamaScan() {
         throw new Error('Bu sunucu için gateway bağlantısı (shard) uzun süredir hazır değil. Sunucu sürecini yeniden başlatmayı dene.');
     }
 
+    asama(membersState.status === 'hazir' ? 'Üye listesi hazır' : 'Üye listesi alınıyor (ilk seferde uzun sürebilir)...');
+    const tUye = Date.now();
     try {
         await ensureMembersFetched(guild);
     } catch (error) {
         throw new Error(`Üye listesi alınamadı - "Missing Access" ise bu hesabın gerekli yetkisi yok olabilir: ${error.message}`);
     }
+    sureler.uyeler = Date.now() - tUye;
 
     const inVoiceIds = new Set();
     guild.channels.cache.forEach((channel) => {
@@ -528,10 +578,13 @@ async function runYoklamaScan() {
         ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))
     ));
 
+    asama('Mazeret kanalları taranıyor...');
+    const tMazeret = Date.now();
     const [excuseByAuthor, longExcuseByAuthor] = await Promise.all([
         fetchRecentExcuses(),
         fetchRecentLongExcuses(),
     ]);
+    sureler.mazeretler = Date.now() - tMazeret;
 
     const results = [...attendanceMembers.values()].map((member) => {
         const inVoice = inVoiceIds.has(member.id);
@@ -563,10 +616,19 @@ async function runYoklamaScan() {
     });
 
     const totalInVoice = results.filter((m) => m.inVoice).length;
-    console.log(`[Yoklama] Tarama tamamlandı: ${results.length} yetkili kontrol edildi, ${totalInVoice} sesde.`);
+    sureler.toplam = Date.now() - t0;
+    const mb = (n) => Math.round(n / 1024 / 1024);
+    const bellek = process.memoryUsage();
+    console.log(`[Yoklama] Tarama tamamlandi: ${results.length} yetkili, ${totalInVoice} sesde. `
+        + `Sureler -> uyeler: ${(sureler.uyeler / 1000).toFixed(1)}sn, `
+        + `mazeretler: ${(sureler.mazeretler / 1000).toFixed(1)}sn, `
+        + `toplam: ${(sureler.toplam / 1000).toFixed(1)}sn. `
+        + `Bellek -> heap ${mb(bellek.heapUsed)}/${mb(bellek.heapTotal)} MB, rss ${mb(bellek.rss)} MB.`);
+    asama('');
 
     return {
         scannedAt: Date.now(),
+        timings: sureler,
         totalChecked: results.length,
         totalInVoice,
         members: results,
@@ -1947,13 +2009,32 @@ server.on('upgrade', (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) => {
         wsClients.add(ws);
         ws.send(JSON.stringify({ type: 'status', state: discordStatus, detail: discordStatusDetail }));
+        // Uye listesi durumunu da hemen gonder - kullanici sonradan baglandiginda
+        // da "hazirlaniyor" bilgisini gorsun, yoksa yalnizca degisiklik aninda
+        // yayinlandigi icin kaciriyordu.
+        ws.send(JSON.stringify({ type: 'uye-durum', ...membersState }));
         ws.on('close', () => wsClients.delete(ws));
     });
 });
 
 server.listen(PORT, () => {
     console.log(`[Sistem] Web paneli http://localhost:${PORT} adresinde dinliyor.`);
+    // Bellek siniri: TX Logs tum gecmisi bellekte tuttugu icin buyuk log
+    // kanallarinda onemli olabiliyor. Sinir dusukse --max-old-space-size ile
+    // yukseltilebilir (bkz. README).
+    const mb = (n) => Math.round(n / 1024 / 1024);
+    const limitMB = Math.round(require('v8').getHeapStatistics().heap_size_limit / 1024 / 1024);
+    console.log(`[Sistem] Node bellek siniri: ${limitMB} MB · su anki rss: ${mb(process.memoryUsage().rss)} MB`);
 });
+
+// Bellek kullanimini periyodik olarak logla - yavaslamanin bellek baskisindan
+// mi geldigini anlamak icin.
+setInterval(() => {
+    const b = process.memoryUsage();
+    const mb = (n) => Math.round(n / 1024 / 1024);
+    const logSayisi = [...logStore.values()].reduce((t, s2) => t + s2.messages.length, 0);
+    console.log(`[Bellek] heap ${mb(b.heapUsed)}/${mb(b.heapTotal)} MB · rss ${mb(b.rss)} MB · bellekteki log kaydi: ${logSayisi}`);
+}, 30 * 60 * 1000);
 
 // --- DISCORD'A BAĞLAN ---
 const token = process.env.USER_TOKEN;

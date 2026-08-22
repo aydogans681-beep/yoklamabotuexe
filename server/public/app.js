@@ -151,6 +151,10 @@ function connectWebSocket() {
                 bulkProgress.textContent = `Toplu geri alma: ${msg.current}/${msg.total}`;
             } else if (msg.type === 'yoklama-acil-toplanti-ilerleme') {
                 emergencyStatus.textContent = `Taşınıyor: ${msg.current}/${msg.total}`;
+            } else if (msg.type === 'yoklama-asama') {
+                if (msg.asama) scanStatus.textContent = msg.asama;
+            } else if (msg.type === 'uye-durum') {
+                uyeDurumGoster(msg);
             } else if (msg.type === 'log-durum') {
                 onLogStatusUpdate(msg);
             } else if (msg.type === 'log-yeni') {
@@ -182,6 +186,19 @@ function applyStatus(status) {
     } else {
         statusDot.classList.add('warn');
         statusText.textContent = status.detail || 'Bağlanıyor...';
+    }
+}
+
+// Üye listesi arka planda çekiliyor. Hazır değilken taramanın uzun süreceğini
+// önceden söylüyoruz - buton donmuş gibi görünmesin.
+function uyeDurumGoster(durum) {
+    if (durum.status === 'yukleniyor') {
+        scanStatus.textContent = 'Üye listesi hazırlanıyor... (ilk taramadan önce bitmesi beklenir)';
+    } else if (durum.status === 'hazir' && !lastResults.length) {
+        const sn = durum.ms ? ` (${(durum.ms / 1000).toFixed(0)} sn)` : '';
+        scanStatus.textContent = `Üye listesi hazır: ${durum.count} üye${sn}. Taramayı başlatabilirsin.`;
+    } else if (durum.status === 'hata') {
+        scanStatus.textContent = 'Üye listesi alınamadı - Discord bağlantısını kontrol et.';
     }
 }
 
@@ -501,7 +518,7 @@ scanBtn.addEventListener('click', async () => {
     hideError();
     scanBtn.disabled = true;
     scanBtn.textContent = 'Taranıyor...';
-    scanStatus.textContent = 'Tarama sürüyor, birkaç saniye sürebilir...';
+    scanStatus.textContent = 'Tarama başlatıldı...';
     try {
         const res = await fetch('/api/yoklama/tara', { method: 'POST' });
         const result = await okuJson(res);
@@ -510,7 +527,9 @@ scanBtn.addEventListener('click', async () => {
             showError(`Tarama başarısız: ${result.error}`);
             return;
         }
-        scanStatus.textContent = `Son tarama: ${formatDate(result.data.scannedAt)}`;
+        const sr = result.data.timings;
+        scanStatus.textContent = `Son tarama: ${formatDate(result.data.scannedAt)}`
+            + (sr ? ` · ${(sr.toplam / 1000).toFixed(1)} sn (üyeler ${(sr.uyeler / 1000).toFixed(1)} sn, mazeretler ${(sr.mazeretler / 1000).toFixed(1)} sn)` : '');
         renderResults(result.data);
     } catch (error) {
         showError(`Tarama sırasında beklenmeyen hata: ${error.message}`);

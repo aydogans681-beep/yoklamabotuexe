@@ -113,6 +113,54 @@ bilerek korunur: masaüstü sürümü hâlâ tek hesaplı okuma yaptığı için
 değişmeden çalışmaya devam eder. Eski tek hesaplı dosya ilk açılışta otomatik
 olarak çok kullanıcılı biçime çevrilir.
 
+## Performans ve bellek
+
+**Tarama neden uzun sürebiliyor?** `guild.members.fetch()` sunucudaki *tüm*
+üyeleri gateway üzerinden indiriyor; büyük sunucularda bu dakikalar alabilir.
+Sonuç önbelleğe alındığı için bedel yalnızca ilk çağrıya çıkıyordu - yani
+"Taramayı Başlat"a ilk basan kişi bekliyordu.
+
+Artık üye listesi Discord'a bağlanır bağlanmaz **arka planda** çekiliyor
+(TX Logs'tan önce, çünkü tarama buna bağlı). Panelde durumu görünür:
+"Üye listesi hazırlanıyor..." → "Üye listesi hazır: N üye". Hazır olduktan
+sonra tarama saniyenin altında bitiyor.
+
+Her taramadan sonra süre dökümü hem panelde hem logda yazılıyor:
+
+```
+[Yoklama] Tarama tamamlandi: 46 yetkili, 12 sesde. Sureler -> uyeler: 0.0sn,
+mazeretler: 3.4sn, toplam: 3.4sn. Bellek -> heap 210/260 MB, rss 340 MB.
+```
+
+Hangi aşamanın yavaş olduğu buradan okunur.
+
+**Bellek.** TX Logs tüm log geçmişini bellekte tuttuğu için büyük log
+kanallarında kullanım artar. Sunucu açılışta bellek sınırını yazıyor ve
+yarım saatte bir kullanımı loglıyor:
+
+```
+[Sistem] Node bellek siniri: 4096 MB · su anki rss: 120 MB
+[Bellek] heap 210/260 MB · rss 340 MB · bellekteki log kaydi: 84300
+```
+
+`rss` sınıra yaklaşıyorsa belleği yükselt:
+
+```bash
+cd server
+npm run start-buyuk          # node --max-old-space-size=4096 server.js
+```
+
+pm2 ile:
+
+```bash
+pm2 delete yoklama
+pm2 start server.js --name yoklama --node-args="--max-old-space-size=4096"
+pm2 save
+```
+
+Belleği yükseltmek taramayı **hızlandırmaz** - yavaşlık üye listesinden
+geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
+
 ## Güvenlik
 
 - Şifreler `scrypt` + hesaba özel salt ile saklanır, karşılaştırma

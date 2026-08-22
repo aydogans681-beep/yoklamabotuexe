@@ -5,7 +5,8 @@
   "description": "MD PvP Yoklama Botu - web paneli (masaüstü Electron uygulamasının sunucuda 7/24 çalışan, tarayıcıdan erişilebilen sürümü). İş mantığının çoğu ../main.js'ten birebir taşınıyor.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "start-buyuk": "node --max-old-space-size=4096 server.js"
   },
   "dependencies": {
     "discord.js-selfbot-v13": "^2.15.0",
