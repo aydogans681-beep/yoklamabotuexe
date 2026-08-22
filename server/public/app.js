@@ -2316,3 +2316,62 @@ async function initPresenceTab() {
     await loadPresence();
     startPresenceTimer();
 }
+
+// Teşhis: "hiç veri yok" ile "sayaç çalışmıyor" arasındaki farkı gösterir.
+document.getElementById('presenceDiagBtn').addEventListener('click', async () => {
+    presenceList.innerHTML = '<div class="empty-hint">Kontrol ediliyor...</div>';
+    try {
+        const res = await fetch('/api/aktiflik/tani');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) { presenceList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(d.error)}</div>`; return; }
+
+        const sorunlar = [];
+        const bilgiler = [];
+        if (d.discord !== 'bağlı') sorunlar.push('Discord bağlı değil.');
+        if (!d.guildBulundu) sorunlar.push('Sunucu önbellekte yok - GUILD_ID hatalı olabilir.');
+        if (d.uyeOnbellegi === 0) sorunlar.push('Üye önbelleği boş - üye listesi henüz çekilmemiş.');
+        if (d.sesKanaliSayisi === 0) sorunlar.push('Hiç ses kanalı görünmüyor.');
+        // Yeniden başlatmanın hemen ardından ilk sayım daha yapılmamış olur -
+        // bunu sorun gibi göstermek gereksiz alarm.
+        if (!d.sonTick.at) {
+            bilgiler.push(`Sayaç henüz çalışmadı; ilk sayım ${d.tickAraligiSn} saniye içinde olacak.`);
+        } else if (Date.now() - d.sonTick.at > d.tickAraligiSn * 3000) {
+            sorunlar.push('Sayaç uzun süredir çalışmıyor - bot takılmış olabilir.');
+        }
+        if (d.sestekiHerkes > 0 && d.sestekiYetkili === 0) {
+            sorunlar.push('Seste kişi var ama hiçbiri yetkili rollerinde - yoklama rol ID\'leri farklı olabilir.');
+        }
+
+        const satir = (ad, deger) => `<div class="tani-satir"><span>${escapeHtml(ad)}</span><b>${escapeHtml(String(deger))}</b></div>`;
+        const kisiler = d.ornekler.length
+            ? d.ornekler.map((o) => `<span class="legend ${o.yetkili ? 'ok' : ''}">${escapeHtml(o.name)} · ${escapeHtml(o.kanal)}${o.yetkili ? ' ✓' : ' (yetkili değil)'}</span>`).join('')
+            : '<span class="scanStatus">Şu an seste kimse yok.</span>';
+
+        presenceList.innerHTML = `
+            <div class="card" style="margin:0;">
+                <h2>Ses sayacı teşhisi</h2>
+                <div class="${sorunlar.length ? 'legend bad' : 'legend ok'}" style="margin-bottom:12px;">
+                    ${sorunlar.length ? `⚠ ${escapeHtml(sorunlar[0])}` : '✓ Sayaç sağlıklı çalışıyor'}
+                </div>
+                ${sorunlar.length > 1 ? `<p class="card-desc">${sorunlar.slice(1).map(escapeHtml).join('<br>')}</p>` : ''}
+                ${bilgiler.length ? `<p class="card-desc">${bilgiler.map(escapeHtml).join('<br>')}</p>` : ''}
+                ${satir('Discord durumu', d.discord)}
+                ${satir('Sunucu bulundu', d.guildBulundu ? 'evet' : 'HAYIR')}
+                ${satir('Önbellekteki üye', d.uyeOnbellegi)}
+                ${satir('Üye listesi', d.uyelerHazir)}
+                ${satir('Ses kanalı sayısı', d.sesKanaliSayisi)}
+                ${satir('Şu an seste (herkes)', d.sestekiHerkes)}
+                ${satir('Şu an seste (yetkili)', d.sestekiYetkili)}
+                ${satir('Son sayım', d.sonTick.at ? `${formatDate(d.sonTick.at)} · ${d.sonTick.sayilan} kişi sayıldı` : 'henüz çalışmadı')}
+                ${satir('Sayım aralığı', `${d.tickAraligiSn} saniye`)}
+                ${satir('Bugün kayıtlı kişi', d.bugunKayitliKisi)}
+                ${satir('Bugün toplam süre', sureBicimle(d.bugunToplamSn))}
+                ${satir('Kayıtlı günler', d.kayitliGunler.join(', ') || 'yok')}
+                <p class="card-desc" style="margin:12px 0 6px;">Şu an seste olanlar:</p>
+                <div class="legend-row">${kisiler}</div>
+            </div>`;
+    } catch (error) {
+        presenceList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+});

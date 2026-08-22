@@ -2546,6 +2546,8 @@ let voiceLastTick = Date.now();
 // Su an seste olanlarin bu oturuma ne zaman basladigi - "3 saattir seste"
 // bilgisini gosterebilmek icin.
 const voiceSessionStart = new Map();
+// Teshis icin: son tick ne zaman calisti ve kac kisi sayildi.
+let voiceSonTick = { at: null, sayilan: 0 };
 
 function persistVoiceData() {
     if (!voiceDirty) return;
@@ -2581,16 +2583,36 @@ function voiceTick() {
     const bugun = voiceData[gun];
     const sesteOlanlar = new Set();
 
-    guild.channels.cache.forEach((channel) => {
-        if (channel.type !== 'GUILD_VOICE' && channel.type !== 'GUILD_STAGE_VOICE') return;
-        channel.members.forEach((member) => {
+    // Ses kanallarini dolasmak yerine dogrudan ses durumlarina bakiyoruz.
+    // channel.members bir getter ve uye onbellegine bagli; onbellek eksikse
+    // sessizce bos donuyor ve kimse sayilmiyor. voiceStates gateway'den
+    // dogrudan geliyor, daha guvenilir.
+    const durumlar = guild.voiceStates && guild.voiceStates.cache ? guild.voiceStates.cache : null;
+    if (durumlar && durumlar.size > 0) {
+        durumlar.forEach((state) => {
+            if (!state.channelId) return;
+            const member = state.member || guild.members.cache.get(state.id);
+            if (!member) return;
             if (!ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))) return;
             sesteOlanlar.add(member.id);
             bugun[member.id] = (bugun[member.id] || 0) + gecen / 1000;
             voiceDirty = true;
             if (!voiceSessionStart.has(member.id)) voiceSessionStart.set(member.id, simdi - gecen);
         });
-    });
+    } else {
+        // Yedek yol: ses durumlari bos gelirse kanallardan oku.
+        guild.channels.cache.forEach((channel) => {
+            if (channel.type !== 'GUILD_VOICE' && channel.type !== 'GUILD_STAGE_VOICE') return;
+            channel.members.forEach((member) => {
+                if (!ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId))) return;
+                sesteOlanlar.add(member.id);
+                bugun[member.id] = (bugun[member.id] || 0) + gecen / 1000;
+                voiceDirty = true;
+                if (!voiceSessionStart.has(member.id)) voiceSessionStart.set(member.id, simdi - gecen);
+            });
+        });
+    }
+    voiceSonTick = { at: simdi, sayilan: sesteOlanlar.size };
 
     // Sesten cikanlarin oturum baslangicini temizle
     [...voiceSessionStart.keys()].forEach((id) => {
@@ -2660,6 +2682,64 @@ async function buildVoiceReport(gun) {
         availableDays: gunler,
     };
 }
+
+// TESHIS: sayac su an neyi goruyor? "Hic veri yok" ile "sayac calismiyor"
+// arasindaki farki ayirt etmek icin.
+app.get('/api/aktiflik/tani', requireAuth, (req, res) => {
+    const guild = client.guilds.cache.get(GUILD_ID);
+    const simdi = Date.now();
+    const gun = bugununAnahtari();
+
+    let sesKanaliSayisi = 0;
+    let sestekiHerkes = 0;
+    let sestekiYetkili = 0;
+    const ornekler = [];
+
+    if (guild) {
+        guild.channels.cache.forEach((c) => {
+            if (c.type === 'GUILD_VOICE' || c.type === 'GUILD_STAGE_VOICE') sesKanaliSayisi += 1;
+        });
+        const durumlar = guild.voiceStates && guild.voiceStates.cache;
+        if (durumlar) {
+            durumlar.forEach((state) => {
+                if (!state.channelId) return;
+                sestekiHerkes += 1;
+                const member = state.member || guild.members.cache.get(state.id);
+                const yetkili = member && ATTENDANCE_ROLE_IDS.some((r) => member.roles.cache.has(r));
+                if (yetkili) sestekiYetkili += 1;
+                if (ornekler.length < 8) {
+                    ornekler.push({
+                        id: state.id,
+                        name: member ? member.displayName : '(üye önbellekte yok)',
+                        yetkili: Boolean(yetkili),
+                        kanal: guild.channels.cache.get(state.channelId)
+                            ? guild.channels.cache.get(state.channelId).name : state.channelId,
+                    });
+                }
+            });
+        }
+    }
+
+    res.json({
+        ok: true,
+        discord: discordStatus,
+        guildBulundu: Boolean(guild),
+        uyeOnbellegi: guild ? guild.members.cache.size : 0,
+        uyelerHazir: membersState.status,
+        sesKanaliSayisi,
+        sesDurumuSayisi: guild && guild.voiceStates && guild.voiceStates.cache ? guild.voiceStates.cache.size : 0,
+        sestekiHerkes,
+        sestekiYetkili,
+        yetkiliRolleri: ATTENDANCE_ROLE_IDS,
+        sonTick: voiceSonTick,
+        tickAraligiSn: VOICE_TICK_MS / 1000,
+        bugunKayitliKisi: Object.keys(voiceData[gun] || {}).length,
+        bugunToplamSn: Math.round(Object.values(voiceData[gun] || {}).reduce((t, v) => t + v, 0)),
+        kayitliGunler: Object.keys(voiceData).sort().reverse().slice(0, 7),
+        ornekler,
+        simdi,
+    });
+});
 
 app.get('/api/aktiflik', requireAuth, async (req, res) => {
     const gun = String(req.query.gun || '').trim();
