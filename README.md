@@ -92,9 +92,6 @@ Her menüde 100'erli sayfalama ve içerik + embed üzerinde arama var.
 **Kanal ID'si eklemek:** `server/server.js` içindeki `LOG_CHANNELS` listesine
 yaz. ID'si boş bırakılan menü arayüzde "ID yok" olarak görünür ve veri çekmez.
 
-> `unban` menüsünün kanal ID'si henüz girilmemiş - `LOG_CHANNELS` içinde boş
-> duruyor. ID'yi yazman dışında kod değişikliği gerekmez.
-
 ### Ayarlar
 
 - **Kendi Hesabım** - mevcut şifreyle doğrulayarak kullanıcı adı ve/veya şifre

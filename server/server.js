@@ -264,7 +264,7 @@ const EMERGENCY_MEETING_DELAY_MS = 500;
 // ============================================================================
 const LOG_CHANNELS = [
     { key: 'ban', label: 'Ban', channelId: '1514634711413293197' },
-    { key: 'unban', label: 'Unban', channelId: '' }, // <-- kanal ID bekleniyor
+    { key: 'unban', label: 'Unban', channelId: '1456027006964858901' },
     { key: 'kick', label: 'Kick', channelId: '1514634723043836155' },
     { key: 'warn', label: 'Warn', channelId: '1514634738915086560' },
     { key: 'dm', label: 'DM', channelId: '1514634767033696387' },
