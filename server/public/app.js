@@ -2005,3 +2005,71 @@ function onActivityIncrement(msg) {
     document.getElementById('actSilent').textContent = actReport.members.length - yazan;
     void eskiSira;
 }
+
+// ============================================================================
+// --- BİÇİM KONTROLÜ ---
+// Ticket botunun mesaj biçimini görmeden kurulan kişi çıkarımı doğru mu?
+// Hangi yöntemin ne kadar tuttuğunu ve örnek mesajları gösterir.
+// ============================================================================
+document.getElementById('activityFormatBtn').addEventListener('click', async () => {
+    if (!actChannelKey) return;
+    activityWho.textContent = 'Biçim kontrolü';
+    activityWhoInfo.textContent = '';
+    activityMessages.innerHTML = '<div class="empty-hint">Kontrol ediliyor...</div>';
+    activityPager.style.display = 'none';
+    try {
+        const res = await fetch(`/api/etkinlik/${actChannelKey}/bicim`);
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) {
+            activityMessages.innerHTML = `<div class="empty-hint">${escapeHtml(d.error)}</div>`;
+            return;
+        }
+
+        const oran = d.total ? Math.round((d.matched / d.total) * 100) : 0;
+        const yetkiliOran = d.total ? Math.round((d.staffMatched / d.total) * 100) : 0;
+        // Tek kişiye yığılma, çıkarımın yanlış olduğunun en net işareti.
+        const supheli = d.distinctPeople <= 1 || yetkiliOran < 40;
+
+        const yontemler = Object.entries(d.methods)
+            .map(([ad, adet]) => `<span class="legend">${escapeHtml(ad)}: ${adet}</span>`).join('');
+        const yazarlar = d.topAuthors
+            .map((a) => `<span class="legend">${escapeHtml(a.tag)}: ${a.count}</span>`).join('');
+
+        activityMessages.innerHTML = `
+            <div class="card" style="margin:0 0 10px;">
+                <h2>${escapeHtml(d.label)} — kişi çıkarımı</h2>
+                <p class="card-desc" style="margin-bottom:9px;">
+                    Yöntem: <b>${escapeHtml(d.personFrom)}</b> ·
+                    ${d.total} mesajın <b>${d.matched}</b>'inde kişi bulundu (%${oran}) ·
+                    <b>${d.distinctPeople}</b> farklı kişiye dağıldı ·
+                    yetkililere denk gelen: <b>%${yetkiliOran}</b>
+                </p>
+                <div class="legend-row">${yontemler}</div>
+                <p class="card-desc" style="margin:8px 0 4px;">Kanala en çok yazanlar (mesaj sahibi):</p>
+                <div class="legend-row">${yazarlar}</div>
+                <div class="${supheli ? 'legend bad' : 'legend ok'}" style="margin-top:10px;">
+                    ${supheli
+                        ? '⚠ Çıkarım şüpheli — sayımlar yanlış kişilere gidiyor olabilir. Aşağıdaki örnek mesajları Claude\'a gönder.'
+                        : '✓ Çıkarım sağlıklı görünüyor.'}
+                </div>
+            </div>
+            <p class="card-desc" style="margin:0 0 8px;">Örnek mesajlar (kime sayıldığı yanında):</p>`;
+
+        d.samples.forEach((entry) => {
+            const kutu = document.createElement('div');
+            kutu.style.marginBottom = '8px';
+            const bilgi = document.createElement('div');
+            bilgi.className = 'scanStatus';
+            bilgi.style.margin = '0 0 3px 4px';
+            bilgi.textContent = entry.resolved.id
+                ? `→ ${entry.resolved.id} (${entry.resolved.via})`
+                : '→ kişi bulunamadı';
+            kutu.appendChild(bilgi);
+            kutu.appendChild(renderLogEntry(entry));
+            activityMessages.appendChild(kutu);
+        });
+    } catch (error) {
+        activityMessages.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+});

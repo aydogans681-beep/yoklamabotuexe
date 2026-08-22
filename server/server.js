@@ -272,7 +272,7 @@ const EMERGENCY_MEETING_DELAY_MS = 500;
 //                etiketleniyor; yazara gore saymak "Ticket Botu: 5000" verirdi.
 const ACTIVITY_CHANNELS = [
     { key: 'etkinlik', label: 'Etkinlik', channelId: '1456032067325263965', personFrom: 'author' },
-    { key: 'ticket', label: 'Ticket', channelId: '', personFrom: 'mention' }, // <-- kanal ID bekleniyor
+    { key: 'ticket', label: 'Ticket', channelId: '1472697988479582411', personFrom: 'auto' },
 ];
 
 const LOG_CHANNELS = [
@@ -1123,21 +1123,57 @@ function bugununAnahtari() {
     return dayKey(Date.now());
 }
 
-// Mesajin hangi kisiye sayilacagini bulur.
-function resolvePerson(store, entry) {
-    if (store.personFrom !== 'mention') return entry.authorId;
-    // Icerikte ve embed metinlerinde ilk <@123> / <@!123> etiketini ara.
+// Yazarin yetkili olup olmadigi - onbellekten. Uye listesi henuz cekilmediyse
+// temkinli davranip false donuyor (yanlis kisiye saymaktansa saymamak yeg).
+function isStaffId(id) {
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) return false;
+    const member = guild.members.cache.get(id);
+    if (!member) return false;
+    return ATTENDANCE_ROLE_IDS.some((roleId) => member.roles.cache.has(roleId));
+}
+
+// Mesajin metin parcalari - icerik + embed baslik/aciklama/alanlar.
+function messageTextParts(entry) {
     const parcalar = [entry.content];
     (entry.embeds || []).forEach((e) => {
         parcalar.push(e.title, e.description);
         (e.fields || []).forEach((f) => parcalar.push(f.name, f.value));
     });
-    for (const parca of parcalar) {
-        if (!parca) continue;
-        const m = String(parca).match(/<@!?(\d+)>/);
-        if (m) return m[1];
+    return parcalar.filter(Boolean).map(String);
+}
+
+// Mesajin hangi kisiye sayilacagini bulur ve HANGI yontemle bulundugunu da
+// dondurur - bicim kontrolu ekraninda hangi stratejinin tuttugunu gostermek
+// icin. Ticket botunun mesaj bicimini gormeden en genis kapsamli yol 'auto'.
+function resolvePersonDetailed(store, entry) {
+    const mod = store.personFrom || 'author';
+    if (mod === 'author') return { id: entry.authorId, via: 'yazar' };
+
+    // 1) <@123> / <@!123> etiketi
+    for (const parca of messageTextParts(entry)) {
+        const m = parca.match(/<@!?(\d+)>/);
+        if (m) return { id: m[1], via: 'etiket' };
     }
-    return null; // kisi bulunamadi - sayimda "eslesmeyen" olarak gecer
+    // 2) Ciplak Discord ID'si (17-20 hane) - "Kapatan: 123456789012345678" gibi
+    for (const parca of messageTextParts(entry)) {
+        const m = parca.match(/(?:^|[^\d])(\d{17,20})(?!\d)/);
+        if (m) return { id: m[1], via: 'ham ID' };
+    }
+    // 3) 'auto' ise son care yazara saymak - AMA yalnizca yazar yetkiliyse.
+    //    Kosulsuz yedek tehlikeliydi: ticket loglarini bot attigi icin etiket
+    //    bulunamayinca butun sayim sessizce bota gidiyordu ve sonuc "34/34
+    //    eslesti" gibi saglikli gorunuyordu. Yetkili olmayan yazara asla
+    //    sayilmiyor; boyle bir mesaj "bulunamadi" olarak isaretleniyor ve
+    //    bicim kontrolunde hemen goze carpiyor.
+    if (mod === 'auto' && entry.authorId && isStaffId(entry.authorId)) {
+        return { id: entry.authorId, via: 'yazar (yetkili)' };
+    }
+    return { id: null, via: null };
+}
+
+function resolvePerson(store, entry) {
+    return resolvePersonDetailed(store, entry).id;
 }
 
 // gun -> (kisi -> adet). Cekme bitince bir kez kuruluyor, yeni mesajlarda
@@ -2088,16 +2124,21 @@ app.post('/api/logo/sil', requireAuth, (req, res) => {
 // hepsi listeleniyor - hic mesaj atmayanlar da gorunsun diye (asil aranan
 // bilgi cogu zaman "kim hic yazmamis").
 // ============================================================================
-function countByAuthor(store) {
+// DIKKAT: yazara gore DEGIL, resolvePerson'a gore sayiyor. Ticket loglarini
+// bot attigi icin yazara gore saymak butun sayimi bota yigardi; gunluk rapor
+// zaten kisi cikarimini kullaniyordu, ikisi ayri sonuc veriyordu.
+function countByPerson(store) {
     const sayac = new Map();
     const sonMesaj = new Map();
+    let eslesmeyen = 0;
     store.messages.forEach((m) => {
-        if (!m.authorId) return;
-        sayac.set(m.authorId, (sayac.get(m.authorId) || 0) + 1);
-        const onceki = sonMesaj.get(m.authorId);
-        if (!onceki || m.createdTimestamp > onceki) sonMesaj.set(m.authorId, m.createdTimestamp);
+        const kisi = resolvePerson(store, m);
+        if (!kisi) { eslesmeyen += 1; return; }
+        sayac.set(kisi, (sayac.get(kisi) || 0) + 1);
+        const onceki = sonMesaj.get(kisi);
+        if (!onceki || m.createdTimestamp > onceki) sonMesaj.set(kisi, m.createdTimestamp);
     });
-    return { sayac, sonMesaj };
+    return { sayac, sonMesaj, eslesmeyen };
 }
 
 async function buildActivityReport(key) {
@@ -2117,7 +2158,7 @@ async function buildActivityReport(key) {
         return { ...temel, totalMessages: 0, staffTotal: 0, otherTotal: 0, members: [] };
     }
 
-    const { sayac, sonMesaj } = countByAuthor(store);
+    const { sayac, sonMesaj, eslesmeyen } = countByPerson(store);
 
     // Yetkilileri getir - hepsi listelensin, sayisi 0 olanlar dahil.
     let yetkililer = [];
@@ -2149,7 +2190,9 @@ async function buildActivityReport(key) {
         ...temel,
         totalMessages: store.messages.length,
         staffTotal,
-        otherTotal: store.messages.length - staffTotal, // yetkili olmayanlarin mesajlari
+        // Yetkili olmayan kisilere sayilanlar + kisi cikarilamayanlar
+        otherTotal: store.messages.length - staffTotal - eslesmeyen,
+        unmatched: eslesmeyen,
         members,
     };
 }
@@ -2218,6 +2261,63 @@ async function buildDailyReport(key, gun) {
         availableDays: gunler,
     };
 }
+
+// BICIM KONTROLU: ticket botunun mesaj bicimini gormeden kurulan cikarim
+// dogru calisiyor mu? Hangi stratejinin ne kadar tuttugunu ve ornek mesajlari
+// dondurur - ekran goruntusu beklemeden teshis edilebilsin diye.
+app.get('/api/etkinlik/:key/bicim', requireAuth, async (req, res) => {
+    const store = logStore.get(req.params.key);
+    if (!store || store.kind !== 'aktivite') {
+        return res.status(404).json({ ok: false, error: 'Bilinmeyen etkinlik menüsü.' });
+    }
+    if (!store.channelId) return res.json({ ok: false, error: 'Bu menü için kanal ID girilmemiş.' });
+
+    const yontemler = {};
+    const yazarlar = new Map();
+    let eslesen = 0;
+    store.messages.forEach((entry) => {
+        const { id, via } = resolvePersonDetailed(store, entry);
+        yontemler[via || 'bulunamadı'] = (yontemler[via || 'bulunamadı'] || 0) + 1;
+        if (id) eslesen += 1;
+        if (entry.authorTag) yazarlar.set(entry.authorTag, (yazarlar.get(entry.authorTag) || 0) + 1);
+    });
+
+    // Kac farkli kisiye dagilmis? Tek kisiye yigiliyorsa cikarim yanlis
+    // demektir (ornegin hepsi ticket botuna sayiliyordur).
+    const dagilim = new Map();
+    store.messages.forEach((entry) => {
+        const id = resolvePerson(store, entry);
+        if (id) dagilim.set(id, (dagilim.get(id) || 0) + 1);
+    });
+
+    let yetkiliEslesen = 0;
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        dagilim.forEach((adet, id) => {
+            const member = guild.members.cache.get(id);
+            if (member && ATTENDANCE_ROLE_IDS.some((r) => member.roles.cache.has(r))) yetkiliEslesen += adet;
+        });
+    } catch (error) { /* yetkili listesi yoksa bu satiri atla */ }
+
+    return res.json({
+        ok: true,
+        key: store.key,
+        label: store.label,
+        personFrom: store.personFrom,
+        total: store.messages.length,
+        matched: eslesen,
+        methods: yontemler,
+        distinctPeople: dagilim.size,
+        staffMatched: yetkiliEslesen,
+        topAuthors: [...yazarlar.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+            .map(([tag, adet]) => ({ tag, count: adet })),
+        samples: store.messages.slice(0, 5).map((entry) => ({
+            ...stripInternal(entry),
+            resolved: resolvePersonDetailed(store, entry),
+        })),
+    });
+});
 
 app.get('/api/etkinlik/:key/gunluk', requireAuth, async (req, res) => {
     const gun = String(req.query.gun || '').trim();
