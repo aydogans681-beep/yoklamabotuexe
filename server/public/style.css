@@ -492,3 +492,33 @@ button.primary { width: 100%; padding: 10px; font-size: 13px; margin-top: 4px; }
     .staff-entry { align-items: flex-start; }
     .role-row { flex-wrap: wrap; }
 }
+
+/* --- yetkili satırında satır içi rol ver/al --- */
+.role-chip { position: relative; padding-right: 8px; }
+.role-chip .chip-x {
+    all: unset; cursor: pointer; margin-left: 6px; padding: 0 3px;
+    font-size: 13px; line-height: 1; color: var(--ink-3); border-radius: 3px;
+}
+.role-chip .chip-x:hover { color: #fff; background: var(--accent-fill); }
+.role-chip .chip-x:disabled { opacity: .4; cursor: not-allowed; }
+/* Alınamayan roller (hiyerarşide üstte ya da bot rolü) çarpı almıyor */
+.role-chip.fixed { opacity: .7; }
+
+button.role-chip.more {
+    cursor: pointer; font-family: inherit;
+    background: var(--surface-2); color: var(--ink-3); border: 1px dashed var(--border-strong);
+}
+button.role-chip.more:hover:not(:disabled) { color: var(--ink); background: var(--surface-3); }
+
+select.role-add {
+    background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--ink-2);
+    border-radius: 4px; padding: 2px 6px; font-size: 10.5px; font-family: inherit;
+    font-weight: 600; cursor: pointer; max-width: 150px;
+}
+select.role-add:hover:not(:disabled) { color: var(--ink); border-color: var(--accent-line); }
+select.role-add:focus { outline: none; border-color: var(--accent-line); }
+select.role-add:disabled { opacity: .5; cursor: wait; }
+
+.staff-msg { font-size: 10.5px; color: var(--ink-3); }
+.staff-msg.ok    { color: var(--ok); }
+.staff-msg.error { color: var(--accent); }

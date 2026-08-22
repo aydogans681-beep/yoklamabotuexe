@@ -1096,11 +1096,40 @@ function renderStaffRoleMenu() {
     });
 }
 
+// Rol listesi uzun olan kisilerde (bazi yetkililerde 14 rol var) ilk 8 rol
+// gosterilip gerisi "+N" ile gizleniyor; rolu SILMEK icin once gormek
+// gerektiginden "+N" tiklanabilir ve o kisi icin listeyi aciyor.
+const expandedStaff = new Set();
+const CHIP_LIMIT = 8;
+
+function isRoleRemovable(roleId) {
+    const role = guildRoles.find((r) => r.id === roleId);
+    return Boolean(role && role.assignable);
+}
+
+function roleChipHtml(member, role) {
+    const silinebilir = isRoleRemovable(role.id);
+    return `<span class="role-chip${silinebilir ? '' : ' fixed'}">`
+        + roleDot(role.color)
+        + escapeHtml(role.name)
+        + (silinebilir
+            ? `<button class="chip-x" data-rm-member="${member.id}" data-rm-role="${role.id}" title="&quot;${escapeHtml(role.name)}&quot; rolünü al">×</button>`
+            : '')
+        + '</span>';
+}
+
 function staffRowHtml(member) {
-    const roller = member.roles.length
-        ? member.roles.slice(0, 8).map((r) => `<span class="role-chip">${roleDot(r.color)}${escapeHtml(r.name)}</span>`).join('')
-          + (member.roles.length > 8 ? `<span class="role-chip muted">+${member.roles.length - 8}</span>` : '')
-        : '<span class="role-chip muted">Rol yok</span>';
+    const acik = expandedStaff.has(member.id);
+    const gosterilen = acik ? member.roles : member.roles.slice(0, CHIP_LIMIT);
+    let roller = gosterilen.map((r) => roleChipHtml(member, r)).join('');
+    if (!member.roles.length) {
+        roller = '<span class="role-chip muted">Rol yok</span>';
+    } else if (!acik && member.roles.length > CHIP_LIMIT) {
+        roller += `<button class="role-chip more" data-expand="${member.id}">+${member.roles.length - CHIP_LIMIT} daha</button>`;
+    } else if (acik && member.roles.length > CHIP_LIMIT) {
+        roller += `<button class="role-chip more" data-collapse="${member.id}">gizle</button>`;
+    }
+
     return `
         <img class="log-avatar staff-avatar" src="${encodeURI(member.avatarURL)}" alt="">
         <div class="log-body">
@@ -1109,13 +1138,79 @@ function staffRowHtml(member) {
                 <span class="log-time">${escapeHtml(member.tag)}</span>
                 <span class="voiceLabel ${member.inVoice ? 'in' : 'out'}">${member.inVoice ? 'Sesde ✅' : 'Sesde Değil ❌'}</span>
                 ${member.currentTierLabel ? `<span class="tier-badge">${escapeHtml(member.currentTierLabel)}</span>` : ''}
+                <select class="role-add" data-add-member="${member.id}" title="Bu kişiye rol ver">
+                    <option value="">+ Rol ver…</option>
+                </select>
+                <span class="staff-msg" data-msg="${member.id}"></span>
             </div>
             <div class="role-chips">${roller}</div>
             ${member.joinedAt ? `<div class="staff-joined">Katılım: ${formatDate(member.joinedAt)}</div>` : ''}
         </div>
         <div class="staff-actions">
-            <button class="secondary small" data-role-target="${member.id}">Rol Ver/Al</button>
+            <button class="secondary small" data-role-target="${member.id}">Tüm Roller</button>
         </div>`;
+}
+
+function setStaffMsg(memberId, metin, sinif) {
+    const el = staffList.querySelector(`[data-msg="${memberId}"]`);
+    if (el) {
+        el.textContent = metin || '';
+        el.className = `staff-msg ${sinif || ''}`.trim();
+    }
+}
+
+// Secim kutusu ILK ACILDIGINDA dolduruluyor. 46 kisi x ~40 rol = 1800'den
+// fazla <option> demek; hepsini pesinen basmak listeyi gereksiz agirlastirirdi.
+function fillRoleSelect(select, member) {
+    if (select.dataset.dolu === '1') return;
+    const sahip = new Set(member.roles.map((r) => r.id));
+    const secenekler = guildRoles
+        .filter((role) => role.assignable && !sahip.has(role.id))
+        .map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`)
+        .join('');
+    select.innerHTML = `<option value="">+ Rol ver…</option>${secenekler}`;
+    select.dataset.dolu = '1';
+}
+
+async function staffRoleAction(kind, member, roleId, roleName) {
+    const soru = kind === 'ver'
+        ? `"${roleName}" rolü ${member.displayName} kişisine verilecek. Onaylıyor musun?`
+        : `"${roleName}" rolü ${member.displayName} kişisinden alınacak. Onaylıyor musun?`;
+    if (!window.confirm(soru)) return false;
+
+    setStaffMsg(member.id, 'Gönderiliyor...', '');
+    try {
+        const res = await fetch(kind === 'ver' ? '/api/rol/ver' : '/api/rol/al', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ memberId: member.id, roleId }),
+        });
+        const result = await res.json();
+        if (!result.ok) {
+            setStaffMsg(member.id, result.reason === 'zaten-var' ? 'Bu rol zaten var.'
+                : result.reason === 'yok' ? 'Bu rol kişide yok.'
+                : `Hata: ${result.error || 'bilinmeyen'}`, 'error');
+            return false;
+        }
+        // Yerel listeyi guncelle - rol sirasi hiyerarsiye gore korunuyor
+        if (kind === 'ver') {
+            const role = guildRoles.find((r) => r.id === roleId);
+            member.roles.push({ id: role.id, name: role.name, color: role.color });
+            member.roles.sort((a, b) => {
+                const pa = (guildRoles.find((r) => r.id === a.id) || {}).position || 0;
+                const pb = (guildRoles.find((r) => r.id === b.id) || {}).position || 0;
+                return pb - pa;
+            });
+        } else {
+            member.roles = member.roles.filter((r) => r.id !== roleId);
+        }
+        renderStaffList();
+        setStaffMsg(member.id, kind === 'ver' ? `"${roleName}" verildi.` : `"${roleName}" alındı.`, 'ok');
+        return true;
+    } catch (error) {
+        setStaffMsg(member.id, `Hata: ${error.message}`, 'error');
+        return false;
+    }
 }
 
 function renderStaffList() {
@@ -1137,12 +1232,48 @@ function renderStaffList() {
         div.innerHTML = staffRowHtml(member);
         staffList.appendChild(div);
     });
+
+    // rolü al (çarpı)
+    staffList.querySelectorAll('[data-rm-role]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const member = staffMembers.find((m) => m.id === btn.dataset.rmMember);
+            const role = member && member.roles.find((r) => r.id === btn.dataset.rmRole);
+            if (member && role) {
+                btn.disabled = true;
+                staffRoleAction('al', member, role.id, role.name);
+            }
+        });
+    });
+    // rol ver (seçim kutusu)
+    staffList.querySelectorAll('[data-add-member]').forEach((sel) => {
+        const member = staffMembers.find((m) => m.id === sel.dataset.addMember);
+        if (!member) return;
+        sel.addEventListener('focus', () => fillRoleSelect(sel, member));
+        sel.addEventListener('mousedown', () => fillRoleSelect(sel, member));
+        sel.addEventListener('change', async () => {
+            const roleId = sel.value;
+            if (!roleId) return;
+            const roleName = sel.options[sel.selectedIndex].textContent;
+            sel.disabled = true;
+            const ok = await staffRoleAction('ver', member, roleId, roleName);
+            if (!ok) { sel.disabled = false; sel.value = ''; }
+        });
+    });
+    // rol listesini aç / gizle
+    staffList.querySelectorAll('[data-expand]').forEach((btn) => {
+        btn.addEventListener('click', () => { expandedStaff.add(btn.dataset.expand); renderStaffList(); });
+    });
+    staffList.querySelectorAll('[data-collapse]').forEach((btn) => {
+        btn.addEventListener('click', () => { expandedStaff.delete(btn.dataset.collapse); renderStaffList(); });
+    });
+    // hiyerarşik görünüme geç
     staffList.querySelectorAll('[data-role-target]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const member = staffMembers.find((m) => m.id === btn.dataset.roleTarget);
             if (member) openRoleTabFor(member);
         });
     });
+
     staffStatus.textContent = term
         ? `${filtered.length} / ${staffMembers.length} kişi`
         : `${staffMembers.length} kişi`;
