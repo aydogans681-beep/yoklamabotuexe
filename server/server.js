@@ -226,7 +226,10 @@ function requireAuth(req, res, next) {
 // ============================================================================
 // --- DISCORD BAĞLANTISI (main.js'ten BİREBİR - bkz. oradaki yorumlar) ---
 // ============================================================================
-const { Client } = require('discord.js-selfbot-v13');
+// Message: sendSlashCommand "message instanceof Message" kontrolu yapiyor,
+// bu yuzden komutu ID ile kendimiz gonderirken ayni sinifi kullanmamiz gerek.
+// Paketin disa actigi Message ile ic modulunki ayni referans (dogrulandi).
+const { Client, Message: SlashMesaji } = require('discord.js-selfbot-v13');
 
 try {
     // eslint-disable-next-line global-require
@@ -261,8 +264,19 @@ const WARNING_ROLES = [
 // calismadi; bu yuzden artik panelden degistirilebiliyor (ayarda deger varsa
 // o kullaniliyor).
 const VARSAYILAN_ROLE_BOT_ID = '1538263121678827570';
+// Slash komutlarinin kendi ID'leri. Ad ile arama ("rol-ver") botun komutu
+// baska turlu adlandirmis olmasi durumunda tutmuyordu; ID kesin eslesme
+// sagliyor ve komutun hangi uygulamaya ait oldugunu da soyluyor.
+const VARSAYILAN_ROL_VER_KOMUT_ID = '1540707926023348274';
+const VARSAYILAN_ROL_AL_KOMUT_ID = '1540632258694750208';
 function rolBotId() {
     return (panelSettings && panelSettings.rolBotId) || VARSAYILAN_ROLE_BOT_ID;
+}
+function rolVerKomutId() {
+    return (panelSettings && panelSettings.rolVerKomutId) || '';
+}
+function rolAlKomutId() {
+    return (panelSettings && panelSettings.rolAlKomutId) || '';
 }
 const ROLE_COMMAND_CHANNEL_ID = '1504900865507463259';
 const WARNING_ANNOUNCE_CHANNEL_ID = '1483232323674701835';
@@ -675,6 +689,107 @@ async function runYoklamaScan() {
 }
 
 // --- ROL BOTU KOMUTLARI (main.js'ten birebir) ---
+// ============================================================================
+// --- SLASH KOMUT GONDERME (ID ile) ---
+// Kutuphanenin sendSlash'i komutu YALNIZCA ADA gore buluyor; ad tutmayinca
+// "SlashCommand X is not found" firlatiyor ve rol verme sessizce calismiyor.
+// Bu yuzden komutu kendimiz cozuyoruz: komut ID'si hem komutu hem hangi
+// uygulamaya ait oldugunu tek basina belirledigi icin ad tahmin etmeye gerek
+// kalmiyor. Ad ile arama yalnizca ID bulunamazsa devreye giriyor.
+// ============================================================================
+
+// Komut dizinini kisa sure onbellege aliyoruz: her uyarida yeniden cekmek
+// toplu yoklamada onlarca gereksiz istek demek.
+let komutDiziniOnbellek = { at: 0, guildId: null, komutlar: [] };
+const KOMUT_DIZINI_TTL_MS = 60 * 1000;
+
+async function komutDizinileri(guild, tazele = false) {
+    const simdi = Date.now();
+    if (!tazele
+        && komutDiziniOnbellek.guildId === guild.id
+        && simdi - komutDiziniOnbellek.at < KOMUT_DIZINI_TTL_MS) {
+        return komutDiziniOnbellek.komutlar;
+    }
+    const data = await client.api.guilds[guild.id]['application-command-index'].get();
+    const komutlar = (data && data.application_commands) || [];
+    komutDiziniOnbellek = { at: simdi, guildId: guild.id, komutlar };
+    return komutlar;
+}
+
+// Ham komut kaydini kutuphanenin ApplicationCommand nesnesine cevirir.
+// sendSlashCommand'i cagirabilmek icin komutun, sahibi olan uygulamanin
+// komut onbelleginde durmasi gerekiyor - sendSlash da aynisini yapiyor.
+async function komutNesnesi(hamKomut) {
+    const user = await client.users.fetch(hamKomut.application_id).catch(() => null);
+    if (!user || !user.bot || !user.application) {
+        throw new Error(`Komutun sahibi ${hamKomut.application_id} bot olarak getirilemedi.`);
+    }
+    if (user._partial) await user.getProfile().catch(() => {});
+    user.application.commands._add(hamKomut, true);
+    const nesne = user.application.commands.cache.get(hamKomut.id);
+    if (!nesne) throw new Error(`Komut ${hamKomut.name} (${hamKomut.id}) önbelleğe alınamadı.`);
+    return nesne;
+}
+
+// Komutu once ID, sonra ad ile bulur. Bulamazsa NE OLDUGUNU soyleyen bir hata
+// firlatiyor - eskiden sadece "is not found" yaziyordu ve elde bir sey yoktu.
+async function rolKomutunuBul(guild, { komutId, komutAdi, botId }) {
+    let komutlar = await komutDizinileri(guild);
+
+    const idIle = (liste) => (komutId ? liste.find((c) => c.id === komutId && c.type === 1) : null);
+    const adIle = (liste) => (komutAdi
+        ? liste.find((c) => c.type === 1 && c.name === komutAdi && c.application_id === botId)
+        : null);
+
+    let bulunan = idIle(komutlar) || adIle(komutlar);
+    if (!bulunan) {
+        // Onbellek eski olabilir - bir kez taze dizinle dene.
+        komutlar = await komutDizinileri(guild, true);
+        bulunan = idIle(komutlar) || adIle(komutlar);
+    }
+    if (bulunan) return bulunan;
+
+    const botunkiler = komutlar
+        .filter((c) => c.type === 1 && c.application_id === botId)
+        .map((c) => `/${c.name} (${c.id})`);
+    const rolGecenler = komutlar
+        .filter((c) => c.type === 1 && /rol|role/i.test(c.name))
+        .map((c) => `/${c.name} (${c.id})`);
+
+    const parcalar = [];
+    if (komutId) {
+        // En sik yapilan hata: komut ID'si yerine mesaj ID'si yapistirmak.
+        parcalar.push(`"${komutId}" sunucunun slash komut dizininde yok. `
+            + 'Bu bir MESAJ ID\'si olabilir - gereken sey KOMUT ID\'si '
+            + '(Discord\'da komutu etiketlerken cikan </ad:ID> icindeki sayi).');
+    }
+    parcalar.push(botunkiler.length
+        ? `Ayarli botun (${botId}) komutlari: ${botunkiler.join(', ')}`
+        : `Ayarli botun (${botId}) dizinde hic slash komutu yok (toplam ${komutlar.length} komut tarandi).`);
+    if (rolGecenler.length) {
+        parcalar.push(`Adinda "rol" gecen komutlar: ${rolGecenler.join(', ')}`);
+    }
+    parcalar.push('Ayarlar > Rol Botu Komutlari > "Botun komutlarini listele" ile dogru ID\'yi secebilirsin.');
+
+    throw new Error(`Rol komutu bulunamadi (ID: ${komutId || 'yok'}, ad: ${komutAdi || 'yok'}). ${parcalar.join(' ')}`);
+}
+
+// sendSlash'in yerine gecen gonderim. args, komutun secenek sirasina gore
+// pozisyonel olarak gidiyor - sendSlash de aynisini yapiyor.
+async function rolSlashGonder(guild, channel, secim, ...args) {
+    const komut = await rolKomutunuBul(guild, secim);
+    const nesne = await komutNesnesi(komut);
+    const sahteMesaj = new SlashMesaji(client, {
+        channel_id: channel.id,
+        guild_id: guild.id,
+        author: client.user,
+        content: '',
+        id: client.user.id,
+    });
+    await nesne.sendSlashCommand(sahteMesaj, [], args);
+    return { name: komut.name, id: komut.id, applicationId: komut.application_id };
+}
+
 function waitForRoleBotReply(timeoutMs = 6000) {
     return new Promise((resolve) => {
         const onMessage = (message) => {
@@ -838,10 +953,14 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
     if (!commandChannel) throw new Error('Komut kanalı bulunamadı, ROLE_COMMAND_CHANNEL_ID hatalı olabilir.');
 
     const replyPromise = waitForRoleBotReply();
-    await commandChannel.sendSlash(rolBotId(), panelSettings.rolVerKomutu, memberId, nextRole.id);
+    const gonderilen = await rolSlashGonder(
+        guild, commandChannel,
+        { komutId: rolVerKomutId(), komutAdi: panelSettings.rolVerKomutu, botId: rolBotId() },
+        memberId, nextRole.id,
+    );
     const botReply = await replyPromise;
 
-    console.log(`[Yoklama] ${member.user.tag} (${memberId}) için "/rol-ver" gönderildi: ${nextRole.label} (${nextRole.id}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
+    console.log(`[Yoklama] ${member.user.tag} (${memberId}) için "/${gonderilen.name}" (${gonderilen.id}) gönderildi: ${nextRole.label} (${nextRole.id}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
 
     // Rol gercekten olustu mu? Olusmadiysa basarili sayilmiyor ve gecmise de
     // yazilmiyor - yoksa "Geri Al" hic verilmemis bir rolu geri almaya calisir.
@@ -932,10 +1051,14 @@ async function undoLastWarning(memberId) {
     if (!commandChannel) throw new Error('Komut kanalı bulunamadı, ROLE_COMMAND_CHANNEL_ID hatalı olabilir.');
 
     const replyPromise = waitForRoleBotReply();
-    await commandChannel.sendSlash(rolBotId(), panelSettings.rolAlKomutu, memberId, record.roleId);
+    const gonderilen = await rolSlashGonder(
+        guild, commandChannel,
+        { komutId: rolAlKomutId(), komutAdi: panelSettings.rolAlKomutu, botId: rolBotId() },
+        memberId, record.roleId,
+    );
     const botReply = await replyPromise;
 
-    console.log(`[Yoklama] ${record.tag} (${memberId}) için "/rol-al" gönderildi (geri alma): ${record.label} (${record.roleId}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
+    console.log(`[Yoklama] ${record.tag} (${memberId}) için "/${gonderilen.name}" (${gonderilen.id}) gönderildi (geri alma): ${record.label} (${record.roleId}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
 
     const kaldirildi = await verifyRoleState(guild, memberId, record.roleId, false);
     if (!kaldirildi) {
@@ -1651,6 +1774,10 @@ if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAut
 // koda dokunmadan buradan degistirilebilsin diye ayarlarda tutuluyor.
 if (typeof panelSettings.rolVerKomutu !== 'string') panelSettings.rolVerKomutu = 'rol-ver';
 if (typeof panelSettings.rolAlKomutu !== 'string') panelSettings.rolAlKomutu = 'rol-al';
+// Komut ID'si adi tamamen geciyor: ID hem komutu hem hangi uygulamaya ait
+// oldugunu tek basina belirliyor, yani ad tahmin etmeye gerek kalmiyor.
+if (typeof panelSettings.rolVerKomutId !== 'string') panelSettings.rolVerKomutId = VARSAYILAN_ROL_VER_KOMUT_ID;
+if (typeof panelSettings.rolAlKomutId !== 'string') panelSettings.rolAlKomutId = VARSAYILAN_ROL_AL_KOMUT_ID;
 if (typeof panelSettings.rolBotId !== 'string') panelSettings.rolBotId = VARSAYILAN_ROLE_BOT_ID;
 if (typeof panelSettings.otoYoklamaAcik !== 'boolean') panelSettings.otoYoklamaAcik = true;
 if (typeof panelSettings.otoYoklamaSaat !== 'string') panelSettings.otoYoklamaSaat = '20:30';
@@ -1907,11 +2034,19 @@ async function sendRoleCommand(kind, memberId, roleId) {
     if (!commandChannel) throw new Error('Komut kanali bulunamadi.');
 
     const replyPromise = waitForRoleBotReply();
-    const komutAdi = kind === 'rol-ver' ? panelSettings.rolVerKomutu : panelSettings.rolAlKomutu;
-    await commandChannel.sendSlash(rolBotId(), komutAdi, memberId, roleId);
+    const verMi = kind === 'rol-ver';
+    const gonderilen = await rolSlashGonder(
+        guild, commandChannel,
+        {
+            komutId: verMi ? rolVerKomutId() : rolAlKomutId(),
+            komutAdi: verMi ? panelSettings.rolVerKomutu : panelSettings.rolAlKomutu,
+            botId: rolBotId(),
+        },
+        memberId, roleId,
+    );
     const botReply = await replyPromise;
 
-    console.log(`[Rol] ${member.user.tag} (${memberId}) icin "/${kind}" gonderildi: ${role.name} (${roleId}). Bot cevabi: ${botReply || '(yakalanamadi)'}`);
+    console.log(`[Rol] ${member.user.tag} (${memberId}) icin "/${gonderilen.name}" (${gonderilen.id}) gonderildi: ${role.name} (${roleId}). Bot cevabi: ${botReply || '(yakalanamadi)'}`);
 
     const beklenen = kind === 'rol-ver';
     const dogrulandi = await verifyRoleState(guild, memberId, roleId, beklenen);
@@ -1998,6 +2133,8 @@ app.get('/api/surum', (req, res) => {
         // Rol islemlerinde kullanilan bot - yanlis ID'de butun rol verme
         // sessizce calismiyordu, o yuzden burada gorunuyor.
         rolBotId: rolBotId(),
+        rolVerKomutId: rolVerKomutId() || null,
+        rolAlKomutId: rolAlKomutId() || null,
         rolVerKomutu: panelSettings.rolVerKomutu,
         rolAlKomutu: panelSettings.rolAlKomutu,
         otoYoklama: {
@@ -3172,7 +3309,9 @@ app.get('/api/rol-komutlari', requireAuth, async (req, res) => {
         const botunkiler = hepsi.filter((c) => c.type === 1 && c.application_id === rolBotId());
 
         const bicimle = (c) => ({
+            id: c.id, // ID'ye gore gonderim yaptigimiz icin en onemli alan
             name: c.name,
+            applicationId: c.application_id,
             description: c.description || '',
             // Alt komutlari da goster: /rol ver gibi kullanimlar icin
             subcommands: (c.options || [])
@@ -3183,17 +3322,33 @@ app.get('/api/rol-komutlari', requireAuth, async (req, res) => {
                 .map((o) => ({ name: o.name, type: o.type, required: Boolean(o.required) })),
         });
 
+        // Ayarli ID'ler dizinde gercekten duruyor mu? "Kaydettim ama yine
+        // calismiyor" durumunu tahmin etmeden cevaplayabilelim diye.
+        const idDurumu = (id) => {
+            if (!id) return { id: null, bulundu: false, not: 'ID girilmemiş - ada göre aranıyor' };
+            const k = hepsi.find((c) => c.id === id && c.type === 1);
+            return k
+                ? { id, bulundu: true, name: k.name, applicationId: k.application_id }
+                : { id, bulundu: false, not: 'Bu ID sunucunun komut dizininde yok' };
+        };
+
         res.json({
             ok: true,
             botId: rolBotId(),
             channelId: ROLE_COMMAND_CHANNEL_ID,
-            ayarli: { ver: panelSettings.rolVerKomutu, al: panelSettings.rolAlKomutu },
+            ayarli: {
+                ver: panelSettings.rolVerKomutu,
+                al: panelSettings.rolAlKomutu,
+                verId: rolVerKomutId(),
+                alId: rolAlKomutId(),
+            },
+            idKontrol: { ver: idDurumu(rolVerKomutId()), al: idDurumu(rolAlKomutId()) },
             botKomutlari: botunkiler.map(bicimle),
             toplamKomut: hepsi.length,
-            // Ad benzerlerini one cikar - dogru adi bulmak kolaylassin
+            // Ad benzerlerini one cikar - dogru komutu bulmak kolaylassin
             benzerler: hepsi
                 .filter((c) => c.type === 1 && /rol|role/i.test(c.name))
-                .map((c) => ({ ...bicimle(c), applicationId: c.application_id })),
+                .map(bicimle),
         });
     } catch (error) {
         console.log(`[Rol] Komut listesi alinamadi: ${error.message}`);
@@ -3226,18 +3381,41 @@ app.post('/api/rol-komutlari', requireAuth, (req, res) => {
         if (!gecerli(al)) return res.json({ ok: false, error: 'Rol alma komutu geçersiz.' });
         panelSettings.rolAlKomutu = al.trim();
     }
-    const { botId } = req.body || {};
+    const { botId, verId, alId } = req.body || {};
     if (botId !== undefined && String(botId).trim()) {
         if (!/^\d{17,20}$/.test(String(botId).trim())) {
             return res.json({ ok: false, error: 'Rol botu ID 17-20 haneli sayı olmalı.' });
         }
         panelSettings.rolBotId = String(botId).trim();
     }
+    // Komut ID'leri: bos birakilirsa ada gore aramaya dusuluyor, "sil" ile
+    // bilerek temizlenebiliyor.
+    const komutIdAyarla = (deger, alan, etiket) => {
+        if (deger === undefined) return null;
+        const t = String(deger).trim();
+        if (!t || t === 'sil') { panelSettings[alan] = ''; return null; }
+        if (!/^\d{17,20}$/.test(t)) return `${etiket} 17-20 haneli sayı olmalı.`;
+        panelSettings[alan] = t;
+        return null;
+    };
+    const hata = komutIdAyarla(verId, 'rolVerKomutId', 'Rol verme komut ID')
+        || komutIdAyarla(alId, 'rolAlKomutId', 'Rol alma komut ID');
+    if (hata) return res.json({ ok: false, error: hata });
+
     savePanelSettings();
+    komutDiziniOnbellek = { at: 0, guildId: null, komutlar: [] }; // ayar degisti, dizini tazele
     addAudit('rol-komut-ayar', req.session.username,
-        `Rol komutları: ver="${panelSettings.rolVerKomutu}" al="${panelSettings.rolAlKomutu}"`, req);
-    console.log(`[Rol] Komut adlari guncellendi: ver="${panelSettings.rolVerKomutu}" al="${panelSettings.rolAlKomutu}"`);
-    return res.json({ ok: true, ver: panelSettings.rolVerKomutu, al: panelSettings.rolAlKomutu });
+        `Rol komutları: ver="${panelSettings.rolVerKomutu}" (${rolVerKomutId() || 'ID yok'}) `
+        + `al="${panelSettings.rolAlKomutu}" (${rolAlKomutId() || 'ID yok'}) bot=${rolBotId()}`, req);
+    console.log(`[Rol] Komut ayarlari guncellendi: verId=${rolVerKomutId() || 'yok'} alId=${rolAlKomutId() || 'yok'} bot=${rolBotId()}`);
+    return res.json({
+        ok: true,
+        ver: panelSettings.rolVerKomutu,
+        al: panelSettings.rolAlKomutu,
+        verId: rolVerKomutId(),
+        alId: rolAlKomutId(),
+        botId: rolBotId(),
+    });
 });
 
 app.post('/api/ticket-otomatik', requireAuth, (req, res) => {

@@ -807,3 +807,22 @@ input[type="date"].text-search { color-scheme: dark; padding: 8px 11px; }
 .tani-satir:last-of-type { border-bottom: none; }
 .tani-satir span { color: var(--ink-3); }
 .tani-satir b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* Komut ID'si - tıklayınca panoya kopyalanıyor, o yüzden tıklanabilir görünsün */
+.komut-id {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    color: var(--ink-2);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.komut-id:hover {
+    color: var(--ink);
+    border-color: var(--accent-line);
+}
+.role-tag.ok  { color: var(--ok);     border-color: var(--ok-line); }
+.role-tag.bad { color: var(--accent); border-color: var(--accent-line); }

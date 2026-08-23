@@ -86,8 +86,14 @@ sürümü aynı dosyaları okur.
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
 
 Uyarı merdiveni: `Sözlü Uyarı → 1x → 2x → 3x`. Roller doğrudan verilmez;
-komut kanalına rol botuna `/rol-ver` (geri alma için `/rol-al`) slash komutu
-gönderilir. Komut adları ve rol botunun ID'si Ayarlar'dan değiştirilebilir.
+komut kanalına rol botuna slash komut gönderilir.
+
+Komut **ID ile** çözülür. Kütüphanenin `sendSlash`'i komutu yalnızca ada göre
+arıyor ve ad birebir tutmazsa `SlashCommand ... is not found` atıp rol vermeyi
+sessizce düşürüyordu. Komut ID'si hem komutu hem hangi uygulamaya ait olduğunu
+tek başına belirlediği için ad tahmin etmeye gerek kalmıyor - komut başka bir
+bota ait olsa bile çalışır. ID boş bırakılırsa ada göre aramaya düşülür.
+Komut bulunamazsa hata, dizindeki gerçek komutları ID'leriyle birlikte yazar.
 
 Uyarı duyurusundaki **"Uyarı veren"** satırında, uyarıyı veren panel
 kullanıcısının Ayarlar'dan bağladığı Discord ID'si görünür. Bağlı ID yoksa
@@ -116,10 +122,11 @@ yaz. ID'si boş bırakılan menü arayüzde "ID yok" olarak görünür ve veri �
   Açık/kapalı düğmesi, saat ve uyarı sebebi buradan ayarlanır; "Şimdi Çalıştır"
   ile beklemeden denenebilir (deneme, o günün zamanlanmış çalışmasını iptal
   etmez). Her çalışma Hesap Logları'na yazılır.
-- **Rol Botu Komutları** - rol verme/alma slash komutlarının adı ve rol botunun
-  ID'si. "Botun komutlarını listele" ile botun gerçekten sunduğu komut adları
-  görülebilir - ad birebir tutmazsa Discord `SlashCommand ... is not found`
-  döner ve rol verilmez.
+- **Rol Botu Komutları** - rol verme/alma **komut ID'leri** (önerilen), ada göre
+  yedek arama için komut adları, ve rol botunun ID'si. "Botun komutlarını
+  listele" sunucudaki komutları ID'leriyle listeler; ID'ye tıklayınca panoya
+  kopyalanır. Ayarlı ID'lerin dizinde gerçekten bulunup bulunmadığı kartın
+  üstünde ✓/✗ olarak gösterilir.
 - **Panel Hesapları** - birden fazla panel hesabı ekleme/silme (istersen
   eklerken Discord ID de verilebilir). Son hesap silinemez.
 
@@ -215,7 +222,8 @@ geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
 | `POST /api/yoklama/acil-toplanti` | Acil toplantı |
 | `GET /api/yoklama/katilim`, `POST /api/yoklama/katil` | Yoklamaya Katıl |
 | `GET/POST /api/oto-yoklama`, `POST /api/oto-yoklama/simdi` | Otomatik günlük yoklama |
-| `GET/POST /api/rol-komutlari` | Rol botu komut adları ve bot ID'si |
+| `GET/POST /api/rol-komutlari` | Rol botu komut ID'leri, adları ve bot ID'si |
+| `GET /api/surum` | Çalışan commit, dal, rol botu/komut ayarları (girişsiz) |
 | `GET /api/loglar`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
 | `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi |

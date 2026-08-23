@@ -2426,34 +2426,75 @@ async function loadRolKomutlari(listele) {
         if (!d.ok) { rolKomutMsg.textContent = `Hata: ${d.error}`; return; }
         rolVerKomutu.value = d.ayarli.ver;
         rolAlKomutu.value = d.ayarli.al;
+        document.getElementById('rolVerKomutIdInput').value = d.ayarli.verId || '';
+        document.getElementById('rolAlKomutIdInput').value = d.ayarli.alId || '';
         document.getElementById('rolBotIdInput').value = d.botId || '';
+
+        // Ayarli ID'ler sunucunun komut dizininde gercekten var mi - "kaydettim
+        // ama yine calismiyor" durumunu listelemeye gerek kalmadan gosteriyor.
+        const idSatiri = (etiket, k) => {
+            if (!k.id) return `<span class="role-tag">${etiket}: ID yok, ada göre aranacak</span>`;
+            return k.bulundu
+                ? `<span class="role-tag ok">✓ ${etiket}: /${escapeHtml(k.name)}</span>`
+                : `<span class="role-tag bad">✗ ${etiket}: ${escapeHtml(k.id)} bulunamadı</span>`;
+        };
+        if (d.idKontrol) {
+            rolKomutMsg.innerHTML = idSatiri('Ver', d.idKontrol.ver) + ' ' + idSatiri('Al', d.idKontrol.al);
+        }
         if (!listele) return;
 
+        // ID'ye gore gonderim yaptigimiz icin ID'yi kopyalanabilir bicimde
+        // en one koyuyoruz; tiklayinca ilgili kutuya yaziliyor.
         const komutKutu = (c, uygulama) => `
             <div class="role-row" style="align-items:flex-start;">
                 <span class="role-row-name">/${escapeHtml(c.name)}${c.subcommands.length ? ` <span class="muted">${c.subcommands.map(escapeHtml).join(' | ')}</span>` : ''}</span>
+                <code class="komut-id" data-id="${escapeHtml(c.id)}" title="Tıkla: ID'yi kopyala">${escapeHtml(c.id)}</code>
                 <span class="p-spacer"></span>
                 <span class="scanStatus">${escapeHtml(c.options.map((o) => o.name + (o.required ? '*' : '')).join(', ') || 'parametresiz')}</span>
                 ${uygulama ? `<span class="role-tag">${escapeHtml(uygulama)}</span>` : ''}
             </div>`;
 
-        if (d.botKomutlari.length === 0) {
-            rolKomutListe.innerHTML = `
-                <div class="legend bad" style="margin-bottom:10px;">
-                    ⚠ Bu bot (${escapeHtml(d.botId)}) sunucuda hiç slash komut sunmuyor görünüyor.
-                </div>
-                ${d.benzerler.length
-                    ? `<p class="card-desc">Sunucudaki "rol" geçen komutlar (başka botlara ait olabilir):</p>`
-                      + d.benzerler.map((c) => komutKutu(c, c.applicationId)).join('')
-                    : `<p class="card-desc">Sunucuda "rol" geçen başka komut da bulunamadı. Toplam ${d.toplamKomut} komut tarandı.</p>`}`;
-            return;
-        }
+        // Adinda "rol" gecen komutlari HER ZAMAN gosteriyoruz: komut ID'siyle
+        // gonderim yaptigimiz icin komutun hangi uygulamaya ait oldugu onemsiz,
+        // ve aranan komut cogu zaman ayarli bottan baskasina ait cikiyor.
+        // Once sadece ayarli botun komutlari listeleniyordu ve dogru komut
+        // listede hic gorunmuyordu.
+        const botunkiler = d.botKomutlari.length
+            ? `<p class="card-desc" style="margin:0 0 8px;">
+                   Ayarlı botun komutları (${d.botKomutlari.length}):
+               </p>`
+              + d.botKomutlari.map((c) => komutKutu(c)).join('')
+            : `<div class="legend bad" style="margin-bottom:10px;">
+                   ⚠ Ayarlı bot (${escapeHtml(d.botId)}) sunucuda hiç slash komut sunmuyor görünüyor.
+               </div>`;
+
+        // Ayarli botta zaten gorunenleri tekrar yazma
+        const botIdleri = new Set(d.botKomutlari.map((c) => c.id));
+        const digerRol = d.benzerler.filter((c) => !botIdleri.has(c.id));
+        const rolListesi = digerRol.length
+            ? `<p class="card-desc" style="margin:14px 0 8px;">
+                   Adında "rol" geçen diğer komutlar — <b>başka bota ait olsalar bile
+                   ID'yi kullanabilirsin</b>, ID yazarsan bot ID'sinin önemi kalmaz:
+               </p>`
+              + digerRol.map((c) => komutKutu(c, c.applicationId)).join('')
+            : `<p class="card-desc" style="margin:14px 0 0;">
+                   Adında "rol" geçen başka komut yok. Toplam ${d.toplamKomut} komut tarandı.
+               </p>`;
 
         rolKomutListe.innerHTML = `
-            <p class="card-desc" style="margin:0 0 8px;">
-                Rol botunun komutları (${d.botKomutlari.length}). Doğru olanı yukarıdaki kutulara yaz:
+            <p class="card-desc" style="margin:0 0 10px;">
+                ID'ye tıklayınca panoya kopyalanır; yukarıdaki ID kutusuna yapıştır.
             </p>
-            ${d.botKomutlari.map((c) => komutKutu(c)).join('')}`;
+            ${botunkiler}${rolListesi}`;
+
+        rolKomutListe.querySelectorAll('.komut-id').forEach((el) => {
+            el.addEventListener('click', () => {
+                navigator.clipboard.writeText(el.dataset.id).then(() => {
+                    el.textContent = 'kopyalandı ✓';
+                    setTimeout(() => { el.textContent = el.dataset.id; }, 1200);
+                }).catch(() => { /* pano izni yoksa sessiz gec */ });
+            });
+        });
     } catch (error) {
         rolKomutMsg.textContent = `Hata: ${error.message}`;
     }
@@ -2474,11 +2515,16 @@ document.getElementById('rolKomutKaydetBtn').addEventListener('click', async () 
                 ver: rolVerKomutu.value,
                 al: rolAlKomutu.value,
                 botId: document.getElementById('rolBotIdInput').value.trim(),
+                verId: document.getElementById('rolVerKomutIdInput').value.trim(),
+                alId: document.getElementById('rolAlKomutIdInput').value.trim(),
             }),
         });
         const d = await okuJson(res);
         if (!d.ok) { rolKomutMsg.textContent = `Hata: ${d.error}`; return; }
-        rolKomutMsg.textContent = `Kaydedildi: /${d.ver} · /${d.al}`;
+        rolKomutMsg.textContent = 'Kaydedildi, doğrulanıyor...';
+        // Kaydettikten sonra ID'ler dizinde var mi diye hemen bakiyoruz -
+        // "kaydettim ama yine hata veriyor" turunu bastan kesiyor.
+        loadRolKomutlari(false);
     } catch (error) {
         rolKomutMsg.textContent = `Hata: ${error.message}`;
     }

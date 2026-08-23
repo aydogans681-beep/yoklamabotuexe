@@ -400,14 +400,18 @@
             <div class="card accent-card">
                 <h2>Rol Botu Komutları</h2>
                 <p class="card-desc">
-                    Panel rolleri rol botuna slash komut göndererek veriyor. Komut adı
-                    <b>birebir</b> eşleşmeli; bot komutu farklı adlandırdıysa buradan düzelt.
-                    Alt komutlu botlar için boşluklu yazabilirsin (örn. <code>rol ver</code>).
+                    Panel rolleri rol botuna slash komut göndererek veriyor. <b>Komut ID'si</b>
+                    girilirse komut doğrudan ondan bulunur - adın ne olduğu ve hangi bota ait
+                    olduğu önemsizleşir, en güvenilir yol budur. ID boş bırakılırsa ada göre
+                    aranır ve ad birebir tutmak zorundadır. Komut ID'lerini aşağıdaki
+                    "Botun komutlarını listele" ile görebilirsin.
                 </p>
                 <div class="settings-grid">
-                    <div class="field"><label>Rol verme komutu</label><input type="text" id="rolVerKomutu" placeholder="rol-ver"></div>
-                    <div class="field"><label>Rol alma komutu</label><input type="text" id="rolAlKomutu" placeholder="rol-al"></div>
-                    <div class="field"><label>Rol botu ID</label><input type="text" id="rolBotIdInput" placeholder="1538263121678827570"></div>
+                    <div class="field"><label>Rol verme komut <b>ID</b></label><input type="text" id="rolVerKomutIdInput" placeholder="1540707926023348274"></div>
+                    <div class="field"><label>Rol alma komut <b>ID</b></label><input type="text" id="rolAlKomutIdInput" placeholder="1540632258694750208"></div>
+                    <div class="field"><label>Rol verme komut adı <span class="muted">(ID yoksa)</span></label><input type="text" id="rolVerKomutu" placeholder="rol-ver"></div>
+                    <div class="field"><label>Rol alma komut adı <span class="muted">(ID yoksa)</span></label><input type="text" id="rolAlKomutu" placeholder="rol-al"></div>
+                    <div class="field"><label>Rol botu ID <span class="muted">(ID varsa kullanılmaz)</span></label><input type="text" id="rolBotIdInput" placeholder="1538263121678827570"></div>
                 </div>
                 <div class="toolbar">
                     <button id="rolKomutKaydetBtn">Kaydet</button>
