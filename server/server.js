@@ -109,6 +109,13 @@ function loadPanelUsers() {
     return [];
 }
 
+// Panel hesabina bagli Discord ID'si - uyari duyurusunda "Uyari veren" olarak
+// bot hesabi yerine islemi yapan yetkili gorunsun diye.
+function panelUserDiscordId(username) {
+    const u = findPanelUser(username);
+    return (u && u.discordId) || null;
+}
+
 function savePanelUsers(users) {
     const first = users[0];
     const payload = {
@@ -250,7 +257,13 @@ const WARNING_ROLES = [
     { id: '1470230365800235121', label: '2x' },
     { id: '1470230366769119354', label: '3x' },
 ];
-const ROLE_BOT_ID = '1472695273418522657';
+// Rol botu ID'si. Bir kez yanlis girildi ve butun rol islemleri sessizce
+// calismadi; bu yuzden artik panelden degistirilebiliyor (ayarda deger varsa
+// o kullaniliyor).
+const VARSAYILAN_ROLE_BOT_ID = '1538263121678827570';
+function rolBotId() {
+    return (panelSettings && panelSettings.rolBotId) || VARSAYILAN_ROLE_BOT_ID;
+}
 const ROLE_COMMAND_CHANNEL_ID = '1504900865507463259';
 const WARNING_ANNOUNCE_CHANNEL_ID = '1483232323674701835';
 const BULK_WARNING_DELAY_MS = 1200;
@@ -666,7 +679,7 @@ function waitForRoleBotReply(timeoutMs = 6000) {
     return new Promise((resolve) => {
         const onMessage = (message) => {
             if (message.channelId !== ROLE_COMMAND_CHANNEL_ID) return;
-            if (message.author.id !== ROLE_BOT_ID) return;
+            if (message.author.id !== rolBotId()) return;
             cleanup();
             const embedText = message.embeds && message.embeds[0]
                 ? (message.embeds[0].description || message.embeds[0].title || '')
@@ -797,7 +810,7 @@ function addAudit(type, actor, detail, req) {
     return entry;
 }
 
-async function giveNextWarningRole(memberId, reason, announceIndividually = true) {
+async function giveNextWarningRole(memberId, reason, announceIndividually = true, verenId = null) {
     const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
     if (!guild) throw new Error('Sunucu bulunamadı, GUILD_ID hatalı olabilir.');
     if (!(await waitForGuildShard(guild))) {
@@ -825,7 +838,7 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
     if (!commandChannel) throw new Error('Komut kanalı bulunamadı, ROLE_COMMAND_CHANNEL_ID hatalı olabilir.');
 
     const replyPromise = waitForRoleBotReply();
-    await commandChannel.sendSlash(ROLE_BOT_ID, panelSettings.rolVerKomutu, memberId, nextRole.id);
+    await commandChannel.sendSlash(rolBotId(), panelSettings.rolVerKomutu, memberId, nextRole.id);
     const botReply = await replyPromise;
 
     console.log(`[Yoklama] ${member.user.tag} (${memberId}) için "/rol-ver" gönderildi: ${nextRole.label} (${nextRole.id}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
@@ -853,7 +866,7 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
         try {
             const channel = await client.channels.fetch(WARNING_ANNOUNCE_CHANNEL_ID);
             if (!channel) throw new Error('Uyarı kanalı bulunamadı, WARNING_ANNOUNCE_CHANNEL_ID hatalı olabilir.');
-            const announceMessage = await channel.send(buildSingleWarningAnnounceMessage(memberId, nextRole.id, reason));
+            const announceMessage = await channel.send(buildSingleWarningAnnounceMessage(memberId, nextRole.id, reason, verenId));
             const record = lastGivenRole.get(memberId);
             if (record) {
                 record.announceChannelId = WARNING_ANNOUNCE_CHANNEL_ID;
@@ -873,6 +886,7 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
         label: nextRole.label,
         reason: reason || null,
         byTag: client.user ? client.user.tag : null,
+        byDiscordId: verenId || null,
     });
 
     return { ok: true, givenLabel: nextRole.label, botReply, announceError };
@@ -886,8 +900,8 @@ function formatWarningEndDate() {
     return `${day}.${month}.${year}`;
 }
 
-function buildSingleWarningAnnounceMessage(memberId, givenRoleId, reason) {
-    const selfId = client.user.id;
+function buildSingleWarningAnnounceMessage(memberId, givenRoleId, reason, verenId) {
+    const selfId = verenId || client.user.id;
     return [
         `# Uyarı alan :  <@${memberId}>`,
         `# Uyarı veren : <@${selfId}>`,
@@ -918,7 +932,7 @@ async function undoLastWarning(memberId) {
     if (!commandChannel) throw new Error('Komut kanalı bulunamadı, ROLE_COMMAND_CHANNEL_ID hatalı olabilir.');
 
     const replyPromise = waitForRoleBotReply();
-    await commandChannel.sendSlash(ROLE_BOT_ID, panelSettings.rolAlKomutu, memberId, record.roleId);
+    await commandChannel.sendSlash(rolBotId(), panelSettings.rolAlKomutu, memberId, record.roleId);
     const botReply = await replyPromise;
 
     console.log(`[Yoklama] ${record.tag} (${memberId}) için "/rol-al" gönderildi (geri alma): ${record.label} (${record.roleId}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
@@ -974,10 +988,10 @@ async function undoLastWarning(memberId) {
     return { ok: true, removedLabel: record.label, botReply, announceError, announceDeleted, announceSkippedShared };
 }
 
-function buildWarningAnnounceMessage(warnedMemberIds, reason) {
+function buildWarningAnnounceMessage(warnedMemberIds, reason, verenId) {
     const warnedMentions = warnedMemberIds.map((id) => `<@${id}>`).join('  ');
     const ladderMentions = WARNING_ROLES.map((role) => `<@&${role.id}>`).join(' Olanlara ');
-    const selfId = client.user.id;
+    const selfId = verenId || client.user.id;
     return [
         `# Uyarı alan :  ${warnedMentions}`,
         `# Uyarı veren : <@${selfId}>`,
@@ -987,7 +1001,7 @@ function buildWarningAnnounceMessage(warnedMemberIds, reason) {
     ].join('\n');
 }
 
-async function giveBulkWarning(memberIds, reason) {
+async function giveBulkWarning(memberIds, reason, verenId = null) {
     const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
     if (!guild) throw new Error('Sunucu bulunamadı, GUILD_ID hatalı olabilir.');
     if (!(await waitForGuildShard(guild))) {
@@ -1004,7 +1018,7 @@ async function giveBulkWarning(memberIds, reason) {
 
         try {
             // eslint-disable-next-line no-await-in-loop
-            const result = await giveNextWarningRole(memberId, reason, false);
+            const result = await giveNextWarningRole(memberId, reason, false, verenId);
             if (result.ok) {
                 warned.push({ id: memberId, givenLabel: result.givenLabel, botReply: result.botReply });
             } else if (result.reason === 'dogrulanamadi') {
@@ -1035,7 +1049,7 @@ async function giveBulkWarning(memberIds, reason) {
         try {
             const channel = await client.channels.fetch(WARNING_ANNOUNCE_CHANNEL_ID);
             if (!channel) throw new Error('Uyarı kanalı bulunamadı, WARNING_ANNOUNCE_CHANNEL_ID hatalı olabilir.');
-            const announceMessage = await channel.send(buildWarningAnnounceMessage(warned.map((w) => w.id), reason));
+            const announceMessage = await channel.send(buildWarningAnnounceMessage(warned.map((w) => w.id), reason, verenId));
             warned.forEach(({ id }) => {
                 const record = lastGivenRole.get(id);
                 if (record) {
@@ -1495,9 +1509,13 @@ function stripInternal(entry) {
 // aksi halde uzun mazereti onaylanmis biri gunluk mazereti tepkisiz diye
 // haksiz yere uyari alirdi.
 // ============================================================================
-function decideAttendance(member) {
+function decideAttendance(member, katilanlar) {
     if (member.inVoice) {
         return { decision: 'skip', reason: 'Seste' };
+    }
+    // Panelden "Yoklamaya Katıl" diyen kisiye uyari yazilmiyor.
+    if (katilanlar && katilanlar[member.id]) {
+        return { decision: 'excused', reason: 'Panelden yoklamaya katıldı' };
     }
     const daily = classifyReactions(member.excuseReactions);
     const long = classifyReactions(member.longExcuseReactions);
@@ -1515,6 +1533,46 @@ function decideAttendance(member) {
     return { decision: 'warn', reason: 'Seste degil, mazereti yok' };
 }
 
+// ============================================================================
+// --- YOKLAMAYA KATIL ---
+// Panel hesabina Discord ID'si bagli yetkililer panelden "katildim"
+// diyebiliyor. Katilan kisiye o gun uyari yazilmiyor.
+// ============================================================================
+const KATILIM_PATH = path.join(ROOT_DIR, 'yoklama-katilim.json');
+
+function loadKatilim() {
+    try {
+        const d = JSON.parse(fs.readFileSync(KATILIM_PATH, 'utf8'));
+        return (d && typeof d === 'object') ? d : {};
+    } catch (error) {
+        return {};
+    }
+}
+const katilimVerisi = loadKatilim(); // { "YYYY-MM-DD": { discordId: {at, by} } }
+
+function persistKatilim() {
+    try {
+        fs.writeFileSync(KATILIM_PATH, JSON.stringify(katilimVerisi, null, 2));
+    } catch (error) {
+        console.log(`[Katilim] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+function bugunKatilanlar() {
+    return katilimVerisi[bugununAnahtari()] || {};
+}
+
+function katilimEkle(discordId, kim) {
+    const gun = bugununAnahtari();
+    if (!katilimVerisi[gun]) katilimVerisi[gun] = {};
+    katilimVerisi[gun][discordId] = { at: Date.now(), by: kim || null };
+    // 60 gunden eskiyi at
+    const gunler = Object.keys(katilimVerisi).sort();
+    while (gunler.length > 60) delete katilimVerisi[gunler.shift()];
+    persistKatilim();
+    wsBroadcast({ type: 'yoklama-katilim', gun, discordId });
+}
+
 // Onizleme: tarama yapar ve kimin ne alacagini dondurur - HICBIR rol vermez.
 async function buildAttendancePreview() {
     const scan = await runYoklamaScan();
@@ -1523,8 +1581,9 @@ async function buildAttendancePreview() {
     const inVoice = [];
     const maxTier = [];
 
+    const katilanlar = bugunKatilanlar();
     scan.members.forEach((member) => {
-        const { decision, reason } = decideAttendance(member);
+        const { decision, reason } = decideAttendance(member, katilanlar);
         const row = {
             id: member.id,
             displayName: member.displayName,
@@ -1592,6 +1651,9 @@ if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAut
 // koda dokunmadan buradan degistirilebilsin diye ayarlarda tutuluyor.
 if (typeof panelSettings.rolVerKomutu !== 'string') panelSettings.rolVerKomutu = 'rol-ver';
 if (typeof panelSettings.rolAlKomutu !== 'string') panelSettings.rolAlKomutu = 'rol-al';
+if (typeof panelSettings.rolBotId !== 'string') panelSettings.rolBotId = VARSAYILAN_ROLE_BOT_ID;
+if (typeof panelSettings.otoYoklamaAcik !== 'boolean') panelSettings.otoYoklamaAcik = true;
+if (typeof panelSettings.otoYoklamaSaat !== 'string') panelSettings.otoYoklamaSaat = '20:30';
 
 function savePanelSettings() {
     try {
@@ -1846,7 +1908,7 @@ async function sendRoleCommand(kind, memberId, roleId) {
 
     const replyPromise = waitForRoleBotReply();
     const komutAdi = kind === 'rol-ver' ? panelSettings.rolVerKomutu : panelSettings.rolAlKomutu;
-    await commandChannel.sendSlash(ROLE_BOT_ID, komutAdi, memberId, roleId);
+    await commandChannel.sendSlash(rolBotId(), komutAdi, memberId, roleId);
     const botReply = await replyPromise;
 
     console.log(`[Rol] ${member.user.tag} (${memberId}) icin "/${kind}" gonderildi: ${role.name} (${roleId}). Bot cevabi: ${botReply || '(yakalanamadi)'}`);
@@ -1982,7 +2044,7 @@ app.get('/api/uyari-gecmisi', requireAuth, (req, res) => {
 app.post('/api/yoklama/rol-ver', requireAuth, async (req, res) => {
     const { memberId, reason } = req.body || {};
     try {
-        const sonuc = await giveNextWarningRole(memberId, reason);
+        const sonuc = await giveNextWarningRole(memberId, reason, true, panelUserDiscordId(req.session.username));
         if (sonuc.ok) addAudit('uyari-ver', req.session.username, `${memberId} -> "${sonuc.givenLabel}"${reason ? ` (${reason})` : ''}`, req);
         res.json(sonuc);
     } catch (error) {
@@ -2006,7 +2068,7 @@ app.post('/api/yoklama/rol-geri-al', requireAuth, async (req, res) => {
 app.post('/api/yoklama/toplu-uyari-ver', requireAuth, async (req, res) => {
     const { memberIds, reason } = req.body || {};
     try {
-        const sonuc = await giveBulkWarning(memberIds || [], reason);
+        const sonuc = await giveBulkWarning(memberIds || [], reason, panelUserDiscordId(req.session.username));
         addAudit('uyari-ver', req.session.username,
             `Toplu uyarı: ${sonuc.warned.length} kişiye verildi, ${sonuc.skipped.length} atlandı, ${sonuc.failed.length} hata${reason ? ` (${reason})` : ''}`, req);
         res.json(sonuc);
@@ -2060,6 +2122,7 @@ function validateCredentials(username, password, { requirePassword = true } = {}
 app.get('/api/hesaplar', requireAuth, (req, res) => {
     const users = loadPanelUsers().map((u, index) => ({
         username: u.username,
+        discordId: u.discordId || null,
         createdAt: u.createdAt || null,
         isPrimary: index === 0, // masaustu surumunun kullandigi hesap
         isSelf: u.username === req.session.username,
@@ -2079,8 +2142,15 @@ app.post('/api/hesaplar/ekle', requireAuth, (req, res) => {
         return res.json({ ok: false, error: 'Bu kullanıcı adı zaten var.' });
     }
 
+    const discordId = String((req.body && req.body.discordId) || '').trim();
+    if (discordId && !/^\d{17,20}$/.test(discordId)) {
+        return res.json({ ok: false, error: 'Discord ID 17-20 haneli sayı olmalı.' });
+    }
     const salt = newSalt();
-    users.push({ username, salt, hash: hashPassword(password, salt), createdAt: Date.now() });
+    users.push({
+        username, salt, hash: hashPassword(password, salt),
+        discordId: discordId || null, createdAt: Date.now(),
+    });
     try {
         savePanelUsers(users);
     } catch (error) {
@@ -2123,8 +2193,13 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
     if (!verifyPanelPassword(me, currentPassword)) {
         return res.json({ ok: false, error: 'Mevcut şifren yanlış.' });
     }
-    if (!rawNewUsername && !newPassword) {
-        return res.json({ ok: false, error: 'Yeni kullanıcı adı ya da yeni şifreden en az birini doldur.' });
+    if (!rawNewUsername && !newPassword && !String((req.body && req.body.discordId) || '').trim()) {
+        return res.json({ ok: false, error: 'Değiştirmek istediğin alanı doldur.' });
+    }
+
+    const rawDiscordId = String((req.body && req.body.discordId) || '').trim();
+    if (rawDiscordId && rawDiscordId !== 'sil' && !/^\d{17,20}$/.test(rawDiscordId)) {
+        return res.json({ ok: false, error: 'Discord ID 17-20 haneli sayı olmalı.' });
     }
 
     const newUsername = rawNewUsername || me;
@@ -2140,6 +2215,7 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
     if (!record) return res.json({ ok: false, error: 'Hesabın bulunamadı.' });
 
     record.username = newUsername;
+    if (rawDiscordId) record.discordId = rawDiscordId === 'sil' ? null : rawDiscordId;
     if (newPassword) {
         record.salt = newSalt();
         record.hash = hashPassword(newPassword, record.salt);
@@ -2244,7 +2320,7 @@ app.post('/api/yoklama/al-uygula', requireAuth, async (req, res) => {
     }
     try {
         console.log(`[Yoklama] "Yoklamayı Al" uygulanıyor: ${memberIds.length} kişi (${req.session.username}).`);
-        const sonuc = await giveBulkWarning(memberIds, String(reason).trim());
+        const sonuc = await giveBulkWarning(memberIds, String(reason).trim(), panelUserDiscordId(req.session.username));
         addAudit('yoklama-al', req.session.username,
             `${sonuc.warned.length} kişiye uyarı verildi, ${sonuc.skipped.length} atlandı, ${sonuc.failed.length} hata (${String(reason).trim()})`, req);
         return res.json(sonuc);
@@ -2903,6 +2979,146 @@ app.get('/api/etkinlik/:key/mesajlar', requireAuth, (req, res) => {
     });
 });
 
+// ============================================================================
+// --- OTOMATIK GUNLUK YOKLAMA ---
+// Her gun belirlenen saatte (Turkiye) taramayi yapip uyarilari uyguluyor.
+// Kimse basinda olmadan rol verdigi icin panelden kapatilabiliyor ve her
+// calisma hesap loglarina yaziliyor.
+// ============================================================================
+const OTO_YOKLAMA_VARSAYILAN_SAAT = '20:30';
+const saatBicimi = new Intl.DateTimeFormat('en-GB', {
+    timeZone: SAAT_DILIMI, hour: '2-digit', minute: '2-digit', hour12: false,
+});
+function suankiSaat() {
+    return saatBicimi.format(new Date()); // "20:30"
+}
+
+let otoYoklamaSonCalisma = null; // { gun, at, sonuc }
+
+async function otoYoklamaCalistir(tetikleyen) {
+    const gun = bugununAnahtari();
+    console.log(`[OtoYoklama] Başlıyor (${tetikleyen})...`);
+    try {
+        const onizleme = await buildAttendancePreview();
+        const hedefler = onizleme.warn.map((m) => m.id);
+        const sebep = panelSettings.otoYoklamaSebep || 'Otomatik yoklama - seste değil, mazereti yok';
+
+        let sonuc = { warned: [], skipped: [], failed: [] };
+        if (hedefler.length > 0) {
+            sonuc = await giveBulkWarning(hedefler, sebep, null);
+        }
+
+        otoYoklamaSonCalisma = {
+            gun,
+            at: Date.now(),
+            tetikleyen,
+            kontrol: onizleme.totalChecked,
+            seste: onizleme.totalInVoice,
+            mazeretli: onizleme.excused.length,
+            maksKademe: onizleme.maxTier.length,
+            uyarilan: sonuc.warned.length,
+            atlanan: sonuc.skipped.length,
+            hata: sonuc.failed.length,
+            ilkHata: sonuc.failed.length ? sonuc.failed[0].error : null,
+        };
+        // Gunluk kilidi BILEREK burada kurmuyoruz: onu zamanlayici, kendisi
+        // tetiklemeden once kuruyor. Boylece panelden "Şimdi çalıştır" ile
+        // yapilan bir deneme, o gunun 20:30 calismasini yemiyor.
+        console.log(`[OtoYoklama] Bitti: ${sonuc.warned.length} uyarı, `
+            + `${onizleme.excused.length} mazeretli/katılan, ${sonuc.failed.length} hata.`);
+        addAudit('oto-yoklama', 'sistem',
+            `Otomatik yoklama (${tetikleyen}): ${sonuc.warned.length} uyarı verildi, `
+            + `${onizleme.excused.length} mazeretli, ${sonuc.failed.length} hata`, null);
+        wsBroadcast({ type: 'oto-yoklama', sonuc: otoYoklamaSonCalisma });
+        return otoYoklamaSonCalisma;
+    } catch (error) {
+        console.log(`[OtoYoklama] Hata: ${error.message}`);
+        otoYoklamaSonCalisma = { gun, at: Date.now(), tetikleyen, hataMesaji: error.message };
+        addAudit('oto-yoklama', 'sistem', `Otomatik yoklama hata verdi: ${error.message}`, null);
+        return otoYoklamaSonCalisma;
+    }
+}
+
+// Dakikada bir saate bakiyoruz. setTimeout ile tek sefer planlamak yerine
+// boyle: surec uzun sure askida kalsa ya da saat degisse bile kacirmiyor,
+// ve ayni gun icinde iki kez calismasini otoYoklamaSonGun engelliyor.
+setInterval(() => {
+    if (!panelSettings.otoYoklamaAcik) return;
+    if (discordStatus !== 'bağlı') return;
+    const hedef = panelSettings.otoYoklamaSaat || OTO_YOKLAMA_VARSAYILAN_SAAT;
+    if (suankiSaat() !== hedef) return;
+    if (panelSettings.otoYoklamaSonGun === bugununAnahtari()) return; // bugün çalıştı
+    panelSettings.otoYoklamaSonGun = bugununAnahtari(); // yarışı engelle
+    savePanelSettings();
+    otoYoklamaCalistir(`zamanlanmış ${hedef}`);
+}, 60 * 1000);
+
+app.get('/api/oto-yoklama', requireAuth, (req, res) => {
+    res.json({
+        ok: true,
+        acik: Boolean(panelSettings.otoYoklamaAcik),
+        saat: panelSettings.otoYoklamaSaat || OTO_YOKLAMA_VARSAYILAN_SAAT,
+        sebep: panelSettings.otoYoklamaSebep || 'Otomatik yoklama - seste değil, mazereti yok',
+        saatDilimi: SAAT_DILIMI,
+        suanki: suankiSaat(),
+        sonCalisma: otoYoklamaSonCalisma,
+        bugunCalisti: panelSettings.otoYoklamaSonGun === bugununAnahtari(),
+    });
+});
+
+app.post('/api/oto-yoklama', requireAuth, (req, res) => {
+    const { acik, saat, sebep } = req.body || {};
+    if (typeof acik === 'boolean') panelSettings.otoYoklamaAcik = acik;
+    if (typeof saat === 'string') {
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(saat.trim())) {
+            return res.json({ ok: false, error: 'Saat SS:DD biçiminde olmalı (örn. 20:30).' });
+        }
+        panelSettings.otoYoklamaSaat = saat.trim();
+    }
+    if (typeof sebep === 'string' && sebep.trim()) panelSettings.otoYoklamaSebep = sebep.trim();
+    savePanelSettings();
+    addAudit('oto-yoklama-ayar', req.session.username,
+        `Otomatik yoklama ${panelSettings.otoYoklamaAcik ? 'açık' : 'kapalı'} · saat ${panelSettings.otoYoklamaSaat}`, req);
+    return res.json({ ok: true, acik: Boolean(panelSettings.otoYoklamaAcik), saat: panelSettings.otoYoklamaSaat });
+});
+
+// Elle tetikleme - zamanlanmisi beklemeden denemek icin
+app.post('/api/oto-yoklama/simdi', requireAuth, async (req, res) => {
+    try {
+        res.json({ ok: true, sonuc: await otoYoklamaCalistir(`elle (${req.session.username})`) });
+    } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// --- YOKLAMAYA KATIL ---
+app.get('/api/yoklama/katilim', requireAuth, (req, res) => {
+    const benimId = panelUserDiscordId(req.session.username);
+    const katilanlar = bugunKatilanlar();
+    res.json({
+        ok: true,
+        gun: bugununAnahtari(),
+        discordId: benimId,
+        katildim: Boolean(benimId && katilanlar[benimId]),
+        toplam: Object.keys(katilanlar).length,
+        katilanlar: Object.entries(katilanlar).map(([id, v]) => ({ id, at: v.at })),
+    });
+});
+
+app.post('/api/yoklama/katil', requireAuth, (req, res) => {
+    const benimId = panelUserDiscordId(req.session.username);
+    if (!benimId) {
+        return res.json({
+            ok: false,
+            error: 'Hesabına Discord ID bağlı değil. Ayarlar > Kendi Hesabım bölümünden ekle.',
+        });
+    }
+    katilimEkle(benimId, req.session.username);
+    addAudit('yoklama-katilim', req.session.username, `Yoklamaya katıldı (${benimId})`, req);
+    console.log(`[Katilim] ${req.session.username} yoklamaya katildi (${benimId}).`);
+    return res.json({ ok: true, discordId: benimId, gun: bugununAnahtari() });
+});
+
 // --- ROL BOTU KOMUTLARI ---
 // sendSlash komut adini BIREBIR esleştiriyor; ad tutmazsa "SlashCommand X is
 // not found" hatasi geliyor. Botun gercekte hangi komutlari sundugunu
@@ -2913,7 +3129,7 @@ app.get('/api/rol-komutlari', requireAuth, async (req, res) => {
         // sendSlash ile AYNI kaynak: sunucunun komut dizini.
         const data = await client.api.guilds[guild.id]['application-command-index'].get();
         const hepsi = (data && data.application_commands) || [];
-        const botunkiler = hepsi.filter((c) => c.type === 1 && c.application_id === ROLE_BOT_ID);
+        const botunkiler = hepsi.filter((c) => c.type === 1 && c.application_id === rolBotId());
 
         const bicimle = (c) => ({
             name: c.name,
@@ -2929,7 +3145,7 @@ app.get('/api/rol-komutlari', requireAuth, async (req, res) => {
 
         res.json({
             ok: true,
-            botId: ROLE_BOT_ID,
+            botId: rolBotId(),
             channelId: ROLE_COMMAND_CHANNEL_ID,
             ayarli: { ver: panelSettings.rolVerKomutu, al: panelSettings.rolAlKomutu },
             botKomutlari: botunkiler.map(bicimle),
@@ -2969,6 +3185,13 @@ app.post('/api/rol-komutlari', requireAuth, (req, res) => {
     if (al !== undefined) {
         if (!gecerli(al)) return res.json({ ok: false, error: 'Rol alma komutu geçersiz.' });
         panelSettings.rolAlKomutu = al.trim();
+    }
+    const { botId } = req.body || {};
+    if (botId !== undefined && String(botId).trim()) {
+        if (!/^\d{17,20}$/.test(String(botId).trim())) {
+            return res.json({ ok: false, error: 'Rol botu ID 17-20 haneli sayı olmalı.' });
+        }
+        panelSettings.rolBotId = String(botId).trim();
     }
     savePanelSettings();
     addAudit('rol-komut-ayar', req.session.username,

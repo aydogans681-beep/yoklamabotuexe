@@ -42,6 +42,10 @@ token ve şifre hash'leri asla depoya girmez. Sunucuda elle oluşturulur.
 config.env            GİZLİ - Discord token'ı (depoda yok)
 panel-auth.json       GİZLİ - panel hesapları (depoda yok)
 warning-history.json  Uyarı geçmişi (depoda yok, masaüstü sürümüyle paylaşılır)
+panel-settings.json   Panel ayarları: otomatik yoklama, rol botu, ticket mesajı
+panel-audit.json      Hesap Logları (kim ne yaptı)
+voice-activity.json   Aktiflik sekmesi - günlük ses süreleri
+yoklama-katilim.json  "Yoklamaya Katıl" kayıtları (gün gün)
 server/
   server.js           Backend: Discord istemcisi + HTTP/WebSocket API
   public/             Ön yüz (index.html, app.js, style.css)
@@ -65,6 +69,7 @@ sürümü aynı dosyaları okur.
   | Durum | Sonuç |
   |---|---|
   | Seste | Uyarı yok |
+  | Panelden "Yoklamaya Katıl" demiş | Uyarı yok |
   | Mazerette ✅ | Uyarı yok |
   | Mazerette ❌ | **Uyarı** |
   | Mazeret var, tepki yok | **Uyarı** |
@@ -73,12 +78,20 @@ sürümü aynı dosyaları okur.
   Günlük ve uzun mazeretten **birinde bile ✅ varsa** uyarı yazılmaz.
   Uyarılar doğrudan uygulanmaz: önce kimin ne alacağını gösteren bir önizleme
   penceresi açılır, onaydan sonra sırayla uygulanır.
+- **Yoklamaya Katıl** - panel hesabına Discord ID'si bağlı olan yetkili,
+  kendini o günün yoklamasında katıldı olarak işaretler; o gün uyarı almaz.
+  Kayıt `yoklama-katilim.json` dosyasında gün gün tutulur. Hesabına ID bağlı
+  değilse buton kapalı gelir ve sebebini yazar.
 - **Toplu Uyarı** - elle seçilen kişilere uyarı verme / geri alma.
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
 
 Uyarı merdiveni: `Sözlü Uyarı → 1x → 2x → 3x`. Roller doğrudan verilmez;
 komut kanalına rol botuna `/rol-ver` (geri alma için `/rol-al`) slash komutu
-gönderilir.
+gönderilir. Komut adları ve rol botunun ID'si Ayarlar'dan değiştirilebilir.
+
+Uyarı duyurusundaki **"Uyarı veren"** satırında, uyarıyı veren panel
+kullanıcısının Ayarlar'dan bağladığı Discord ID'si görünür. Bağlı ID yoksa
+botun kendi hesabı yazılır.
 
 ### TX Logs
 
@@ -94,17 +107,31 @@ yaz. ID'si boş bırakılan menü arayüzde "ID yok" olarak görünür ve veri �
 
 ### Ayarlar
 
-- **Kendi Hesabım** - mevcut şifreyle doğrulayarak kullanıcı adı ve/veya şifre
-  değiştirme. Değişiklikten sonra o hesabın diğer tüm oturumları düşer.
-- **Panel Hesapları** - birden fazla panel hesabı ekleme/silme. Son hesap
-  silinemez.
+- **Kendi Hesabım** - mevcut şifreyle doğrulayarak kullanıcı adı, şifre
+  ve **Discord ID** değiştirme. Değişiklikten sonra o hesabın diğer tüm
+  oturumları düşer. Discord ID 17-20 haneli olmalı; `sil` yazıp kaydedersen
+  bağlantı kaldırılır.
+- **Otomatik Günlük Yoklama** - her gün belirlenen saatte (varsayılan `20:30`,
+  Türkiye saati) yoklama alınır ve **uyarılar kimse başında olmadan verilir**.
+  Açık/kapalı düğmesi, saat ve uyarı sebebi buradan ayarlanır; "Şimdi Çalıştır"
+  ile beklemeden denenebilir (deneme, o günün zamanlanmış çalışmasını iptal
+  etmez). Her çalışma Hesap Logları'na yazılır.
+- **Rol Botu Komutları** - rol verme/alma slash komutlarının adı ve rol botunun
+  ID'si. "Botun komutlarını listele" ile botun gerçekten sunduğu komut adları
+  görülebilir - ad birebir tutmazsa Discord `SlashCommand ... is not found`
+  döner ve rol verilmez.
+- **Panel Hesapları** - birden fazla panel hesabı ekleme/silme (istersen
+  eklerken Discord ID de verilebilir). Son hesap silinemez.
 
 `panel-auth.json` biçimi:
 
 ```json
 {
   "username": "...", "salt": "...", "hash": "...",
-  "users": [ { "username": "...", "salt": "...", "hash": "...", "createdAt": 0 } ]
+  "users": [
+    { "username": "...", "salt": "...", "hash": "...",
+      "discordId": "892001875669434378", "createdAt": 0 }
+  ]
 }
 ```
 
@@ -179,13 +206,16 @@ geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
 |---|---|
 | `POST /api/login`, `/api/logout`, `GET /api/me` | Oturum |
 | `GET /api/hesaplar`, `POST /api/hesaplar/ekle`, `/api/hesaplar/sil` | Hesap yönetimi |
-| `POST /api/hesap/guncelle` | Kendi kullanıcı adı/şifresini değiştirme |
+| `POST /api/hesap/guncelle` | Kendi kullanıcı adı/şifre/Discord ID'sini değiştirme |
 | `GET /api/status` | Discord bağlantı durumu |
 | `POST /api/yoklama/tara` | Yoklama taraması |
 | `POST /api/yoklama/al-onizleme`, `/api/yoklama/al-uygula` | Yoklamayı Al |
 | `POST /api/yoklama/rol-ver`, `/rol-geri-al` | Tekli uyarı |
 | `POST /api/yoklama/toplu-uyari-ver`, `/toplu-rol-geri-al` | Toplu uyarı |
 | `POST /api/yoklama/acil-toplanti` | Acil toplantı |
+| `GET /api/yoklama/katilim`, `POST /api/yoklama/katil` | Yoklamaya Katıl |
+| `GET/POST /api/oto-yoklama`, `POST /api/oto-yoklama/simdi` | Otomatik günlük yoklama |
+| `GET/POST /api/rol-komutlari` | Rol botu komut adları ve bot ID'si |
 | `GET /api/loglar`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
 | `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi |

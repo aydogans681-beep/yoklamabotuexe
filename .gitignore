@@ -10,6 +10,7 @@ warning-history.json
 panel-audit.json
 panel-settings.json
 voice-activity.json
+yoklama-katilim.json
 
 # Loglar
 *.log

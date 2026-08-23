@@ -93,6 +93,9 @@
                     </div>
                 </div>
                 <span class="sep"></span>
+                <button class="secondary small" id="katilBtn" title="Kendini bugünkü yoklamada katıldı olarak işaretle">✋ Yoklamaya Katıl</button>
+                <span class="scanStatus" id="katilMsg"></span>
+                <span class="sep"></span>
                 <button class="secondary small" id="emergencyBtn" title="Sesteki tüm yetkilileri bulunduğun ses kanalına çeker">🚨 Acil Toplantı</button>
                 <span class="scanStatus" id="emergencyStatus"></span>
             </div>
@@ -359,11 +362,39 @@
                     <div class="field"><label>Mevcut Şifre</label><input type="password" id="curPassword" autocomplete="current-password"></div>
                     <div class="field"><label>Yeni Kullanıcı Adı <span class="muted">(boş = değişmesin)</span></label><input type="text" id="newUsername" autocomplete="username"></div>
                     <div class="field"><label>Yeni Şifre <span class="muted">(boş = değişmesin)</span></label><input type="password" id="newPassword" autocomplete="new-password"></div>
+                    <div class="field">
+                        <label>Discord ID <span class="muted">(uyarı duyurusunda "veren" olarak görünür)</span></label>
+                        <input type="text" id="myDiscordId" placeholder="892001875669434378">
+                    </div>
                 </div>
                 <div class="toolbar">
                     <button id="updateAccountBtn">Kaydet</button>
                     <span class="scanStatus" id="accountMsg"></span>
                 </div>
+            </div>
+
+            <div class="card accent-card">
+                <h2>Otomatik Günlük Yoklama</h2>
+                <p class="card-desc">
+                    Her gün belirtilen saatte yoklama alınır ve <b>uyarılar otomatik verilir</b>.
+                    Kimse başında olmadan rol verdiği için istediğin an kapatabilirsin;
+                    her çalışma Hesap Logları'na yazılır. Saat Türkiye saatidir.
+                </p>
+                <div class="toolbar" style="margin-bottom:10px;">
+                    <label class="check-inline"><input type="checkbox" id="otoYoklamaAcik"> Açık</label>
+                    <input type="text" class="text-search" id="otoYoklamaSaat" placeholder="20:30" style="max-width:110px; flex:0 0 auto;">
+                    <span class="scanStatus" id="otoYoklamaSaatBilgi"></span>
+                </div>
+                <div class="field">
+                    <label>Uyarı sebebi</label>
+                    <input type="text" id="otoYoklamaSebep" placeholder="Otomatik yoklama - seste değil, mazereti yok">
+                </div>
+                <div class="toolbar">
+                    <button id="otoYoklamaKaydetBtn">Kaydet</button>
+                    <button class="secondary small" id="otoYoklamaSimdiBtn">Şimdi Çalıştır</button>
+                    <span class="scanStatus" id="otoYoklamaMsg"></span>
+                </div>
+                <div class="scanStatus" id="otoYoklamaSon" style="margin-top:10px;"></div>
             </div>
 
             <div class="card accent-card">
@@ -376,6 +407,7 @@
                 <div class="settings-grid">
                     <div class="field"><label>Rol verme komutu</label><input type="text" id="rolVerKomutu" placeholder="rol-ver"></div>
                     <div class="field"><label>Rol alma komutu</label><input type="text" id="rolAlKomutu" placeholder="rol-al"></div>
+                    <div class="field"><label>Rol botu ID</label><input type="text" id="rolBotIdInput" placeholder="1538263121678827570"></div>
                 </div>
                 <div class="toolbar">
                     <button id="rolKomutKaydetBtn">Kaydet</button>
@@ -440,6 +472,7 @@
                 <div class="toolbar" style="margin-top:10px;">
                     <input type="text" class="text-search" id="addUsername" placeholder="Yeni kullanıcı adı">
                     <input type="password" class="text-search" id="addPassword" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
+                    <input type="text" class="text-search" id="addDiscordId" placeholder="Discord ID (isteğe bağlı)">
                     <button id="addAccountBtn">Hesap Ekle</button>
                     <span class="scanStatus" id="addAccountMsg"></span>
                 </div>

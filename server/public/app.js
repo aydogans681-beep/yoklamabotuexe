@@ -97,6 +97,7 @@ function showApp() {
     connectWebSocket();
     refreshLogMenu();
     refreshAccounts();
+    loadKatilim();
 }
 
 async function doLogin() {
@@ -167,6 +168,12 @@ function connectWebSocket() {
                 onLogStatusUpdate(msg);
             } else if (msg.type === 'log-yeni') {
                 onLogNewMessage(msg);
+            } else if (msg.type === 'yoklama-katilim') {
+                // Baska bir panel kullanicisi katildi - sayac anlik guncellensin.
+                loadKatilim();
+            } else if (msg.type === 'oto-yoklama') {
+                // Zamanlanmis yoklama calisti - Ayarlar acikken sonucu hemen goster.
+                loadOtoYoklama();
             }
             // "Yoklamayı Al" uygulanırken ilerleme önizleme penceresinde de görünsün.
             if (msg.type === 'yoklama-toplu-uyari-ilerleme' && previewModal.style.display !== 'none') {
@@ -565,8 +572,9 @@ tabButtons.forEach((btn) => {
         btn.classList.add('active');
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+        if (btn.dataset.tab === 'yoklama') loadKatilim();
         if (btn.dataset.tab === 'loglar') refreshLogMenu();
-        if (btn.dataset.tab === 'ayarlar') { refreshAccounts(); loadTicketAuto(); loadRolKomutlari(false); }
+        if (btn.dataset.tab === 'ayarlar') { refreshAccounts(); loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama(); }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
         if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
@@ -855,6 +863,9 @@ async function refreshAccounts() {
             row.className = 'account-row';
             row.innerHTML = `
                 <span class="acc-name">${escapeHtml(user.username)}</span>
+                ${user.discordId
+                    ? `<span class="acc-badge" title="Bağlı Discord ID">🔗 ${escapeHtml(user.discordId)}</span>`
+                    : '<span class="acc-badge" style="opacity:.6">Discord ID yok</span>'}
                 ${user.isPrimary ? '<span class="acc-badge">Ana hesap</span>' : ''}
                 ${user.isSelf ? '<span class="acc-badge">Sen</span>' : ''}
                 <span class="acc-spacer"></span>
@@ -893,13 +904,18 @@ document.getElementById('addAccountBtn').addEventListener('click', async () => {
         const res = await fetch('/api/hesaplar/ekle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: addUsername.value.trim(), password: addPassword.value }),
+            body: JSON.stringify({
+                username: addUsername.value.trim(),
+                password: addPassword.value,
+                discordId: document.getElementById('addDiscordId').value.trim(),
+            }),
         });
         const data = await okuJson(res);
         if (!data.ok) { addAccountMsg.textContent = `Hata: ${data.error}`; return; }
         addAccountMsg.textContent = 'Hesap eklendi.';
         addUsername.value = '';
         addPassword.value = '';
+        document.getElementById('addDiscordId').value = '';
         refreshAccounts();
     } catch (error) {
         addAccountMsg.textContent = `Hata: ${error.message}`;
@@ -916,6 +932,7 @@ document.getElementById('updateAccountBtn').addEventListener('click', async () =
                 currentPassword: curPassword.value,
                 newUsername: newUsernameEl.value.trim(),
                 newPassword: newPasswordEl.value,
+                discordId: document.getElementById('myDiscordId').value.trim(),
             }),
         });
         const data = await okuJson(res);
@@ -927,6 +944,7 @@ document.getElementById('updateAccountBtn').addEventListener('click', async () =
         newUsernameEl.value = '';
         newPasswordEl.value = '';
         refreshAccounts();
+        loadKatilim(); // Discord ID degismis olabilir - "Yoklamaya Katıl" butonu guncellensin
     } catch (error) {
         accountMsg.textContent = `Hata: ${error.message}`;
     }
@@ -2408,6 +2426,7 @@ async function loadRolKomutlari(listele) {
         if (!d.ok) { rolKomutMsg.textContent = `Hata: ${d.error}`; return; }
         rolVerKomutu.value = d.ayarli.ver;
         rolAlKomutu.value = d.ayarli.al;
+        document.getElementById('rolBotIdInput').value = d.botId || '';
         if (!listele) return;
 
         const komutKutu = (c, uygulama) => `
@@ -2451,12 +2470,136 @@ document.getElementById('rolKomutKaydetBtn').addEventListener('click', async () 
         const res = await fetch('/api/rol-komutlari', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ver: rolVerKomutu.value, al: rolAlKomutu.value }),
+            body: JSON.stringify({
+                ver: rolVerKomutu.value,
+                al: rolAlKomutu.value,
+                botId: document.getElementById('rolBotIdInput').value.trim(),
+            }),
         });
         const d = await okuJson(res);
         if (!d.ok) { rolKomutMsg.textContent = `Hata: ${d.error}`; return; }
         rolKomutMsg.textContent = `Kaydedildi: /${d.ver} · /${d.al}`;
     } catch (error) {
         rolKomutMsg.textContent = `Hata: ${error.message}`;
+    }
+});
+
+// ============================================================================
+// --- YOKLAMAYA KATIL ---
+// Panel hesabına Discord ID'si bağlı yetkililer kendilerini o günkü yoklamada
+// katıldı olarak işaretleyebiliyor; katılana uyarı yazılmıyor.
+// ============================================================================
+const katilBtn = document.getElementById('katilBtn');
+const katilMsg = document.getElementById('katilMsg');
+
+async function loadKatilim() {
+    try {
+        const res = await fetch('/api/yoklama/katilim');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) return;
+        if (!d.discordId) {
+            katilBtn.disabled = true;
+            katilBtn.textContent = '✋ Yoklamaya Katıl';
+            katilBtn.title = 'Hesabına Discord ID bağlı değil - Ayarlar > Kendi Hesabım';
+            katilMsg.textContent = 'Katılmak için Ayarlar\'dan Discord ID ekle';
+        } else if (d.katildim) {
+            katilBtn.disabled = true;
+            katilBtn.textContent = '✓ Katıldın';
+            katilBtn.title = `Bugün (${d.gun}) katıldı olarak işaretlendin`;
+            katilMsg.textContent = `Bugün ${d.toplam} kişi katıldı`;
+        } else {
+            katilBtn.disabled = false;
+            katilBtn.textContent = '✋ Yoklamaya Katıl';
+            katilBtn.title = 'Kendini bugünkü yoklamada katıldı olarak işaretle';
+            katilMsg.textContent = d.toplam ? `Bugün ${d.toplam} kişi katıldı` : '';
+        }
+    } catch (error) {
+        katilMsg.textContent = `Hata: ${error.message}`;
+    }
+}
+
+katilBtn.addEventListener('click', async () => {
+    katilBtn.disabled = true;
+    katilMsg.textContent = 'Kaydediliyor...';
+    try {
+        const res = await fetch('/api/yoklama/katil', { method: 'POST' });
+        const d = await okuJson(res);
+        if (!d.ok) { katilMsg.textContent = d.error; katilBtn.disabled = false; return; }
+        await loadKatilim();
+    } catch (error) {
+        katilMsg.textContent = `Hata: ${error.message}`;
+        katilBtn.disabled = false;
+    }
+});
+
+// ============================================================================
+// --- OTOMATİK GÜNLÜK YOKLAMA (Ayarlar) ---
+// ============================================================================
+const otoYoklamaAcik = document.getElementById('otoYoklamaAcik');
+const otoYoklamaSaat = document.getElementById('otoYoklamaSaat');
+const otoYoklamaSebep = document.getElementById('otoYoklamaSebep');
+const otoYoklamaMsg = document.getElementById('otoYoklamaMsg');
+const otoYoklamaSon = document.getElementById('otoYoklamaSon');
+
+function otoSonucMetni(x) {
+    if (!x) return 'Henüz çalışmadı.';
+    if (x.hataMesaji) return `Son çalışma (${formatDate(x.at)}) hata verdi: ${x.hataMesaji}`;
+    return `Son çalışma: ${formatDate(x.at)} (${x.tetikleyen}) · `
+        + `${x.kontrol} yetkili kontrol edildi, ${x.seste} sesde, `
+        + `${x.mazeretli} mazeretli/katılan, ${x.uyarilan} uyarı verildi`
+        + (x.hata ? `, ${x.hata} hata` : '')
+        + (x.ilkHata ? ` — ${x.ilkHata}` : '');
+}
+
+async function loadOtoYoklama() {
+    try {
+        const res = await fetch('/api/oto-yoklama');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) return;
+        otoYoklamaAcik.checked = d.acik;
+        otoYoklamaSaat.value = d.saat;
+        otoYoklamaSebep.value = d.sebep;
+        document.getElementById('otoYoklamaSaatBilgi').textContent =
+            `Sunucuda şu an ${d.suanki} (${d.saatDilimi})` + (d.bugunCalisti ? ' · bugün çalıştı' : '');
+        otoYoklamaSon.innerHTML = escapeHtml(otoSonucMetni(d.sonCalisma));
+    } catch (error) {
+        otoYoklamaMsg.textContent = `Hata: ${error.message}`;
+    }
+}
+
+document.getElementById('otoYoklamaKaydetBtn').addEventListener('click', async () => {
+    otoYoklamaMsg.textContent = 'Kaydediliyor...';
+    try {
+        const res = await fetch('/api/oto-yoklama', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                acik: otoYoklamaAcik.checked,
+                saat: otoYoklamaSaat.value,
+                sebep: otoYoklamaSebep.value,
+            }),
+        });
+        const d = await okuJson(res);
+        if (!d.ok) { otoYoklamaMsg.textContent = `Hata: ${d.error}`; return; }
+        otoYoklamaMsg.textContent = d.acik ? `Kaydedildi — her gün ${d.saat}` : 'Kaydedildi — kapalı';
+        loadOtoYoklama();
+    } catch (error) {
+        otoYoklamaMsg.textContent = `Hata: ${error.message}`;
+    }
+});
+
+document.getElementById('otoYoklamaSimdiBtn').addEventListener('click', async () => {
+    if (!window.confirm('Yoklama şimdi alınacak ve uyarılar OTOMATİK verilecek. Onaylıyor musun?')) return;
+    otoYoklamaMsg.textContent = 'Çalışıyor, birkaç dakika sürebilir...';
+    try {
+        const res = await fetch('/api/oto-yoklama/simdi', { method: 'POST' });
+        const d = await okuJson(res);
+        if (!d.ok) { otoYoklamaMsg.textContent = `Hata: ${d.error}`; return; }
+        otoYoklamaMsg.textContent = 'Bitti.';
+        otoYoklamaSon.innerHTML = escapeHtml(otoSonucMetni(d.sonuc));
+    } catch (error) {
+        otoYoklamaMsg.textContent = `Hata: ${error.message}`;
     }
 });
