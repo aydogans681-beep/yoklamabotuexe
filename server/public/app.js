@@ -566,7 +566,7 @@ tabButtons.forEach((btn) => {
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
         if (btn.dataset.tab === 'loglar') refreshLogMenu();
-        if (btn.dataset.tab === 'ayarlar') { refreshAccounts(); loadTicketAuto(); }
+        if (btn.dataset.tab === 'ayarlar') { refreshAccounts(); loadTicketAuto(); loadRolKomutlari(false); }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
         if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
@@ -2387,5 +2387,76 @@ document.getElementById('presenceDiagBtn').addEventListener('click', async () =>
             </div>`;
     } catch (error) {
         presenceList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+});
+
+// ============================================================================
+// --- ROL BOTU KOMUTLARI (Ayarlar) ---
+// sendSlash komut adını birebir eşleştiriyor; ad tutmazsa "SlashCommand X is
+// not found" hatası geliyor ve rol verilmiyor.
+// ============================================================================
+const rolVerKomutu = document.getElementById('rolVerKomutu');
+const rolAlKomutu = document.getElementById('rolAlKomutu');
+const rolKomutMsg = document.getElementById('rolKomutMsg');
+const rolKomutListe = document.getElementById('rolKomutListe');
+
+async function loadRolKomutlari(listele) {
+    try {
+        const res = await fetch('/api/rol-komutlari');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) { rolKomutMsg.textContent = `Hata: ${d.error}`; return; }
+        rolVerKomutu.value = d.ayarli.ver;
+        rolAlKomutu.value = d.ayarli.al;
+        if (!listele) return;
+
+        const komutKutu = (c, uygulama) => `
+            <div class="role-row" style="align-items:flex-start;">
+                <span class="role-row-name">/${escapeHtml(c.name)}${c.subcommands.length ? ` <span class="muted">${c.subcommands.map(escapeHtml).join(' | ')}</span>` : ''}</span>
+                <span class="p-spacer"></span>
+                <span class="scanStatus">${escapeHtml(c.options.map((o) => o.name + (o.required ? '*' : '')).join(', ') || 'parametresiz')}</span>
+                ${uygulama ? `<span class="role-tag">${escapeHtml(uygulama)}</span>` : ''}
+            </div>`;
+
+        if (d.botKomutlari.length === 0) {
+            rolKomutListe.innerHTML = `
+                <div class="legend bad" style="margin-bottom:10px;">
+                    ⚠ Bu bot (${escapeHtml(d.botId)}) sunucuda hiç slash komut sunmuyor görünüyor.
+                </div>
+                ${d.benzerler.length
+                    ? `<p class="card-desc">Sunucudaki "rol" geçen komutlar (başka botlara ait olabilir):</p>`
+                      + d.benzerler.map((c) => komutKutu(c, c.applicationId)).join('')
+                    : `<p class="card-desc">Sunucuda "rol" geçen başka komut da bulunamadı. Toplam ${d.toplamKomut} komut tarandı.</p>`}`;
+            return;
+        }
+
+        rolKomutListe.innerHTML = `
+            <p class="card-desc" style="margin:0 0 8px;">
+                Rol botunun komutları (${d.botKomutlari.length}). Doğru olanı yukarıdaki kutulara yaz:
+            </p>
+            ${d.botKomutlari.map((c) => komutKutu(c)).join('')}`;
+    } catch (error) {
+        rolKomutMsg.textContent = `Hata: ${error.message}`;
+    }
+}
+
+document.getElementById('rolKomutListeBtn').addEventListener('click', () => {
+    rolKomutListe.innerHTML = '<div class="scanStatus">Komutlar alınıyor...</div>';
+    loadRolKomutlari(true);
+});
+
+document.getElementById('rolKomutKaydetBtn').addEventListener('click', async () => {
+    rolKomutMsg.textContent = 'Kaydediliyor...';
+    try {
+        const res = await fetch('/api/rol-komutlari', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ver: rolVerKomutu.value, al: rolAlKomutu.value }),
+        });
+        const d = await okuJson(res);
+        if (!d.ok) { rolKomutMsg.textContent = `Hata: ${d.error}`; return; }
+        rolKomutMsg.textContent = `Kaydedildi: /${d.ver} · /${d.al}`;
+    } catch (error) {
+        rolKomutMsg.textContent = `Hata: ${error.message}`;
     }
 });

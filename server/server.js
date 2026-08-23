@@ -825,7 +825,7 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
     if (!commandChannel) throw new Error('Komut kanalı bulunamadı, ROLE_COMMAND_CHANNEL_ID hatalı olabilir.');
 
     const replyPromise = waitForRoleBotReply();
-    await commandChannel.sendSlash(ROLE_BOT_ID, 'rol-ver', memberId, nextRole.id);
+    await commandChannel.sendSlash(ROLE_BOT_ID, panelSettings.rolVerKomutu, memberId, nextRole.id);
     const botReply = await replyPromise;
 
     console.log(`[Yoklama] ${member.user.tag} (${memberId}) için "/rol-ver" gönderildi: ${nextRole.label} (${nextRole.id}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
@@ -918,7 +918,7 @@ async function undoLastWarning(memberId) {
     if (!commandChannel) throw new Error('Komut kanalı bulunamadı, ROLE_COMMAND_CHANNEL_ID hatalı olabilir.');
 
     const replyPromise = waitForRoleBotReply();
-    await commandChannel.sendSlash(ROLE_BOT_ID, 'rol-al', memberId, record.roleId);
+    await commandChannel.sendSlash(ROLE_BOT_ID, panelSettings.rolAlKomutu, memberId, record.roleId);
     const botReply = await replyPromise;
 
     console.log(`[Yoklama] ${record.tag} (${memberId}) için "/rol-al" gönderildi (geri alma): ${record.label} (${record.roleId}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
@@ -1587,6 +1587,11 @@ function loadPanelSettings() {
 const panelSettings = loadPanelSettings();
 if (typeof panelSettings.ticketAutoEnabled !== 'boolean') panelSettings.ticketAutoEnabled = true;
 if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAutoMessage = VARSAYILAN_TICKET_MESAJI;
+// Rol botunun slash komut adlari. sendSlash birebir isim esleştirmesi yapiyor;
+// bot komutu farkli adlandirmissa ("rol ver" gibi alt komut da olabilir)
+// koda dokunmadan buradan degistirilebilsin diye ayarlarda tutuluyor.
+if (typeof panelSettings.rolVerKomutu !== 'string') panelSettings.rolVerKomutu = 'rol-ver';
+if (typeof panelSettings.rolAlKomutu !== 'string') panelSettings.rolAlKomutu = 'rol-al';
 
 function savePanelSettings() {
     try {
@@ -1840,7 +1845,8 @@ async function sendRoleCommand(kind, memberId, roleId) {
     if (!commandChannel) throw new Error('Komut kanali bulunamadi.');
 
     const replyPromise = waitForRoleBotReply();
-    await commandChannel.sendSlash(ROLE_BOT_ID, kind, memberId, roleId);
+    const komutAdi = kind === 'rol-ver' ? panelSettings.rolVerKomutu : panelSettings.rolAlKomutu;
+    await commandChannel.sendSlash(ROLE_BOT_ID, komutAdi, memberId, roleId);
     const botReply = await replyPromise;
 
     console.log(`[Rol] ${member.user.tag} (${memberId}) icin "/${kind}" gonderildi: ${role.name} (${roleId}). Bot cevabi: ${botReply || '(yakalanamadi)'}`);
@@ -2897,6 +2903,48 @@ app.get('/api/etkinlik/:key/mesajlar', requireAuth, (req, res) => {
     });
 });
 
+// --- ROL BOTU KOMUTLARI ---
+// sendSlash komut adini BIREBIR esleştiriyor; ad tutmazsa "SlashCommand X is
+// not found" hatasi geliyor. Botun gercekte hangi komutlari sundugunu
+// listeleyip dogru adi secebilmek icin.
+app.get('/api/rol-komutlari', requireAuth, async (req, res) => {
+    try {
+        const guild = await getReadyGuild();
+        // sendSlash ile AYNI kaynak: sunucunun komut dizini.
+        const data = await client.api.guilds[guild.id]['application-command-index'].get();
+        const hepsi = (data && data.application_commands) || [];
+        const botunkiler = hepsi.filter((c) => c.type === 1 && c.application_id === ROLE_BOT_ID);
+
+        const bicimle = (c) => ({
+            name: c.name,
+            description: c.description || '',
+            // Alt komutlari da goster: /rol ver gibi kullanimlar icin
+            subcommands: (c.options || [])
+                .filter((o) => o.type === 1 || o.type === 2)
+                .map((o) => o.name),
+            options: (c.options || [])
+                .filter((o) => o.type !== 1 && o.type !== 2)
+                .map((o) => ({ name: o.name, type: o.type, required: Boolean(o.required) })),
+        });
+
+        res.json({
+            ok: true,
+            botId: ROLE_BOT_ID,
+            channelId: ROLE_COMMAND_CHANNEL_ID,
+            ayarli: { ver: panelSettings.rolVerKomutu, al: panelSettings.rolAlKomutu },
+            botKomutlari: botunkiler.map(bicimle),
+            toplamKomut: hepsi.length,
+            // Ad benzerlerini one cikar - dogru adi bulmak kolaylassin
+            benzerler: hepsi
+                .filter((c) => c.type === 1 && /rol|role/i.test(c.name))
+                .map((c) => ({ ...bicimle(c), applicationId: c.application_id })),
+        });
+    } catch (error) {
+        console.log(`[Rol] Komut listesi alinamadi: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
 // --- YENI TICKET OTOMATIK MESAJI (ayarlar) ---
 app.get('/api/ticket-otomatik', requireAuth, (req, res) => {
     res.json({
@@ -2909,6 +2957,24 @@ app.get('/api/ticket-otomatik', requireAuth, (req, res) => {
         inGuild: client.guilds.cache.has(TICKET_AUTO_GUILD),
         recent: ticketAutoSonGonderimler,
     });
+});
+
+app.post('/api/rol-komutlari', requireAuth, (req, res) => {
+    const { ver, al } = req.body || {};
+    const gecerli = (x) => typeof x === 'string' && x.trim() && x.trim().length <= 64;
+    if (ver !== undefined) {
+        if (!gecerli(ver)) return res.json({ ok: false, error: 'Rol verme komutu geçersiz.' });
+        panelSettings.rolVerKomutu = ver.trim();
+    }
+    if (al !== undefined) {
+        if (!gecerli(al)) return res.json({ ok: false, error: 'Rol alma komutu geçersiz.' });
+        panelSettings.rolAlKomutu = al.trim();
+    }
+    savePanelSettings();
+    addAudit('rol-komut-ayar', req.session.username,
+        `Rol komutları: ver="${panelSettings.rolVerKomutu}" al="${panelSettings.rolAlKomutu}"`, req);
+    console.log(`[Rol] Komut adlari guncellendi: ver="${panelSettings.rolVerKomutu}" al="${panelSettings.rolAlKomutu}"`);
+    return res.json({ ok: true, ver: panelSettings.rolVerKomutu, al: panelSettings.rolAlKomutu });
 });
 
 app.post('/api/ticket-otomatik', requireAuth, (req, res) => {

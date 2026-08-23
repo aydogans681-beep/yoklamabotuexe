@@ -367,6 +367,25 @@
             </div>
 
             <div class="card accent-card">
+                <h2>Rol Botu Komutları</h2>
+                <p class="card-desc">
+                    Panel rolleri rol botuna slash komut göndererek veriyor. Komut adı
+                    <b>birebir</b> eşleşmeli; bot komutu farklı adlandırdıysa buradan düzelt.
+                    Alt komutlu botlar için boşluklu yazabilirsin (örn. <code>rol ver</code>).
+                </p>
+                <div class="settings-grid">
+                    <div class="field"><label>Rol verme komutu</label><input type="text" id="rolVerKomutu" placeholder="rol-ver"></div>
+                    <div class="field"><label>Rol alma komutu</label><input type="text" id="rolAlKomutu" placeholder="rol-al"></div>
+                </div>
+                <div class="toolbar">
+                    <button id="rolKomutKaydetBtn">Kaydet</button>
+                    <button class="secondary small" id="rolKomutListeBtn">Botun komutlarını listele</button>
+                    <span class="scanStatus" id="rolKomutMsg"></span>
+                </div>
+                <div id="rolKomutListe" style="margin-top:12px;"></div>
+            </div>
+
+            <div class="card accent-card">
                 <h2>Yeni Ticket'a Otomatik Mesaj</h2>
                 <p class="card-desc">
                     Belirtilen kategoride yeni bir ticket açıldığında bu mesaj yazılır ve
