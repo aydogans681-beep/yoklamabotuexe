@@ -1779,6 +1779,17 @@ if (typeof panelSettings.rolAlKomutu !== 'string') panelSettings.rolAlKomutu = '
 if (typeof panelSettings.rolVerKomutId !== 'string') panelSettings.rolVerKomutId = VARSAYILAN_ROL_VER_KOMUT_ID;
 if (typeof panelSettings.rolAlKomutId !== 'string') panelSettings.rolAlKomutId = VARSAYILAN_ROL_AL_KOMUT_ID;
 if (typeof panelSettings.rolBotId !== 'string') panelSettings.rolBotId = VARSAYILAN_ROLE_BOT_ID;
+// Bir surum boyunca rol botu ID'si kodda yanlis yaziliydi ve butun rol
+// islemleri sessizce calismiyordu. Ayar dosyasina o deger yazilmis olma
+// ihtimaline karsi kendiliginden duzeltiyoruz - kullanicinin ayarlardan
+// elle temizlemesini beklemeye gerek yok.
+const HATALI_ESKI_ROLE_BOT_ID = '1472695273418522657';
+if (panelSettings.rolBotId === HATALI_ESKI_ROLE_BOT_ID) {
+    console.log(`[Rol] Ayarlardaki hatali rol botu ID'si (${HATALI_ESKI_ROLE_BOT_ID}) `
+        + `duzeltildi: ${VARSAYILAN_ROLE_BOT_ID}`);
+    panelSettings.rolBotId = VARSAYILAN_ROLE_BOT_ID;
+    savePanelSettings();
+}
 if (typeof panelSettings.otoYoklamaAcik !== 'boolean') panelSettings.otoYoklamaAcik = true;
 if (typeof panelSettings.otoYoklamaSaat !== 'string') panelSettings.otoYoklamaSaat = '20:30';
 
