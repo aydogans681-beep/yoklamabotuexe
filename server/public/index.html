@@ -49,7 +49,7 @@
                 <button class="tab-btn" data-tab="aktiflik"><span class="ico">🟢</span>Aktiflik</button>
                 <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span>Etkinlik</button>
                 <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span>TX Logs</button>
-                <button class="tab-btn" data-tab="hesaploglari"><span class="ico">🔑</span>Hesap Logları</button>
+                <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico">🔑</span>Hesap Logları</button>
                 <button class="tab-btn" data-tab="ayarlar"><span class="ico">⚙️</span>Ayarlar</button>
             </nav>
 
@@ -466,11 +466,12 @@
                 </div>
             </div>
 
-            <div class="card">
+            <div class="card admin-only">
                 <h2>Panel Hesapları</h2>
                 <p class="card-desc">
                     Panele giriş yapabilen hesaplar. <b>Ana hesap</b> masaüstü uygulamasının
-                    da kullandığı hesaptır - listenin başında durur.
+                    da kullandığı hesaptır - listenin başında durur ve <b>yönetici</b> odur:
+                    hesap ekleme/silme ve Hesap Logları yalnızca ona açık.
                 </p>
                 <div id="accountList" class="account-list"></div>
                 <div class="toolbar" style="margin-top:10px;">

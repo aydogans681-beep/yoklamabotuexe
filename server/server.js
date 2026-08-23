@@ -223,6 +223,26 @@ function requireAuth(req, res, next) {
     return next();
 }
 
+// Yonetici = hesap listesinin ILK kaydi (masaustu surumunun de kullandigi ana
+// hesap). Hesap ekleme/silme ve hesap loglari yalnizca ona acik. Kullanici adi
+// degisse bile sira degismedigi icin bu bag kopmuyor.
+function isAdmin(username) {
+    const users = loadPanelUsers();
+    return Boolean(users.length && users[0].username === username);
+}
+
+function requireAdmin(req, res, next) {
+    const session = getSession(req);
+    if (!session) return res.status(401).json({ ok: false, error: 'Giriş yapılmamış.' });
+    if (!isAdmin(session.username)) {
+        // 403: giris yapilmis ama yetki yok - istemci bunu 401'den ayirip
+        // kullaniciyi giris ekranina atmasin.
+        return res.status(403).json({ ok: false, error: 'Bu işlem için yönetici hesabı gerekiyor.' });
+    }
+    req.session = session;
+    return next();
+}
+
 // ============================================================================
 // --- DISCORD BAĞLANTISI (main.js'ten BİREBİR - bkz. oradaki yorumlar) ---
 // ============================================================================
@@ -2192,9 +2212,9 @@ app.post('/api/login', (req, res) => {
         secure: req.secure, // HTTPS arkasındaysa (ör. nginx reverse proxy) otomatik güvenli cookie
         maxAge: SESSION_TTL_MS,
     });
-    console.log(`[Giriş] Web panele giriş yapıldı: ${username}`);
-    addAudit('giris', username, 'Panele giriş yapıldı', req);
-    return res.json({ ok: true });
+    console.log(`[Giriş] Web panele giriş yapıldı: ${username}${isAdmin(username) ? ' (yönetici)' : ''}`);
+    addAudit('giris', username, `Panele giriş yapıldı${isAdmin(username) ? ' (yönetici)' : ''}`, req);
+    return res.json({ ok: true, username, isAdmin: isAdmin(username) });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -2208,7 +2228,12 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
     const session = getSession(req);
-    return res.json({ ok: true, loggedIn: Boolean(session), username: session ? session.username : null });
+    return res.json({
+        ok: true,
+        loggedIn: Boolean(session),
+        username: session ? session.username : null,
+        isAdmin: session ? isAdmin(session.username) : false,
+    });
 });
 
 app.get('/api/status', requireAuth, (req, res) => {
@@ -2307,7 +2332,7 @@ function validateCredentials(username, password, { requirePassword = true } = {}
     return null;
 }
 
-app.get('/api/hesaplar', requireAuth, (req, res) => {
+app.get('/api/hesaplar', requireAdmin, (req, res) => {
     const users = loadPanelUsers().map((u, index) => ({
         username: u.username,
         discordId: u.discordId || null,
@@ -2318,7 +2343,7 @@ app.get('/api/hesaplar', requireAuth, (req, res) => {
     res.json({ ok: true, users, self: req.session.username });
 });
 
-app.post('/api/hesaplar/ekle', requireAuth, (req, res) => {
+app.post('/api/hesaplar/ekle', requireAdmin, (req, res) => {
     const username = String((req.body && req.body.username) || '').trim();
     const password = String((req.body && req.body.password) || '');
 
@@ -2349,7 +2374,7 @@ app.post('/api/hesaplar/ekle', requireAuth, (req, res) => {
     return res.json({ ok: true });
 });
 
-app.post('/api/hesaplar/sil', requireAuth, (req, res) => {
+app.post('/api/hesaplar/sil', requireAdmin, (req, res) => {
     const username = String((req.body && req.body.username) || '').trim();
     const users = loadPanelUsers();
 
@@ -2358,6 +2383,14 @@ app.post('/api/hesaplar/sil', requireAuth, (req, res) => {
     }
     if (users.length <= 1) {
         return res.json({ ok: false, error: 'Son hesabı silemezsin - panele giriş yapılamaz hale gelir.' });
+    }
+    // Yonetici listenin ilk kaydi. Kendini silerse yoneticilik sessizce
+    // siradaki hesaba geciyor ve kendisi de disari dusuyordu - engelliyoruz.
+    if (username === users[0].username) {
+        return res.json({
+            ok: false,
+            error: 'Yönetici hesabı silinemez - silinirse yöneticilik sıradaki hesaba geçer.',
+        });
     }
 
     const remaining = users.filter((u) => u.username !== username);
@@ -3450,7 +3483,7 @@ app.post('/api/ticket-otomatik', requireAuth, (req, res) => {
 });
 
 // --- HESAP LOGLARI ---
-app.get('/api/hesap-loglari', requireAuth, (req, res) => {
+app.get('/api/hesap-loglari', requireAdmin, (req, res) => {
     const tur = String(req.query.type || '').trim();
     const terim = String(req.query.q || '').trim().toLocaleLowerCase('tr');
     const offset = Math.max(0, Number(req.query.offset) || 0);

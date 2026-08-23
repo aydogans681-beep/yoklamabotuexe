@@ -127,8 +127,9 @@ yaz. ID'si boş bırakılan menü arayüzde "ID yok" olarak görünür ve veri �
   listele" sunucudaki komutları ID'leriyle listeler; ID'ye tıklayınca panoya
   kopyalanır. Ayarlı ID'lerin dizinde gerçekten bulunup bulunmadığı kartın
   üstünde ✓/✗ olarak gösterilir.
-- **Panel Hesapları** - birden fazla panel hesabı ekleme/silme (istersen
-  eklerken Discord ID de verilebilir). Son hesap silinemez.
+- **Panel Hesapları** *(yalnızca yönetici)* - birden fazla panel hesabı
+  ekleme/silme (istersen eklerken Discord ID de verilebilir). Son hesap ve
+  yönetici hesabı silinemez.
 
 `panel-auth.json` biçimi:
 
@@ -195,6 +196,26 @@ pm2 save
 Belleği yükseltmek taramayı **hızlandırmaz** - yavaşlık üye listesinden
 geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
 
+## Yetkiler
+
+**Yönetici**, hesap listesinin ilk kaydıdır - masaüstü sürümünün de kullandığı
+ana hesap. Kullanıcı adı değişse bile sıra değişmediği için bu bağ kopmaz.
+
+| | Yönetici | Diğer hesaplar |
+|---|---|---|
+| Yoklama, Yetkililer, Rol Ver/Al, Aktiflik, Etkinlik, TX Logs | ✔ | ✔ |
+| Kendi şifresi / Discord ID'si | ✔ | ✔ |
+| Panel Hesapları (ekleme/silme/listeleme) | ✔ | ✘ |
+| Hesap Logları | ✔ | ✘ |
+
+Kısıt hem sunucuda (`requireAdmin`, 403 döner) hem arayüzde (sekme ve kart
+gizlenir) uygulanır - arayüzü gizlemek tek başına yeterli değil, uçlar da
+kapalı. Yönetici hesabı silinemez: silinseydi yöneticilik sessizce sıradaki
+hesaba geçer ve silen kişi de dışarı düşerdi.
+
+Not: otomatik yoklama, rol botu komutları, ticket mesajı ve logo ayarları
+şu an tüm hesaplara açık.
+
 ## Güvenlik
 
 - Şifreler `scrypt` + hesaba özel salt ile saklanır, karşılaştırma
@@ -212,7 +233,8 @@ geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
 | Uç | Açıklama |
 |---|---|
 | `POST /api/login`, `/api/logout`, `GET /api/me` | Oturum |
-| `GET /api/hesaplar`, `POST /api/hesaplar/ekle`, `/api/hesaplar/sil` | Hesap yönetimi |
+| `GET /api/hesaplar`, `POST /api/hesaplar/ekle`, `/api/hesaplar/sil` | Hesap yönetimi *(yönetici)* |
+| `GET /api/hesap-loglari` | Hesap Logları *(yönetici)* |
 | `POST /api/hesap/guncelle` | Kendi kullanıcı adı/şifre/Discord ID'sini değiştirme |
 | `GET /api/status` | Discord bağlantı durumu |
 | `POST /api/yoklama/tara` | Yoklama taraması |

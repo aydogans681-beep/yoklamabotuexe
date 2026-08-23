@@ -72,12 +72,30 @@ function hideError() {
 
 // --- GİRİŞ / OTURUM ---
 let currentUsername = null;
+let currentIsAdmin = false;
+
+// Yonetici olmayan hesaplarda hesap yonetimi ve hesap loglari gizleniyor.
+// Sunucu tarafinda da kapali (requireAdmin) - burasi sadece gorunum.
+function applyAdminVisibility() {
+    document.querySelectorAll('.admin-only').forEach((el) => {
+        el.style.display = currentIsAdmin ? '' : 'none';
+    });
+    // Yonetici olmayan biri Hesap Logları sekmesindeyken yetkisi alinirsa
+    // bos ekranda kalmasin - Yoklama'ya donduruyoruz.
+    if (!currentIsAdmin) {
+        const acik = document.querySelector('.tab-panel.active');
+        if (acik && acik.id === 'tab-hesaploglari') {
+            document.querySelector('.tab-btn[data-tab="yoklama"]').click();
+        }
+    }
+}
 
 async function checkSession() {
     const res = await fetch('/api/me');
     const data = await okuJson(res);
     if (data.loggedIn) {
         currentUsername = data.username;
+        currentIsAdmin = Boolean(data.isAdmin);
         showApp();
     } else {
         showLogin();
@@ -94,9 +112,10 @@ function showApp() {
     loginWrap.style.display = 'none';
     appWrap.style.display = 'flex';
     document.getElementById('whoAmI').textContent = currentUsername ? `· ${currentUsername}` : '';
+    applyAdminVisibility();
     connectWebSocket();
     refreshLogMenu();
-    refreshAccounts();
+    if (currentIsAdmin) refreshAccounts();
     loadKatilim();
 }
 
@@ -119,6 +138,15 @@ async function doLogin() {
             return;
         }
         currentUsername = username;
+        // Yetkiyi tahmin etmiyoruz - /api/me'den okuyoruz ki sunucuyla ayni
+        // kaynaktan gelsin.
+        currentIsAdmin = Boolean(data.isAdmin);
+        if (data.isAdmin === undefined) {
+            try {
+                const me = await okuJson(await fetch('/api/me'));
+                currentIsAdmin = Boolean(me.isAdmin);
+            } catch (hata) { currentIsAdmin = false; }
+        }
         showApp();
     } catch (error) {
         loginError.textContent = `Hata: ${error.message}`;
@@ -574,7 +602,10 @@ tabButtons.forEach((btn) => {
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
         if (btn.dataset.tab === 'yoklama') loadKatilim();
         if (btn.dataset.tab === 'loglar') refreshLogMenu();
-        if (btn.dataset.tab === 'ayarlar') { refreshAccounts(); loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama(); }
+        if (btn.dataset.tab === 'ayarlar') {
+            if (currentIsAdmin) refreshAccounts();
+            loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama();
+        }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
         if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
