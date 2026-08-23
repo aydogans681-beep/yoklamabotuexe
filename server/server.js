@@ -1956,16 +1956,54 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // donduruyor; gizli bilgi icermiyor. "Guncelledim ama eski kod mu calisiyor?"
 // sorusunu kesin cevaplamak icin.
 const SUNUCU_BASLANGIC = Date.now();
+
+// Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz
+// (VDS'de PATH'te olmayabilir) - .git dosyalarini dogrudan okuyoruz. Depo
+// degilse ya da okunamazsa null doner, uc yine calisir.
+function calisanCommit() {
+    try {
+        const gitDizini = path.join(ROOT_DIR, '.git');
+        const head = fs.readFileSync(path.join(gitDizini, 'HEAD'), 'utf8').trim();
+        if (!head.startsWith('ref:')) return { commit: head.slice(0, 7), dal: null };
+        const ref = head.slice(4).trim();
+        const dal = ref.replace(/^refs\/heads\//, '');
+        let tam = null;
+        try {
+            tam = fs.readFileSync(path.join(gitDizini, ref), 'utf8').trim();
+        } catch (error) {
+            // Ref paketlenmis olabilir (packed-refs)
+            const paket = fs.readFileSync(path.join(gitDizini, 'packed-refs'), 'utf8');
+            const satir = paket.split('\n').find((l) => l.endsWith(` ${ref}`));
+            if (satir) tam = satir.split(' ')[0];
+        }
+        return { commit: tam ? tam.slice(0, 7) : null, dal };
+    } catch (error) {
+        return { commit: null, dal: null };
+    }
+}
+
 app.get('/api/surum', (req, res) => {
     let dosyaZamani = null;
     try {
         dosyaZamani = fs.statSync(__filename).mtime.toISOString();
     } catch (error) { /* yoksay */ }
+    const surum = calisanCommit();
     res.json({
         ok: true,
         baslatildi: new Date(SUNUCU_BASLANGIC).toISOString(),
         calismaSuresiSn: Math.round((Date.now() - SUNUCU_BASLANGIC) / 1000),
         serverJsTarihi: dosyaZamani,
+        commit: surum.commit,
+        dal: surum.dal,
+        // Rol islemlerinde kullanilan bot - yanlis ID'de butun rol verme
+        // sessizce calismiyordu, o yuzden burada gorunuyor.
+        rolBotId: rolBotId(),
+        rolVerKomutu: panelSettings.rolVerKomutu,
+        rolAlKomutu: panelSettings.rolAlKomutu,
+        otoYoklama: {
+            acik: Boolean(panelSettings.otoYoklamaAcik),
+            saat: panelSettings.otoYoklamaSaat || null,
+        },
         // Bu listedeki uclar surumle birlikte gelir; eksikse kod eskidir.
         ucVar: {
             aktiflik: true,
@@ -1973,6 +2011,8 @@ app.get('/api/surum', (req, res) => {
             etkinlik: true,
             hesapLoglari: true,
             ticketOtomatik: true,
+            yoklamayaKatil: true,
+            otoYoklama: true,
         },
     });
 });
