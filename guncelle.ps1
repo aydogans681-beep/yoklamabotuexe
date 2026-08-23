@@ -100,8 +100,66 @@ if ($pm2Kayitli) {
     $ErrorActionPreference = 'Continue'
     & pm2 restart yoklama 2>&1 | Out-Null
     $ErrorActionPreference = $eskiEAP
-    Write-Host "TAMAM - bot pm2 uzerinden yeniden baslatildi." -ForegroundColor Cyan
-    Write-Host "Loglari gormek icin:  pm2 logs yoklama"
+
+    # "pm2 restart" komutu, surec acilir acilmaz olse bile basarili doner.
+    # Bir kez bunun yuzunden gozden kacti: baska bir klasordeki oksuz bir
+    # kopya 3000 portunu tutuyordu, guncel surec her acilista EADDRINUSE
+    # alip oluyordu, ama script "TAMAM" yazip geciyordu ve panelde uc
+    # guncelleme boyunca eski kod calisti. Artik gercekten ayakta mi diye
+    # bakiyoruz.
+    Write-Host "Baslamasi bekleniyor..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 12
+
+    $surum = $null
+    try {
+        $cevap = Invoke-WebRequest "http://localhost:3000/api/surum" -UseBasicParsing -TimeoutSec 10
+        $surum = $cevap.Content | ConvertFrom-Json
+    } catch {
+        $surum = $null
+    }
+
+    if ($surum -and $surum.ok) {
+        Write-Host ""
+        Write-Host "TAMAM - bot calisiyor." -ForegroundColor Cyan
+        Write-Host "   commit    : $($surum.commit)  (dal: $($surum.dal))"
+        Write-Host "   rol botu  : $($surum.rolBotId)"
+        if ($surum.otoYoklama.acik) {
+            $otoMetin = 'acik - her gun ' + $surum.otoYoklama.saat
+        } else {
+            $otoMetin = 'kapali'
+        }
+        Write-Host "   oto yoklama: $otoMetin"
+
+        # git stderr'e yazarsa ErrorActionPreference='Stop' altinda sonlandirici
+        # hataya donusuyor - bu kontrol yuzunden guncelleme patlamasin.
+        $yerel = $null
+        $eskiEAP2 = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try { $yerel = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1) } catch { $yerel = $null }
+        $ErrorActionPreference = $eskiEAP2
+        $global:LASTEXITCODE = 0
+
+        if ($yerel -and $surum.commit -and ($yerel.Trim() -ne $surum.commit)) {
+            Write-Host ""
+            Write-Host "UYARI: Diskteki kod $yerel ama calisan surec $($surum.commit)." -ForegroundColor Yellow
+            Write-Host "3000 portunu baska bir kopya tutuyor olabilir. Kontrol et:" -ForegroundColor Yellow
+            Write-Host "    Get-NetTCPConnection -LocalPort 3000 -State Listen | Select OwningProcess"
+        }
+    } else {
+        Write-Host ""
+        Write-Host "DIKKAT: Bot yeniden baslatildi ama 3000 portundan cevap alinamadi." -ForegroundColor Red
+        Write-Host "En sik sebep: baska bir kopya portu tutuyor ve surec EADDRINUSE alip oluyor." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Sirasiyla su komutlari calistir:" -ForegroundColor Yellow
+        Write-Host "    pm2 logs yoklama --err --lines 30 --nostream"
+        Write-Host "    pm2 stop yoklama"
+        Write-Host "    Get-NetTCPConnection -LocalPort 3000 -State Listen | Select OwningProcess"
+        Write-Host ""
+        Write-Host "pm2 durdurulmusken hala bir PID cikiyorsa o oksuz bir kopyadir;" -ForegroundColor Yellow
+        Write-Host "Stop-Process -Id <PID> -Force ile kapatip 'pm2 start yoklama' de." -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host "Loglari gormek icin:  pm2 logs yoklama" -ForegroundColor DarkGray
 } elseif ($pm2Kurulu) {
     Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
     Write-Host ""
