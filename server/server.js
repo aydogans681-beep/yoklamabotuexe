@@ -685,6 +685,29 @@ function waitForRoleBotReply(timeoutMs = 6000) {
     });
 }
 
+// Rol botuna komut gondermek, rolun VERILDIGI anlamina gelmiyor: bot komutu
+// reddedebilir (yetki yok, hiyerarsi, komut adi degismis), sessizce
+// dusurebilir ya da hic cevap vermeyebilir. Daha once gonderim basarili
+// olunca "verildi" deniyordu; bu yuzden panel rol vermedigi halde verdim
+// diyordu. Artik uyeyi taze cekip rolun gercekten olustugunu dogruluyoruz.
+async function verifyRoleState(guild, memberId, roleId, beklenen) {
+    const DENEME = 4;
+    const ARALIK_MS = 800;
+    for (let i = 0; i < DENEME; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, ARALIK_MS));
+        try {
+            // force: onbellegi atla, Discord'dan taze oku
+            // eslint-disable-next-line no-await-in-loop
+            const taze = await guild.members.fetch({ user: memberId, force: true });
+            if (taze && taze.roles.cache.has(roleId) === beklenen) return true;
+        } catch (error) {
+            // uye cekilemedi - sonraki denemede tekrar bakilir
+        }
+    }
+    return false;
+}
+
 // --- KALICI UYARI GEÇMİŞİ ---
 // Masaüstü uygulamasıyla AYNI ../warning-history.json dosyasını kullanıyor -
 // hangisinden uyarı verilirse verilsin tek bir ortak geçmiş/aktif-rol kaydı.
@@ -807,6 +830,22 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
 
     console.log(`[Yoklama] ${member.user.tag} (${memberId}) için "/rol-ver" gönderildi: ${nextRole.label} (${nextRole.id}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
 
+    // Rol gercekten olustu mu? Olusmadiysa basarili sayilmiyor ve gecmise de
+    // yazilmiyor - yoksa "Geri Al" hic verilmemis bir rolu geri almaya calisir.
+    const uygulandi = await verifyRoleState(guild, memberId, nextRole.id, true);
+    if (!uygulandi) {
+        console.log(`[Yoklama] DOGRULANAMADI: ${member.user.tag} kişisinde "${nextRole.label}" rolü oluşmadı.`
+            + ` Rol botu komutu reddetmiş olabilir. Bot cevabı: ${botReply || '(yok)'}`);
+        return {
+            ok: false,
+            reason: 'dogrulanamadi',
+            attemptedLabel: nextRole.label,
+            botReply,
+            error: `Rol botu "${nextRole.label}" rolünü vermedi (komut gönderildi ama rol oluşmadı).`
+                + (botReply ? ` Bot cevabı: ${botReply}` : ' Bot cevap vermedi.'),
+        };
+    }
+
     lastGivenRole.set(memberId, { roleId: nextRole.id, label: nextRole.label, tag: member.user.tag });
 
     let announceError = null;
@@ -884,6 +923,19 @@ async function undoLastWarning(memberId) {
 
     console.log(`[Yoklama] ${record.tag} (${memberId}) için "/rol-al" gönderildi (geri alma): ${record.label} (${record.roleId}). Bot cevabı: ${botReply || '(yakalanamadı)'}`);
 
+    const kaldirildi = await verifyRoleState(guild, memberId, record.roleId, false);
+    if (!kaldirildi) {
+        console.log(`[Yoklama] DOGRULANAMADI: ${record.tag} kişisinden "${record.label}" rolü kaldırılmadı.`);
+        // Kayit duruyor - tekrar denenebilsin diye siliyoruz degil.
+        return {
+            ok: false,
+            reason: 'dogrulanamadi',
+            botReply,
+            error: `Rol botu "${record.label}" rolünü kaldırmadı (komut gönderildi ama rol duruyor).`
+                + (botReply ? ` Bot cevabı: ${botReply}` : ' Bot cevap vermedi.'),
+        };
+    }
+
     lastGivenRole.delete(memberId);
 
     let announceError = null;
@@ -955,6 +1007,8 @@ async function giveBulkWarning(memberIds, reason) {
             const result = await giveNextWarningRole(memberId, reason, false);
             if (result.ok) {
                 warned.push({ id: memberId, givenLabel: result.givenLabel, botReply: result.botReply });
+            } else if (result.reason === 'dogrulanamadi') {
+                failed.push({ id: memberId, error: result.error });
             } else if (result.reason === 'max') {
                 let tag = memberId;
                 try {
@@ -1790,6 +1844,22 @@ async function sendRoleCommand(kind, memberId, roleId) {
     const botReply = await replyPromise;
 
     console.log(`[Rol] ${member.user.tag} (${memberId}) icin "/${kind}" gonderildi: ${role.name} (${roleId}). Bot cevabi: ${botReply || '(yakalanamadi)'}`);
+
+    const beklenen = kind === 'rol-ver';
+    const dogrulandi = await verifyRoleState(guild, memberId, roleId, beklenen);
+    if (!dogrulandi) {
+        console.log(`[Rol] DOGRULANAMADI: ${member.user.tag} - "${role.name}" ${beklenen ? 'verilmedi' : 'kaldirilmadi'}.`);
+        return {
+            ok: false,
+            reason: 'dogrulanamadi',
+            roleName: role.name,
+            memberTag: member.user.tag,
+            botReply,
+            error: `Rol botu "${role.name}" rolünü ${beklenen ? 'vermedi' : 'kaldırmadı'}`
+                + ' (komut gönderildi ama rol değişmedi).'
+                + (botReply ? ` Bot cevabı: ${botReply}` : ' Bot cevap vermedi.'),
+        };
+    }
     return { ok: true, roleName: role.name, memberTag: member.user.tag, botReply };
 }
 

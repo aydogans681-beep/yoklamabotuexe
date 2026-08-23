@@ -392,7 +392,9 @@ async function onRoleButtonClick(evt) {
         });
         const result = await okuJson(res);
         if (!result.ok) {
-            const text = result.reason === 'max' ? `Zaten en üst kademede.` : `Hata: ${result.error || 'bilinmeyen hata'}`;
+            const text = result.reason === 'max' ? 'Zaten en üst kademede.'
+                : result.reason === 'dogrulanamadi' ? `⚠ ${result.error}`
+                : `Hata: ${result.error || 'bilinmeyen hata'}`;
             setRoleMsg(memberId, escapeHtml(text), 'error');
             return;
         }
@@ -444,7 +446,12 @@ bulkWarnBtn.addEventListener('click', async () => {
             bulkProgress.textContent = `Hata: ${result.error}`;
             return;
         }
-        bulkProgress.textContent = `Tamamlandı: ${result.warned.length} kişiye verildi, ${result.skipped.length} atlandı (maks kademe), ${result.failed.length} hata.`;
+        bulkProgress.innerHTML = `Tamamlandı: ${result.warned.length} kişiye verildi, `
+            + `${result.skipped.length} atlandı (maks kademe), `
+            + `<b${result.failed.length ? ' style="color:var(--accent)"' : ''}>${result.failed.length} hata</b>.`
+            + (result.failed.length
+                ? `<br><span style="color:var(--attn)">${escapeHtml(result.failed[0].error || '')}</span>`
+                : '');
         [...selectedIds].forEach((id) => deselectMember(id));
         bulkReasonEl.value = '';
     } catch (error) {
@@ -1031,7 +1038,12 @@ previewApplyBtn.addEventListener('click', async () => {
             return;
         }
         const summary = `Tamamlandı: ${result.warned.length} uyarı verildi, ${result.skipped.length} atlandı, ${result.failed.length} hata.`;
-        previewProgress.textContent = summary;
+        // Hata varsa sebebini de göster - "verildi" deyip vermemesi en can
+        // sıkıcı durumdu, sebebi görünür olsun.
+        previewProgress.innerHTML = escapeHtml(summary)
+            + (result.failed.length
+                ? `<br><span style="color:var(--attn)">${escapeHtml(result.failed[0].error || '')}</span>`
+                : '');
         attendanceStatus.textContent = summary;
         attendanceReason.value = '';
         setTimeout(closePreview, 2500);
@@ -1245,6 +1257,7 @@ async function staffRoleAction(kind, member, roleId, roleName) {
         if (!result.ok) {
             setStaffMsg(member.id, result.reason === 'zaten-var' ? 'Bu rol zaten var.'
                 : result.reason === 'yok' ? 'Bu rol kişide yok.'
+                : result.reason === 'dogrulanamadi' ? `⚠ ${result.error}`
                 : `Hata: ${result.error || 'bilinmeyen'}`, 'error');
             return false;
         }
@@ -1502,6 +1515,7 @@ async function onRoleAction(btn) {
         if (!result.ok) {
             const metin = result.reason === 'zaten-var' ? 'Bu kişide zaten var.'
                 : result.reason === 'yok' ? 'Bu kişide bu rol yok.'
+                : result.reason === 'dogrulanamadi' ? `⚠ ${result.error}`
                 : `Hata: ${result.error || 'bilinmeyen'}`;
             msgEl.textContent = metin;
             btn.disabled = false;
