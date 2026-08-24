@@ -127,7 +127,7 @@ başına ayrı işlediği için bu güvenli. 54.000 mesajlık bir kurulumda öl�
 yalnızca yeni mesajları görür, silinen/düzenlenen mesajlar ancak tam çekimde
 yansır.
 
-Menüler: Ban, Unban, Kick, Warn, DM, Duyuru, Revive.
+Menüler: Ban, Unban, Kick, Warn, DM, Duyuru, Revive, Ek Log.
 Her menüde 100'erli sayfalama ve içerik + embed üzerinde arama var.
 
 **Kanal ID'si eklemek:** `server/server.js` içindeki `LOG_CHANNELS` listesine
@@ -136,11 +136,13 @@ Her kaydın `group` alanı hangi sekmede görüneceğini belirler (`tx` ya da
 `mute`); yeni bir grup eklemek için `LOG_GROUPS`'a bir satır ve arayüzde bir
 sekme yeter - çekme, saklama, arama ve canlı güncelleme kodu ortak.
 
-### Mute Logları
+### Mute Logları ve Felox
 
-TX Logs ile **aynı makine**, ayrı sekme: Mute ve Unmute kanalları. İki sekme de
-`createLogTab()` fabrikasından üretiliyor, yani sayfalama/arama/canlı güncelleme
-tek yerde duruyor ve her sekme kendi seçimini bağımsız koruyor.
+TX Logs ile **aynı makine**, ayrı sekmeler: Mute Logları (Mute + Unmute) ve
+Felox (tek kanal). Üç sekme de `createLogTab()` fabrikasından üretiliyor, yani
+sayfalama/arama/canlı güncelleme tek yerde duruyor ve her sekme kendi seçimini
+bağımsız koruyor. Yeni bir grup eklemek `LOG_GROUPS`'a bir satır, `LOG_CHANNELS`'a
+kanal(lar) ve arayüzde bir sekme + bir `createLogTab()` çağrısı demek.
 
 ### Ayarlar
 
@@ -238,7 +240,7 @@ ana hesap. Kullanıcı adı değişse bile sıra değişmediği için bu bağ ko
 
 | | Yönetici | Diğer hesaplar |
 |---|---|---|
-| Yoklama, Yetkililer, Rol Ver/Al, Aktiflik, Etkinlik, TX Logs, Mute Logları | ✔ | ✔ |
+| Yoklama, Yetkililer, Rol Ver/Al, Aktiflik, Etkinlik, TX Logs, Mute Logları, Felox | ✔ | ✔ |
 | Kendi şifresi / Discord ID'si | ✔ | ✔ |
 | Panel Hesapları (ekleme/silme/listeleme) | ✔ | ✘ |
 | Hesap Logları | ✔ | ✘ |
@@ -282,6 +284,6 @@ Not: otomatik yoklama, rol botu komutları, ticket mesajı ve logo ayarları
 | `POST /api/hesaplar/discord-id` | Bir hesaba Discord ID bağlama *(yönetici)* |
 | `GET/POST /api/rol-komutlari` | Rol botu komut ID'leri, adları ve bot ID'si |
 | `GET /api/surum` | Çalışan commit, dal, rol botu/komut ayarları (girişsiz) |
-| `GET /api/loglar[?grup=tx\|mute]`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs + Mute Logları |
+| `GET /api/loglar[?grup=tx\|mute\|felox]`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs + Mute Logları + Felox |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
 | `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi |

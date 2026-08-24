@@ -603,6 +603,7 @@ tabButtons.forEach((btn) => {
         if (btn.dataset.tab === 'yoklama') loadKatilim();
         if (btn.dataset.tab === 'loglar') txLogTab.refreshMenu();
         if (btn.dataset.tab === 'mutelog') muteLogTab.refreshMenu();
+        if (btn.dataset.tab === 'felox') feloxLogTab.refreshMenu();
         if (btn.dataset.tab === 'ayarlar') {
             if (currentIsAdmin) refreshAccounts();
             loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama();
@@ -746,7 +747,10 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
         term = '';
         search.value = '';
         const channel = channels.find((c) => c.key === key);
-        title.textContent = channel ? `${channel.label} Logu` : key;
+        // Etiket zaten "Log" ile bitiyorsa tekrar ekleme - "Ek Log Logu" oluyordu.
+        title.textContent = channel
+            ? (/log(u|ları)?$/i.test(channel.label) ? channel.label : `${channel.label} Logu`)
+            : key;
         search.disabled = false;
         refreshBtn.disabled = !(channel && channel.configured);
         renderMenu();
@@ -877,7 +881,13 @@ const muteLogTab = createLogTab({
     searchId: 'muteSearch', refreshId: 'muteRefreshBtn', pagerId: 'mutePager',
     pageInfoId: 'mutePageInfo', prevId: 'mutePrevBtn', nextId: 'muteNextBtn',
 });
-const logTabs = [txLogTab, muteLogTab];
+const feloxLogTab = createLogTab({
+    grup: 'felox',
+    menuId: 'feloxMenu', listId: 'feloxList', titleId: 'feloxTitle', statusId: 'feloxStatus',
+    searchId: 'feloxSearch', refreshId: 'feloxRefreshBtn', pagerId: 'feloxPager',
+    pageInfoId: 'feloxPageInfo', prevId: 'feloxPrevBtn', nextId: 'feloxNextBtn',
+});
+const logTabs = [txLogTab, muteLogTab, feloxLogTab];
 
 function refreshLogMenu() { logTabs.forEach((t) => t.refreshMenu()); }
 

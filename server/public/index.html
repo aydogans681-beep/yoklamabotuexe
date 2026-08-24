@@ -50,6 +50,7 @@
                 <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span>Etkinlik</button>
                 <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span>TX Logs</button>
                 <button class="tab-btn" data-tab="mutelog"><span class="ico">🔇</span>Mute Logları</button>
+                <button class="tab-btn" data-tab="felox"><span class="ico">🛡️</span>Felox</button>
                 <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico">🔑</span>Hesap Logları</button>
                 <button class="tab-btn" data-tab="ayarlar"><span class="ico">⚙️</span>Ayarlar</button>
             </nav>
@@ -350,6 +351,30 @@
                         <button class="secondary small" id="mutePrevBtn">← Önceki</button>
                         <span class="scanStatus" id="mutePageInfo"></span>
                         <button class="secondary small" id="muteNextBtn">Sonraki →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= FELOX =================
+             TX Logs / Mute ile ayni makine, ayri kanal grubu. -->
+        <div class="tab-panel" id="tab-felox">
+            <div class="logs-layout">
+                <div class="logs-menu" id="feloxMenu"></div>
+                <div class="logs-main">
+                    <div class="toolbar logs-toolbar">
+                        <span class="logs-title" id="feloxTitle">Bir log menüsü seç</span>
+                        <input type="text" class="text-search" id="feloxSearch" placeholder="Log içinde ara..." disabled>
+                        <button class="secondary small" id="feloxRefreshBtn" disabled>Yenile</button>
+                        <span class="scanStatus" id="feloxStatus"></span>
+                    </div>
+                    <div class="logs-list" id="feloxList">
+                        <div class="empty-hint">Soldan bir log menüsü seç.</div>
+                    </div>
+                    <div class="toolbar logs-pager" id="feloxPager" style="display:none;">
+                        <button class="secondary small" id="feloxPrevBtn">← Önceki</button>
+                        <span class="scanStatus" id="feloxPageInfo"></span>
+                        <button class="secondary small" id="feloxNextBtn">Sonraki →</button>
                     </div>
                 </div>
             </div>

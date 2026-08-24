@@ -341,6 +341,7 @@ const ACTIVITY_CHANNELS = [
 const LOG_GROUPS = [
     { key: 'tx', label: 'TX Logs' },
     { key: 'mute', label: 'Mute Logları' },
+    { key: 'felox', label: 'Felox' },
 ];
 const LOG_CHANNELS = [
     { key: 'ban', label: 'Ban', channelId: '1514634711413293197', group: 'tx' },
@@ -350,8 +351,11 @@ const LOG_CHANNELS = [
     { key: 'dm', label: 'DM', channelId: '1514634767033696387', group: 'tx' },
     { key: 'duyuru', label: 'Duyuru', channelId: '1514634800407904398', group: 'tx' },
     { key: 'revive', label: 'Revive', channelId: '1514633983160483901', group: 'tx' },
+    // Bu kanalin ne logu oldugu soylenmedi - menu adi buradan degistirilebilir.
+    { key: 'ek', label: 'Ek Log', channelId: '1514634694917095614', group: 'tx' },
     { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute' },
     { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute' },
+    { key: 'feloxlog', label: 'Felox', channelId: '1513234220011749607', group: 'felox' },
 ];
 
 // Discord sayfa basina en fazla 100 mesaj veriyor. Sayfalar arasinda kisa bir
