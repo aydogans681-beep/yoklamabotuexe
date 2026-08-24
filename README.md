@@ -59,8 +59,23 @@ sürümü aynı dosyaları okur.
 ## Sorun giderme
 
 ```powershell
-.\tani.ps1
+.\temizle.ps1   # bot tek kopya mi? hayaletleri temizler ve yeniden baslatir
+.\tani.ps1      # ne calisiyor, hangi kanallar okundu
 ```
+
+### temizle.ps1
+
+Eski sürümlerde portu alamayan kopyalar ölmüyor, Discord bağlantısı **canlı
+halde** ayakta kalıyordu. Bu "hayalet" kopyalar ticket'a ayrı mesaj atıyor,
+yoklamada ayrı rol veriyor ve panele **eski kodla** cevap veriyordu -
+güncelleme yapılmış gibi görünüp hiçbir şey değişmiyordu.
+
+Yeni sürüm yeni hayalet oluşmasını engelliyor ama **hâlihazırda çalışanları
+öldürmüyor**; bu betik onları temizler. pm2 daemon'una dokunmaz. Portu tutmayan
+hayaletler için (pm2'de başka uygulaman olabileceğinden) listeleyip **onay
+ister**.
+
+### tani.ps1
 
 Çalışan commit'i, rol botu ayarlarını, zamanlanmış yoklamaları ve **bütün log
 kanallarını durumlarıyla** yazar. Giriş gerektirmez. Bir menü panelde
