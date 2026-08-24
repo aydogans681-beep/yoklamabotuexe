@@ -132,6 +132,12 @@ Her menüde 100'erli sayfalama ve içerik + embed üzerinde arama var.
 
 **Kanal ID'si eklemek:** `server/server.js` içindeki `LOG_CHANNELS` listesine
 yaz. ID'si boş bırakılan menü arayüzde "ID yok" olarak görünür ve veri çekmez.
+
+**Kısmi çekim:** Bir kanala `ilkCekimSiniri: 100` verilirse tüm geçmiş inmez,
+yalnızca en yeni 100 mesaj çekilir; sonrasında kanala gelen yeni mesajlar canlı
+eklenir ve sayı büyür. Şu an sadece **Ek Log** böyle. "Yenile" yine en yeni 100'ü
+çeker, yani biriken satırlar sınıra döner. Menü ipucunda ve durum satırında
+belirtilir.
 Her kaydın `group` alanı hangi sekmede görüneceğini belirler (`tx` ya da
 `mute`); yeni bir grup eklemek için `LOG_GROUPS`'a bir satır ve arayüzde bir
 sekme yeter - çekme, saklama, arama ve canlı güncelleme kodu ortak.

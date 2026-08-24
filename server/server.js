@@ -352,7 +352,9 @@ const LOG_CHANNELS = [
     { key: 'duyuru', label: 'Duyuru', channelId: '1514634800407904398', group: 'tx' },
     { key: 'revive', label: 'Revive', channelId: '1514633983160483901', group: 'tx' },
     // Bu kanalin ne logu oldugu soylenmedi - menu adi buradan degistirilebilir.
-    { key: 'ek', label: 'Ek Log', channelId: '1514634694917095614', group: 'tx' },
+    // ilkCekimSiniri: bu kanalda TUM gecmis inmiyor, yalnizca en yeni N mesaj.
+    // Sonrasinda kanala yeni mesaj geldikce canli ekleniyor.
+    { key: 'ek', label: 'Ek Log', channelId: '1514634694917095614', group: 'tx', ilkCekimSiniri: 100 },
     { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute' },
     { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute' },
     { key: 'feloxlog', label: 'Felox', channelId: '1513234220011749607', group: 'felox' },
@@ -1367,6 +1369,7 @@ ALL_CHANNELS.forEach((channel) => {
         key: channel.key,
         label: channel.label,
         channelId: channel.channelId,
+        ilkCekimSiniri: channel.ilkCekimSiniri || null,
         status: channel.channelId ? 'bekliyor' : 'yapilandirilmamis',
         messages: [],
         loaded: 0,
@@ -1715,10 +1718,14 @@ async function fetchAllChannelMessages(key, { tamCekim = false } = {}) {
         }
     } else {
         // Ilk kez (ya da "Yenile"): kanalin en basina inene kadar 100'erli
-        // sayfalarla geriye dogru gidiyoruz.
+        // sayfalarla geriye dogru gidiyoruz. ilkCekimSiniri tanimliysa o kadar
+        // mesajda duruyoruz - bazi kanallarin tum gecmisine ihtiyac yok, son N
+        // mesaj yetiyor ve gerisi bosuna indirilmis oluyor.
+        const sinir = store.ilkCekimSiniri || 0;
         let beforeId;
         for (;;) {
-            const options = { limit: 100 };
+            const kalan = sinir ? sinir - collected.length : 100;
+            const options = { limit: Math.min(100, Math.max(1, kalan)) };
             if (beforeId) options.before = beforeId;
             let batch;
             try {
@@ -1738,7 +1745,8 @@ async function fetchAllChannelMessages(key, { tamCekim = false } = {}) {
             store.loaded = collected.length;
             broadcastLogStatus(store);
 
-            if (batch.size < 100 || !beforeId) break;
+            if (sinir && collected.length >= sinir) break;
+            if (batch.size < options.limit || !beforeId) break;
             // eslint-disable-next-line no-await-in-loop
             await new Promise((resolve) => setTimeout(resolve, LOG_PAGE_DELAY_MS));
         }
@@ -1769,7 +1777,8 @@ async function fetchAllChannelMessages(key, { tamCekim = false } = {}) {
         console.log(`[Loglar] ${store.label}: ${onbellekten} mesaj onbellekten, `
             + `${yeniSayisi} yeni mesaj ${saniye} sn'de cekildi (toplam ${collected.length}).`);
     } else {
-        console.log(`[Loglar] ${store.label}: ${collected.length} mesaj ${saniye} sn'de cekildi.`);
+        console.log(`[Loglar] ${store.label}: ${collected.length} mesaj ${saniye} sn'de cekildi`
+            + `${store.ilkCekimSiniri ? ` (son ${store.ilkCekimSiniri} ile sinirli)` : ''}.`);
     }
 
     // Onbellegi tazele - artimli cekimde bile yaziyoruz ki bir sonraki acilis
@@ -2759,6 +2768,7 @@ app.get('/api/loglar', requireAuth, (req, res) => {
                 key: store.key,
                 label: store.label,
                 group: store.group,
+                ilkCekimSiniri: store.ilkCekimSiniri || null,
                 configured: Boolean(store.channelId),
                 status: store.status,
                 loaded: store.loaded,
@@ -2786,6 +2796,7 @@ app.get('/api/loglar/:key', requireAuth, (req, res) => {
         key: store.key,
         label: store.label,
         configured: Boolean(store.channelId),
+        ilkCekimSiniri: store.ilkCekimSiniri || null,
         status: store.status,
         error: store.error,
         fetchedAt: store.fetchedAt,

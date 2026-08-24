@@ -722,6 +722,7 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
             btn.innerHTML = `<span>${escapeHtml(channel.label)}</span><span class="count">${escapeHtml(statusLabel(channel))}</span>`;
             btn.title = channel.configured
                 ? `${channel.label} - ${channel.loaded} mesaj`
+                  + (channel.ilkCekimSiniri ? ` (geçmişten son ${channel.ilkCekimSiniri} mesaj)` : '')
                 : `${channel.label} için kanal ID'si girilmemiş (server.js içindeki LOG_CHANNELS)`;
             btn.addEventListener('click', () => select(channel.key));
             menu.appendChild(btn);
@@ -784,7 +785,11 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
             } else if (data.status === 'hata') {
                 status.textContent = `Hata: ${data.error || 'bilinmeyen'}`;
             } else {
-                status.textContent = `${data.total} mesaj · son güncelleme ${formatDate(data.fetchedAt)}`;
+                // Sinirli kanallarda "neden az mesaj var?" sorusu dogmasin.
+                status.textContent = `${data.total} mesaj · son güncelleme ${formatDate(data.fetchedAt)}`
+                    + (data.ilkCekimSiniri
+                        ? ` · geçmişten son ${data.ilkCekimSiniri} mesaj çekiliyor, yenileri canlı ekleniyor`
+                        : '');
             }
 
             list.innerHTML = '';
