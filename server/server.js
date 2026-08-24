@@ -2546,6 +2546,22 @@ app.get('/api/surum', (req, res) => {
         rolAlKomutu: panelSettings.rolAlKomutu,
         otoYoklama: (panelSettings.otoYoklamalar || [])
             .map((y) => `${y.saat}${y.acik ? '' : ' (kapalı)'}${y.kanal ? ` -> ${y.kanal}` : ''}`),
+        // Hangi log kanallari YUKLU koda kayitli ve durumlari ne. "Menu
+        // gorunmuyor" derdinde tek bakista ayrisiyor: kanal listede yoksa kod
+        // eski, listede ama 'hata' ise bot kanali goremiyor, 'hazir' ise sorun
+        // yetkide.
+        logKanallari: LOG_CHANNELS.map((c) => {
+            const st = logStore.get(c.key);
+            return {
+                key: c.key,
+                label: c.label,
+                group: c.group || 'tx',
+                channelId: c.channelId,
+                durum: st ? st.status : 'yok',
+                mesaj: st ? st.messages.length : 0,
+                hata: st && st.error ? st.error : null,
+            };
+        }),
         // Bu listedeki uclar surumle birlikte gelir; eksikse kod eskidir.
         ucVar: {
             aktiflik: true,
