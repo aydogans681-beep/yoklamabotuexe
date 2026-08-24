@@ -56,6 +56,24 @@ server/
 paylaşılan dosyalar (token, hesaplar, uyarı geçmişi) orada durur. Masaüstü
 sürümü aynı dosyaları okur.
 
+## Sorun giderme
+
+```powershell
+.\tani.ps1
+```
+
+Çalışan commit'i, rol botu ayarlarını, zamanlanmış yoklamaları ve **bütün log
+kanallarını durumlarıyla** yazar. Giriş gerektirmez. Bir menü panelde
+görünmüyorsa üç sebebi ayırt eder:
+
+| Çıktı | Anlamı |
+|---|---|
+| Kanal listede **yok** | Kod eski - `guncelle.ps1` çalışmamış |
+| Kanal var, durum **hata** | Bot o kanalı göremiyor - ID yanlış ya da izin yok |
+| Kanal var, durum **hazır** | Sunucu tamam; sorun o hesabın **yetkisinde** |
+
+Panele hiç ulaşılamıyorsa hangi komutlarla bakılacağını da yazar.
+
 ## Sekmeler
 
 ### Yoklama
