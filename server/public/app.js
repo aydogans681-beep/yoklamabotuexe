@@ -601,7 +601,8 @@ tabButtons.forEach((btn) => {
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
         if (btn.dataset.tab === 'yoklama') loadKatilim();
-        if (btn.dataset.tab === 'loglar') refreshLogMenu();
+        if (btn.dataset.tab === 'loglar') txLogTab.refreshMenu();
+        if (btn.dataset.tab === 'mutelog') muteLogTab.refreshMenu();
         if (btn.dataset.tab === 'ayarlar') {
             if (currentIsAdmin) refreshAccounts();
             loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama();
@@ -615,26 +616,12 @@ tabButtons.forEach((btn) => {
 });
 
 // ============================================================================
-// --- TX LOGS ---
-// Sunucu tüm geçmişi bellekte tutuyor; burada sadece sayfa sayfa istiyoruz.
+// --- LOG SEKMELERI (TX Logs + Mute Logları) ---
+// Iki sekme de ayni islevi goruyor; tek fark hangi kanal grubunu listeledikleri.
+// Ayni kodu ikinci kez yazmak yerine fabrika: her sekme kendi DOM'unu ve kendi
+// sayfa/arama durumunu tutuyor, sunucudan grubuna ait kanallari cekiyor.
 // ============================================================================
-const logsMenu = document.getElementById('logsMenu');
-const logsList = document.getElementById('logsList');
-const logTitle = document.getElementById('logTitle');
-const logStatus = document.getElementById('logStatus');
-const logSearch = document.getElementById('logSearch');
-const logRefreshBtn = document.getElementById('logRefreshBtn');
-const logPager = document.getElementById('logPager');
-const logPageInfo = document.getElementById('logPageInfo');
-const logPrevBtn = document.getElementById('logPrevBtn');
-const logNextBtn = document.getElementById('logNextBtn');
-
 const LOG_PAGE_SIZE = 100;
-let logChannels = [];
-let activeLogKey = null;
-let logOffset = 0;
-let logSearchTerm = '';
-let logSearchTimer = null;
 
 function statusLabel(channel) {
     if (!channel.configured) return 'ID yok';
@@ -642,87 +629,6 @@ function statusLabel(channel) {
     if (channel.status === 'hata') return 'hata';
     if (channel.status === 'bekliyor') return 'bekliyor';
     return String(channel.loaded);
-}
-
-function renderLogMenu() {
-    logsMenu.innerHTML = '';
-    logChannels.forEach((channel) => {
-        const btn = document.createElement('button');
-        let cls = 'log-menu-item';
-        if (channel.key === activeLogKey) cls += ' active';
-        if (!channel.configured) cls += ' missing';
-        else if (channel.status === 'yukleniyor' || channel.status === 'bekliyor') cls += ' pending';
-        btn.className = cls;
-        btn.innerHTML = `<span>${escapeHtml(channel.label)}</span><span class="count">${escapeHtml(statusLabel(channel))}</span>`;
-        btn.title = channel.configured
-            ? `${channel.label} - ${channel.loaded} mesaj`
-            : `${channel.label} için kanal ID'si girilmemiş (server.js içindeki LOG_CHANNELS)`;
-        btn.addEventListener('click', () => selectLog(channel.key));
-        logsMenu.appendChild(btn);
-    });
-}
-
-async function refreshLogMenu() {
-    try {
-        const res = await fetch('/api/loglar');
-        if (res.status === 401) { showLogin(); return; }
-        const data = await okuJson(res);
-        if (!data.ok) return;
-        logChannels = data.channels;
-        renderLogMenu();
-    } catch (error) {
-        // sessizce geç - WebSocket'ten gelen durum güncellemeleri zaten menüyü tazeleyecek
-    }
-}
-
-function onLogStatusUpdate(msg) {
-    // Etkinlik/ticket kanali hazir olunca acik olan Etkinlik sekmesini
-    // kendiliginden tazele - kullanici "veri yok" ekranina bakip kalmasin.
-    if (msg.key === actChannelKey && document.getElementById('tab-etkinlik').classList.contains('active')) {
-        if (msg.status === 'hazir') {
-            loadActivityReport();
-        } else if (msg.status === 'yukleniyor') {
-            activityStatus.textContent = `Geçmiş çekiliyor: ${msg.loaded} mesaj...`;
-        }
-    }
-
-    const channel = logChannels.find((c) => c.key === msg.key);
-    if (channel) {
-        channel.status = msg.status;
-        channel.loaded = msg.loaded;
-        channel.error = msg.error;
-        renderLogMenu();
-    }
-    if (msg.key === activeLogKey) {
-        if (msg.status === 'yukleniyor') {
-            logStatus.textContent = `Geçmiş çekiliyor: ${msg.loaded} mesaj...`;
-        } else if (msg.status === 'hazir') {
-            logStatus.textContent = `${msg.loaded} mesaj hazır.`;
-            loadLogPage();
-        } else if (msg.status === 'hata') {
-            logStatus.textContent = `Hata: ${msg.error || 'bilinmeyen'}`;
-        }
-    }
-}
-
-// Yeni bir log mesajı geldiğinde: ilk sayfadaysak ve arama yoksa listeyi tazele.
-function onLogNewMessage(msg) {
-    const channel = logChannels.find((c) => c.key === msg.key);
-    if (channel) { channel.loaded = msg.loaded; renderLogMenu(); }
-    if (msg.key === activeLogKey && logOffset === 0 && !logSearchTerm) loadLogPage();
-}
-
-function selectLog(key) {
-    activeLogKey = key;
-    logOffset = 0;
-    logSearchTerm = '';
-    logSearch.value = '';
-    const channel = logChannels.find((c) => c.key === key);
-    logTitle.textContent = channel ? `${channel.label} Logu` : key;
-    logSearch.disabled = false;
-    logRefreshBtn.disabled = !(channel && channel.configured);
-    renderLogMenu();
-    loadLogPage();
 }
 
 // Discord mesajlari markdown iceriyor (**kalin**, *egik*, `kod`, ~~ustu cizili~~).
@@ -783,92 +689,214 @@ function renderLogEntry(entry) {
     return div;
 }
 
-async function loadLogPage() {
-    if (!activeLogKey) return;
-    logsList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
-    try {
-        const params = new URLSearchParams({ offset: String(logOffset), limit: String(LOG_PAGE_SIZE) });
-        if (logSearchTerm) params.set('q', logSearchTerm);
-        const res = await fetch(`/api/loglar/${activeLogKey}?${params.toString()}`);
-        if (res.status === 401) { showLogin(); return; }
-        const data = await okuJson(res);
-        if (!data.ok) {
-            logsList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(data.error || 'bilinmeyen')}</div>`;
-            return;
-        }
 
-        if (!data.configured) {
-            logsList.innerHTML = '<div class="empty-hint">Bu menü için kanal ID\'si girilmemiş.<br>server.js içindeki <b>LOG_CHANNELS</b> listesine ID\'yi ekle.</div>';
-            logPager.style.display = 'none';
-            logStatus.textContent = '';
-            return;
-        }
-        if (data.status === 'yukleniyor' || data.status === 'bekliyor') {
-            logStatus.textContent = data.status === 'bekliyor'
-                ? 'Sıradaki kanal - geçmiş henüz çekilmedi.'
-                : 'Geçmiş çekiliyor...';
-        } else if (data.status === 'hata') {
-            logStatus.textContent = `Hata: ${data.error || 'bilinmeyen'}`;
-        } else {
-            logStatus.textContent = `${data.total} mesaj · son güncelleme ${formatDate(data.fetchedAt)}`;
-        }
+function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refreshId,
+    pagerId, pageInfoId, prevId, nextId }) {
+    const menu = document.getElementById(menuId);
+    const list = document.getElementById(listId);
+    const title = document.getElementById(titleId);
+    const status = document.getElementById(statusId);
+    const search = document.getElementById(searchId);
+    const refreshBtn = document.getElementById(refreshId);
+    const pager = document.getElementById(pagerId);
+    const pageInfo = document.getElementById(pageInfoId);
+    const prevBtn = document.getElementById(prevId);
+    const nextBtn = document.getElementById(nextId);
 
-        logsList.innerHTML = '';
-        if (data.messages.length === 0) {
-            // Bos liste her zaman "mesaj yok" demek degil - kanalin gecmisi
-            // henuz cekilmemis de olabilir; ikisini ayirt ediyoruz.
-            let hint;
-            if (logSearchTerm) hint = 'Aramaya uyan mesaj yok.';
-            else if (data.status === 'bekliyor') hint = 'Bu kanalın geçmişi henüz çekilmedi - sırada bekliyor.';
-            else if (data.status === 'yukleniyor') hint = 'Geçmiş çekiliyor, birazdan burada görünecek...';
-            else if (data.status === 'hata') hint = `Çekilemedi: ${escapeHtml(data.error || 'bilinmeyen hata')}`;
-            else hint = 'Bu kanalda mesaj yok.';
-            logsList.innerHTML = `<div class="empty-hint">${hint}</div>`;
-            logPager.style.display = 'none';
-            return;
-        }
-        data.messages.forEach((entry) => logsList.appendChild(renderLogEntry(entry)));
-        logsList.scrollTop = 0;
+    let channels = [];
+    let activeKey = null;
+    let offset = 0;
+    let term = '';
+    let searchTimer = null;
 
-        const from = data.offset + 1;
-        const to = data.offset + data.messages.length;
-        logPageInfo.textContent = `${from}-${to} / ${data.matched}${logSearchTerm ? ` (toplam ${data.total})` : ''}`;
-        logPrevBtn.disabled = data.offset === 0;
-        logNextBtn.disabled = to >= data.matched;
-        logPager.style.display = 'flex';
-    } catch (error) {
-        logsList.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    function renderMenu() {
+        menu.innerHTML = '';
+        channels.forEach((channel) => {
+            const btn = document.createElement('button');
+            let cls = 'log-menu-item';
+            if (channel.key === activeKey) cls += ' active';
+            if (!channel.configured) cls += ' missing';
+            else if (channel.status === 'yukleniyor' || channel.status === 'bekliyor') cls += ' pending';
+            btn.className = cls;
+            btn.innerHTML = `<span>${escapeHtml(channel.label)}</span><span class="count">${escapeHtml(statusLabel(channel))}</span>`;
+            btn.title = channel.configured
+                ? `${channel.label} - ${channel.loaded} mesaj`
+                : `${channel.label} için kanal ID'si girilmemiş (server.js içindeki LOG_CHANNELS)`;
+            btn.addEventListener('click', () => select(channel.key));
+            menu.appendChild(btn);
+        });
     }
+
+    async function refreshMenu() {
+        try {
+            const res = await fetch(`/api/loglar?grup=${encodeURIComponent(grup)}`);
+            if (res.status === 401) { showLogin(); return; }
+            const data = await okuJson(res);
+            if (!data.ok) return;
+            channels = data.channels;
+            renderMenu();
+        } catch (error) {
+            // sessizce geç - WebSocket'ten gelen durum güncellemeleri menüyü zaten tazeleyecek
+        }
+    }
+
+    function select(key) {
+        activeKey = key;
+        offset = 0;
+        term = '';
+        search.value = '';
+        const channel = channels.find((c) => c.key === key);
+        title.textContent = channel ? `${channel.label} Logu` : key;
+        search.disabled = false;
+        refreshBtn.disabled = !(channel && channel.configured);
+        renderMenu();
+        loadPage();
+    }
+
+    async function loadPage() {
+        if (!activeKey) return;
+        list.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+        try {
+            const params = new URLSearchParams({ offset: String(offset), limit: String(LOG_PAGE_SIZE) });
+            if (term) params.set('q', term);
+            const res = await fetch(`/api/loglar/${activeKey}?${params.toString()}`);
+            if (res.status === 401) { showLogin(); return; }
+            const data = await okuJson(res);
+            if (!data.ok) {
+                list.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(data.error || 'bilinmeyen')}</div>`;
+                return;
+            }
+
+            if (!data.configured) {
+                list.innerHTML = '<div class="empty-hint">Bu menü için kanal ID\'si girilmemiş.<br>server.js içindeki <b>LOG_CHANNELS</b> listesine ID\'yi ekle.</div>';
+                pager.style.display = 'none';
+                status.textContent = '';
+                return;
+            }
+            if (data.status === 'yukleniyor' || data.status === 'bekliyor') {
+                status.textContent = data.status === 'bekliyor'
+                    ? 'Sıradaki kanal - geçmiş henüz çekilmedi.'
+                    : 'Geçmiş çekiliyor...';
+            } else if (data.status === 'hata') {
+                status.textContent = `Hata: ${data.error || 'bilinmeyen'}`;
+            } else {
+                status.textContent = `${data.total} mesaj · son güncelleme ${formatDate(data.fetchedAt)}`;
+            }
+
+            list.innerHTML = '';
+            if (data.messages.length === 0) {
+                // Bos liste her zaman "mesaj yok" demek degil - kanalin gecmisi
+                // henuz cekilmemis de olabilir; ikisini ayirt ediyoruz.
+                let hint;
+                if (term) hint = 'Aramaya uyan mesaj yok.';
+                else if (data.status === 'bekliyor') hint = 'Bu kanalın geçmişi henüz çekilmedi - sırada bekliyor.';
+                else if (data.status === 'yukleniyor') hint = 'Geçmiş çekiliyor, birazdan burada görünecek...';
+                else if (data.status === 'hata') hint = `Çekilemedi: ${escapeHtml(data.error || 'bilinmeyen hata')}`;
+                else hint = 'Bu kanalda mesaj yok.';
+                list.innerHTML = `<div class="empty-hint">${hint}</div>`;
+                pager.style.display = 'none';
+                return;
+            }
+            data.messages.forEach((entry) => list.appendChild(renderLogEntry(entry)));
+            list.scrollTop = 0;
+
+            const from = data.offset + 1;
+            const to = data.offset + data.messages.length;
+            pageInfo.textContent = `${from}-${to} / ${data.matched}${term ? ` (toplam ${data.total})` : ''}`;
+            prevBtn.disabled = data.offset === 0;
+            nextBtn.disabled = to >= data.matched;
+            pager.style.display = 'flex';
+        } catch (error) {
+            list.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    // WebSocket olaylari her iki sekmeye de geliyor; kendi grubunda olmayan
+    // anahtari gorunce hicbir sey yapmiyor.
+    function onStatus(msg) {
+        const channel = channels.find((c) => c.key === msg.key);
+        if (channel) {
+            channel.status = msg.status;
+            channel.loaded = msg.loaded;
+            channel.error = msg.error;
+            renderMenu();
+        }
+        if (msg.key !== activeKey) return;
+        if (msg.status === 'yukleniyor') {
+            status.textContent = `Geçmiş çekiliyor: ${msg.loaded} mesaj...`;
+        } else if (msg.status === 'hazir') {
+            status.textContent = `${msg.loaded} mesaj hazır.`;
+            loadPage();
+        } else if (msg.status === 'hata') {
+            status.textContent = `Hata: ${msg.error || 'bilinmeyen'}`;
+        }
+    }
+
+    // Yeni bir log mesajı geldiğinde: ilk sayfadaysak ve arama yoksa listeyi tazele.
+    function onNewMessage(msg) {
+        const channel = channels.find((c) => c.key === msg.key);
+        if (channel) { channel.loaded = msg.loaded; renderMenu(); }
+        if (msg.key === activeKey && offset === 0 && !term) loadPage();
+    }
+
+    search.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            term = search.value.trim();
+            offset = 0;
+            loadPage();
+        }, 250);
+    });
+    prevBtn.addEventListener('click', () => { offset = Math.max(0, offset - LOG_PAGE_SIZE); loadPage(); });
+    nextBtn.addEventListener('click', () => { offset += LOG_PAGE_SIZE; loadPage(); });
+    refreshBtn.addEventListener('click', async () => {
+        if (!activeKey) return;
+        refreshBtn.disabled = true;
+        status.textContent = 'Yenileme başlatıldı...';
+        try {
+            await fetch(`/api/loglar/${activeKey}/yenile`, { method: 'POST' });
+        } catch (error) {
+            status.textContent = `Hata: ${error.message}`;
+        } finally {
+            refreshBtn.disabled = false;
+        }
+    });
+
+    return { refreshMenu, onStatus, onNewMessage };
 }
 
-logSearch.addEventListener('input', () => {
-    clearTimeout(logSearchTimer);
-    logSearchTimer = setTimeout(() => {
-        logSearchTerm = logSearch.value.trim();
-        logOffset = 0;
-        loadLogPage();
-    }, 250);
+const txLogTab = createLogTab({
+    grup: 'tx',
+    menuId: 'logsMenu', listId: 'logsList', titleId: 'logTitle', statusId: 'logStatus',
+    searchId: 'logSearch', refreshId: 'logRefreshBtn', pagerId: 'logPager',
+    pageInfoId: 'logPageInfo', prevId: 'logPrevBtn', nextId: 'logNextBtn',
 });
-logPrevBtn.addEventListener('click', () => {
-    logOffset = Math.max(0, logOffset - LOG_PAGE_SIZE);
-    loadLogPage();
+const muteLogTab = createLogTab({
+    grup: 'mute',
+    menuId: 'muteMenu', listId: 'muteList', titleId: 'muteTitle', statusId: 'muteStatus',
+    searchId: 'muteSearch', refreshId: 'muteRefreshBtn', pagerId: 'mutePager',
+    pageInfoId: 'mutePageInfo', prevId: 'mutePrevBtn', nextId: 'muteNextBtn',
 });
-logNextBtn.addEventListener('click', () => {
-    logOffset += LOG_PAGE_SIZE;
-    loadLogPage();
-});
-logRefreshBtn.addEventListener('click', async () => {
-    if (!activeLogKey) return;
-    logRefreshBtn.disabled = true;
-    logStatus.textContent = 'Yenileme başlatıldı...';
-    try {
-        await fetch(`/api/loglar/${activeLogKey}/yenile`, { method: 'POST' });
-    } catch (error) {
-        logStatus.textContent = `Hata: ${error.message}`;
-    } finally {
-        logRefreshBtn.disabled = false;
+const logTabs = [txLogTab, muteLogTab];
+
+function refreshLogMenu() { logTabs.forEach((t) => t.refreshMenu()); }
+
+function onLogStatusUpdate(msg) {
+    // Etkinlik/ticket kanali hazir olunca acik olan Etkinlik sekmesini
+    // kendiliginden tazele - kullanici "veri yok" ekranina bakip kalmasin.
+    if (msg.key === actChannelKey && document.getElementById('tab-etkinlik').classList.contains('active')) {
+        if (msg.status === 'hazir') {
+            loadActivityReport();
+        } else if (msg.status === 'yukleniyor') {
+            activityStatus.textContent = `Geçmiş çekiliyor: ${msg.loaded} mesaj...`;
+        }
     }
-});
+    logTabs.forEach((t) => t.onStatus(msg));
+}
+
+function onLogNewMessage(msg) {
+    logTabs.forEach((t) => t.onNewMessage(msg));
+}
 
 // ============================================================================
 // --- AYARLAR: panel hesapları ---

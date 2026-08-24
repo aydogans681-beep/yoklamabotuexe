@@ -49,6 +49,7 @@
                 <button class="tab-btn" data-tab="aktiflik"><span class="ico">🟢</span>Aktiflik</button>
                 <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span>Etkinlik</button>
                 <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span>TX Logs</button>
+                <button class="tab-btn" data-tab="mutelog"><span class="ico">🔇</span>Mute Logları</button>
                 <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico">🔑</span>Hesap Logları</button>
                 <button class="tab-btn" data-tab="ayarlar"><span class="ico">⚙️</span>Ayarlar</button>
             </nav>
@@ -325,6 +326,30 @@
                         <button class="secondary small" id="logPrevBtn">← Önceki</button>
                         <span class="scanStatus" id="logPageInfo"></span>
                         <button class="secondary small" id="logNextBtn">Sonraki →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= MUTE LOGLARI =================
+             TX Logs ile ayni makine; yalnizca menusu ayri (mute / unmute). -->
+        <div class="tab-panel" id="tab-mutelog">
+            <div class="logs-layout">
+                <div class="logs-menu" id="muteMenu"></div>
+                <div class="logs-main">
+                    <div class="toolbar logs-toolbar">
+                        <span class="logs-title" id="muteTitle">Bir log menüsü seç</span>
+                        <input type="text" class="text-search" id="muteSearch" placeholder="Log içinde ara..." disabled>
+                        <button class="secondary small" id="muteRefreshBtn" disabled>Yenile</button>
+                        <span class="scanStatus" id="muteStatus"></span>
+                    </div>
+                    <div class="logs-list" id="muteList">
+                        <div class="empty-hint">Soldan bir log menüsü seç.</div>
+                    </div>
+                    <div class="toolbar logs-pager" id="mutePager" style="display:none;">
+                        <button class="secondary small" id="mutePrevBtn">← Önceki</button>
+                        <span class="scanStatus" id="mutePageInfo"></span>
+                        <button class="secondary small" id="muteNextBtn">Sonraki →</button>
                     </div>
                 </div>
             </div>

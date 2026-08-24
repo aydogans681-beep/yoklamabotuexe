@@ -335,14 +335,23 @@ const ACTIVITY_CHANNELS = [
     },
 ];
 
+// group: hangi sekmede gorunecegi. 'tx' -> TX Logs, 'mute' -> Mute Logları.
+// Ikisi de ayni cekme/saklama/arama makinesini kullaniyor; sadece menuleri
+// ayri sekmelere bolunuyor.
+const LOG_GROUPS = [
+    { key: 'tx', label: 'TX Logs' },
+    { key: 'mute', label: 'Mute Logları' },
+];
 const LOG_CHANNELS = [
-    { key: 'ban', label: 'Ban', channelId: '1514634711413293197' },
-    { key: 'unban', label: 'Unban', channelId: '1456027006964858901' },
-    { key: 'kick', label: 'Kick', channelId: '1514634723043836155' },
-    { key: 'warn', label: 'Warn', channelId: '1514634738915086560' },
-    { key: 'dm', label: 'DM', channelId: '1514634767033696387' },
-    { key: 'duyuru', label: 'Duyuru', channelId: '1514634800407904398' },
-    { key: 'revive', label: 'Revive', channelId: '1514633983160483901' },
+    { key: 'ban', label: 'Ban', channelId: '1514634711413293197', group: 'tx' },
+    { key: 'unban', label: 'Unban', channelId: '1456027006964858901', group: 'tx' },
+    { key: 'kick', label: 'Kick', channelId: '1514634723043836155', group: 'tx' },
+    { key: 'warn', label: 'Warn', channelId: '1514634738915086560', group: 'tx' },
+    { key: 'dm', label: 'DM', channelId: '1514634767033696387', group: 'tx' },
+    { key: 'duyuru', label: 'Duyuru', channelId: '1514634800407904398', group: 'tx' },
+    { key: 'revive', label: 'Revive', channelId: '1514633983160483901', group: 'tx' },
+    { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute' },
+    { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute' },
 ];
 
 // Discord sayfa basina en fazla 100 mesaj veriyor. Sayfalar arasinda kisa bir
@@ -1322,6 +1331,7 @@ const ALL_CHANNELS = [
 ALL_CHANNELS.forEach((channel) => {
     logStore.set(channel.key, {
         kind: channel.kind,
+        group: channel.group || 'tx',
         personFrom: channel.personFrom || 'author',
         // Bunlar depoya TASINMALI - yoksa resolvePersonDetailed icindeki
         // store.botId / store.personLabel undefined kalir ve bot filtresi
@@ -2467,13 +2477,20 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
 
 // --- TX LOGS ---
 app.get('/api/loglar', requireAuth, (req, res) => {
+    // grup verilmezse hepsi doner - eski istemciler bozulmasin.
+    const grup = String(req.query.grup || '').trim();
+    const secilenler = grup
+        ? LOG_CHANNELS.filter((c) => (c.group || 'tx') === grup)
+        : LOG_CHANNELS;
     res.json({
         ok: true,
-        channels: LOG_CHANNELS.map((channel) => {
+        groups: LOG_GROUPS,
+        channels: secilenler.map((channel) => {
             const store = logStore.get(channel.key);
             return {
                 key: store.key,
                 label: store.label,
+                group: store.group,
                 configured: Boolean(store.channelId),
                 status: store.status,
                 loaded: store.loaded,
