@@ -82,7 +82,12 @@ sürümü aynı dosyaları okur.
 - **Yoklamaya Katıl** - panel hesabına Discord ID'si bağlı olan yetkili,
   kendini o günün yoklamasında katıldı olarak işaretler; o gün uyarı almaz.
   Kayıt `yoklama-katilim.json` dosyasında gün gün tutulur. Hesabına ID bağlı
-  değilse buton kapalı gelir ve sebebini yazar.
+  değilse buton **kapanmaz**: basınca Ayarlar > Kendi Hesabım'a götürüp Discord
+  ID alanını odaklar. (Kapalı buton "yok" gibi göründüğü için kullanıcılar ne
+  yapacaklarını anlamıyordu.) Yönetici, Panel Hesapları'ndaki **Discord ID**
+  düğmesiyle mevcut hesaplara da ID atayabilir - önceden ID yalnızca hesap
+  açılırken girilebiliyordu, daha önce açılmış hesaplarda bu düğme çalışmıyordu.
+  Aynı ID iki hesaba bağlanamaz.
 - **Toplu Uyarı** - elle seçilen kişilere uyarı verme / geri alma.
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
 
@@ -143,11 +148,15 @@ tek yerde duruyor ve her sekme kendi seçimini bağımsız koruyor.
   ve **Discord ID** değiştirme. Değişiklikten sonra o hesabın diğer tüm
   oturumları düşer. Discord ID 17-20 haneli olmalı; `sil` yazıp kaydedersen
   bağlantı kaldırılır.
-- **Otomatik Günlük Yoklama** - her gün belirlenen saatte (varsayılan `20:30`,
-  Türkiye saati) yoklama alınır ve **uyarılar kimse başında olmadan verilir**.
-  Açık/kapalı düğmesi, saat ve uyarı sebebi buradan ayarlanır; "Şimdi Çalıştır"
-  ile beklemeden denenebilir (deneme, o günün zamanlanmış çalışmasını iptal
-  etmez). Her çalışma Hesap Logları'na yazılır.
+- **Otomatik Günlük Yoklama** - **birden fazla saat** tanımlanabilir; her satır
+  kendi saatinde yoklama alır ve **uyarıları kimse başında olmadan verir**.
+  Her satırın kendi duyuru kanalı, kendi uyarı sebebi ve kendi açık/kapalı
+  anahtarı vardır - kanal boş bırakılırsa varsayılan uyarı kanalı kullanılır.
+  Kurulum varsayılanı: `20:30` (varsayılan kanal) ve `22:30`
+  (`1470230485820112950`). Satırdaki "Şimdi" ile beklemeden denenebilir; deneme
+  o günün zamanlanmış çalışmasını iptal etmez. Her çalışma Hesap Logları'na
+  yazılır. Aynı saatin iki kez girilmesi engellenir (ikisi de aynı dakikada
+  tetiklenip biri hiç çalışmamış gibi görünürdü).
 - **Rol Botu Komutları** - rol verme/alma **komut ID'leri** (önerilen), ada göre
   yedek arama için komut adları, ve rol botunun ID'si. "Botun komutlarını
   listele" sunucudaki komutları ID'leriyle listeler; ID'ye tıklayınca panoya
@@ -269,7 +278,8 @@ Not: otomatik yoklama, rol botu komutları, ticket mesajı ve logo ayarları
 | `POST /api/yoklama/toplu-uyari-ver`, `/toplu-rol-geri-al` | Toplu uyarı |
 | `POST /api/yoklama/acil-toplanti` | Acil toplantı |
 | `GET /api/yoklama/katilim`, `POST /api/yoklama/katil` | Yoklamaya Katıl |
-| `GET/POST /api/oto-yoklama`, `POST /api/oto-yoklama/simdi` | Otomatik günlük yoklama |
+| `GET/POST /api/oto-yoklama`, `POST /api/oto-yoklama/simdi` | Otomatik günlük yoklamalar (liste) |
+| `POST /api/hesaplar/discord-id` | Bir hesaba Discord ID bağlama *(yönetici)* |
 | `GET/POST /api/rol-komutlari` | Rol botu komut ID'leri, adları ve bot ID'si |
 | `GET /api/surum` | Çalışan commit, dal, rol botu/komut ayarları (girişsiz) |
 | `GET /api/loglar[?grup=tx\|mute]`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs + Mute Logları |

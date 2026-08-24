@@ -401,23 +401,23 @@
             <div class="card accent-card">
                 <h2>Otomatik Günlük Yoklama</h2>
                 <p class="card-desc">
-                    Her gün belirtilen saatte yoklama alınır ve <b>uyarılar otomatik verilir</b>.
-                    Kimse başında olmadan rol verdiği için istediğin an kapatabilirsin;
-                    her çalışma Hesap Logları'na yazılır. Saat Türkiye saatidir.
+                    Her satır, her gün belirtilen saatte yoklama alır ve <b>uyarıları
+                    otomatik verir</b>. Uyarı duyurusu istenirse ayrı bir kanala
+                    yazılabilir - kanal boş bırakılırsa varsayılan uyarı kanalı
+                    kullanılır. Kimse başında olmadan rol verdiği için her satırı
+                    tek tek kapatabilirsin; her çalışma Hesap Logları'na yazılır.
+                    Saatler Türkiye saatidir.
                 </p>
-                <div class="toolbar" style="margin-bottom:10px;">
-                    <label class="check-inline"><input type="checkbox" id="otoYoklamaAcik"> Açık</label>
-                    <input type="text" class="text-search" id="otoYoklamaSaat" placeholder="20:30" style="max-width:110px; flex:0 0 auto;">
-                    <span class="scanStatus" id="otoYoklamaSaatBilgi"></span>
-                </div>
-                <div class="field">
-                    <label>Uyarı sebebi</label>
-                    <input type="text" id="otoYoklamaSebep" placeholder="Otomatik yoklama - seste değil, mazereti yok">
-                </div>
-                <div class="toolbar">
+                <div id="otoYoklamaListe" class="oto-liste"></div>
+                <div class="toolbar" style="margin-top:10px;">
+                    <button class="secondary small" id="otoYoklamaEkleBtn">+ Saat Ekle</button>
+                    <span class="sep"></span>
                     <button id="otoYoklamaKaydetBtn">Kaydet</button>
-                    <button class="secondary small" id="otoYoklamaSimdiBtn">Şimdi Çalıştır</button>
                     <span class="scanStatus" id="otoYoklamaMsg"></span>
+                </div>
+                <div class="field" style="margin-top:12px;">
+                    <label>Varsayılan uyarı sebebi <span class="muted">(satırda sebep yazmazsan bu kullanılır)</span></label>
+                    <input type="text" id="otoYoklamaSebep" placeholder="Otomatik yoklama - seste değil, mazereti yok">
                 </div>
                 <div class="scanStatus" id="otoYoklamaSon" style="margin-top:10px;"></div>
             </div>

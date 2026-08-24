@@ -1166,7 +1166,10 @@ function buildWarningAnnounceMessage(warnedMemberIds, reason, verenId) {
     ].join('\n');
 }
 
-async function giveBulkWarning(memberIds, reason, verenId = null) {
+// duyuruKanalId: uyari duyurusunun gidecegi kanal. Bos birakilirsa
+// WARNING_ANNOUNCE_CHANNEL_ID kullaniliyor. Zamanlanmis yoklamalarin her biri
+// kendi kanalina yazabilsin diye parametre.
+async function giveBulkWarning(memberIds, reason, verenId = null, duyuruKanalId = null) {
     const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
     if (!guild) throw new Error('Sunucu bulunamadı, GUILD_ID hatalı olabilir.');
     if (!(await waitForGuildShard(guild))) {
@@ -1211,14 +1214,18 @@ async function giveBulkWarning(memberIds, reason, verenId = null) {
 
     let announceError = null;
     if (warned.length > 0) {
+        const hedefKanal = duyuruKanalId || WARNING_ANNOUNCE_CHANNEL_ID;
         try {
-            const channel = await client.channels.fetch(WARNING_ANNOUNCE_CHANNEL_ID);
-            if (!channel) throw new Error('Uyarı kanalı bulunamadı, WARNING_ANNOUNCE_CHANNEL_ID hatalı olabilir.');
+            const channel = await client.channels.fetch(hedefKanal);
+            if (!channel) throw new Error(`Uyarı kanalı bulunamadı (${hedefKanal}).`);
             const announceMessage = await channel.send(buildWarningAnnounceMessage(warned.map((w) => w.id), reason, verenId));
             warned.forEach(({ id }) => {
                 const record = lastGivenRole.get(id);
                 if (record) {
-                    record.announceChannelId = WARNING_ANNOUNCE_CHANNEL_ID;
+                    // Geri alirken duyuruyu silebilmek icin GERCEKTE yazilan
+                    // kanali saklamak sart - sabiti yazsaydik farkli kanala
+                    // giden duyurular silinemezdi.
+                    record.announceChannelId = hedefKanal;
                     record.announceMessageId = announceMessage.id;
                     record.announceMemberCount = warned.length;
                 }
@@ -2005,6 +2012,41 @@ if (panelSettings.rolBotId === HATALI_ESKI_ROLE_BOT_ID) {
 if (typeof panelSettings.otoYoklamaAcik !== 'boolean') panelSettings.otoYoklamaAcik = true;
 if (typeof panelSettings.otoYoklamaSaat !== 'string') panelSettings.otoYoklamaSaat = '20:30';
 
+let otoGocGerekli = false;
+// Birden fazla zamanlanmis yoklama. Once tek saat vardi; artik her satirin
+// kendi saati, kendi duyuru kanali ve kendi ac/kapa anahtari var. Eski tek
+// saatli ayar ilk acilista listeye tasiniyor - kullanicinin ayari kaybolmasin.
+if (!Array.isArray(panelSettings.otoYoklamalar)) {
+    panelSettings.otoYoklamalar = [
+        {
+            id: 'varsayilan',
+            saat: panelSettings.otoYoklamaSaat || '20:30',
+            kanal: null, // bos = varsayilan uyari kanali
+            acik: panelSettings.otoYoklamaAcik !== false,
+            sebep: panelSettings.otoYoklamaSebep || null,
+        },
+        {
+            id: 'gece',
+            saat: '22:30',
+            kanal: '1470230485820112950',
+            acik: true,
+            sebep: null,
+        },
+    ];
+    otoGocGerekli = true;
+}
+// Gunluk kilit artik satir basina: { "<id>": "YYYY-MM-DD" }
+if (!panelSettings.otoYoklamaSonGunler || typeof panelSettings.otoYoklamaSonGunler !== 'object') {
+    panelSettings.otoYoklamaSonGunler = {};
+    if (panelSettings.otoYoklamaSonGun) {
+        panelSettings.otoYoklamaSonGunler.varsayilan = panelSettings.otoYoklamaSonGun;
+    }
+    otoGocGerekli = true;
+}
+// Gocu HEMEN diske yaz: yoksa dosya eski bicimde kalir ve "ayarlarim nerede"
+// sorusu dogar; ayrica sorun ararken dosyaya bakmak yaniltici olurdu.
+if (otoGocGerekli) savePanelSettings();
+
 function savePanelSettings() {
     try {
         fs.writeFileSync(PANEL_SETTINGS_PATH, JSON.stringify(panelSettings, null, 2));
@@ -2360,10 +2402,8 @@ app.get('/api/surum', (req, res) => {
         rolAlKomutId: rolAlKomutId() || null,
         rolVerKomutu: panelSettings.rolVerKomutu,
         rolAlKomutu: panelSettings.rolAlKomutu,
-        otoYoklama: {
-            acik: Boolean(panelSettings.otoYoklamaAcik),
-            saat: panelSettings.otoYoklamaSaat || null,
-        },
+        otoYoklama: (panelSettings.otoYoklamalar || [])
+            .map((y) => `${y.saat}${y.acik ? '' : ' (kapalı)'}${y.kanal ? ` -> ${y.kanal}` : ''}`),
         // Bu listedeki uclar surumle birlikte gelir; eksikse kod eskidir.
         ucVar: {
             aktiflik: true,
@@ -2597,6 +2637,42 @@ app.post('/api/hesaplar/sil', requireAdmin, (req, res) => {
     return res.json({ ok: true, selfDeleted: username === req.session.username });
 });
 
+// Yonetici, mevcut bir hesabin Discord ID'sini atayabiliyor. Onceden ID
+// yalnizca hesap OLUSTURULURKEN ya da kisinin kendisi tarafindan girilebiliyordu;
+// once acilmis hesaplarda "Yoklamaya Katıl" bu yuzden kullanilamiyordu ve
+// yoneticinin duzeltmek icin elinde bir yol yoktu.
+app.post('/api/hesaplar/discord-id', requireAdmin, (req, res) => {
+    const username = String((req.body && req.body.username) || '').trim();
+    const ham = String((req.body && req.body.discordId) || '').trim();
+
+    const users = loadPanelUsers();
+    const kayit = users.find((u) => u.username === username);
+    if (!kayit) return res.json({ ok: false, error: 'Böyle bir hesap yok.' });
+
+    if (ham && !/^\d{17,20}$/.test(ham)) {
+        return res.json({ ok: false, error: 'Discord ID 17-20 haneli sayı olmalı.' });
+    }
+    // Ayni Discord ID iki hesaba baglanirsa "Yoklamaya Katıl" ikisini birden
+    // katilmis gosterir - bastan engelliyoruz.
+    if (ham) {
+        const cakisan = users.find((u) => u.username !== username && u.discordId === ham);
+        if (cakisan) {
+            return res.json({ ok: false, error: `Bu Discord ID zaten "${cakisan.username}" hesabına bağlı.` });
+        }
+    }
+
+    kayit.discordId = ham || null;
+    try {
+        savePanelUsers(users);
+    } catch (error) {
+        return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
+    }
+    console.log(`[Hesap] ${username} icin Discord ID ${ham || '(kaldirildi)'} (yapan: ${req.session.username})`);
+    addAudit('hesap-discord-id', req.session.username,
+        ham ? `"${username}" hesabına Discord ID ${ham} bağlandı` : `"${username}" hesabının Discord ID bağı kaldırıldı`, req);
+    return res.json({ ok: true, username, discordId: kayit.discordId });
+});
+
 app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
     const currentPassword = String((req.body && req.body.currentPassword) || '');
     const rawNewUsername = String((req.body && req.body.newUsername) || '').trim();
@@ -2628,6 +2704,12 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
     if (!record) return res.json({ ok: false, error: 'Hesabın bulunamadı.' });
 
     record.username = newUsername;
+    if (rawDiscordId && rawDiscordId !== 'sil') {
+        const cakisan = users.find((u) => u.username !== me && u.discordId === rawDiscordId);
+        if (cakisan) {
+            return res.json({ ok: false, error: `Bu Discord ID zaten "${cakisan.username}" hesabına bağlı.` });
+        }
+    }
     if (rawDiscordId) record.discordId = rawDiscordId === 'sil' ? null : rawDiscordId;
     if (newPassword) {
         record.salt = newSalt();
@@ -3436,23 +3518,33 @@ function suankiSaat() {
 
 let otoYoklamaSonCalisma = null; // { gun, at, sonuc }
 
-async function otoYoklamaCalistir(tetikleyen) {
+// satir: { id, saat, kanal, acik, sebep } - tek bir zamanlanmis yoklama.
+// Elle tetiklemede satir verilmezse ilk satirin ayarlariyla calisiyor.
+async function otoYoklamaCalistir(tetikleyen, satir = null) {
     const gun = bugununAnahtari();
-    console.log(`[OtoYoklama] Başlıyor (${tetikleyen})...`);
+    const hedefSatir = satir || (panelSettings.otoYoklamalar || [])[0] || {};
+    const kanal = hedefSatir.kanal || null;
+    console.log(`[OtoYoklama] Başlıyor (${tetikleyen})`
+        + `${kanal ? ` · duyuru kanalı ${kanal}` : ''}...`);
     try {
         const onizleme = await buildAttendancePreview();
         const hedefler = onizleme.warn.map((m) => m.id);
-        const sebep = panelSettings.otoYoklamaSebep || 'Otomatik yoklama - seste değil, mazereti yok';
+        const sebep = hedefSatir.sebep
+            || panelSettings.otoYoklamaSebep
+            || 'Otomatik yoklama - seste değil, mazereti yok';
 
         let sonuc = { warned: [], skipped: [], failed: [] };
         if (hedefler.length > 0) {
-            sonuc = await giveBulkWarning(hedefler, sebep, null);
+            sonuc = await giveBulkWarning(hedefler, sebep, null, kanal);
         }
 
         otoYoklamaSonCalisma = {
             gun,
             at: Date.now(),
             tetikleyen,
+            saat: hedefSatir.saat || null,
+            kanal,
+            duyuruHatasi: sonuc.announceError || null,
             kontrol: onizleme.totalChecked,
             seste: onizleme.totalInVoice,
             mazeretli: onizleme.excused.length,
@@ -3484,49 +3576,106 @@ async function otoYoklamaCalistir(tetikleyen) {
 // boyle: surec uzun sure askida kalsa ya da saat degisse bile kacirmiyor,
 // ve ayni gun icinde iki kez calismasini otoYoklamaSonGun engelliyor.
 setInterval(() => {
-    if (!panelSettings.otoYoklamaAcik) return;
     if (discordStatus !== 'bağlı') return;
-    const hedef = panelSettings.otoYoklamaSaat || OTO_YOKLAMA_VARSAYILAN_SAAT;
-    if (suankiSaat() !== hedef) return;
-    if (panelSettings.otoYoklamaSonGun === bugununAnahtari()) return; // bugün çalıştı
-    panelSettings.otoYoklamaSonGun = bugununAnahtari(); // yarışı engelle
-    savePanelSettings();
-    otoYoklamaCalistir(`zamanlanmış ${hedef}`);
+    const simdi = suankiSaat();
+    const bugun = bugununAnahtari();
+    (panelSettings.otoYoklamalar || []).forEach((satir) => {
+        if (!satir.acik) return;
+        if (satir.saat !== simdi) return;
+        if (panelSettings.otoYoklamaSonGunler[satir.id] === bugun) return; // bugün çalıştı
+        panelSettings.otoYoklamaSonGunler[satir.id] = bugun; // yarışı engelle
+        savePanelSettings();
+        otoYoklamaCalistir(`zamanlanmış ${satir.saat}`, satir);
+    });
 }, 60 * 1000);
 
+const SAAT_BICIMI = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 app.get('/api/oto-yoklama', requireAuth, (req, res) => {
+    const bugun = bugununAnahtari();
     res.json({
         ok: true,
-        acik: Boolean(panelSettings.otoYoklamaAcik),
-        saat: panelSettings.otoYoklamaSaat || OTO_YOKLAMA_VARSAYILAN_SAAT,
         sebep: panelSettings.otoYoklamaSebep || 'Otomatik yoklama - seste değil, mazereti yok',
         saatDilimi: SAAT_DILIMI,
         suanki: suankiSaat(),
         sonCalisma: otoYoklamaSonCalisma,
-        bugunCalisti: panelSettings.otoYoklamaSonGun === bugununAnahtari(),
+        varsayilanKanal: WARNING_ANNOUNCE_CHANNEL_ID,
+        yoklamalar: (panelSettings.otoYoklamalar || []).map((satir) => ({
+            ...satir,
+            bugunCalisti: panelSettings.otoYoklamaSonGunler[satir.id] === bugun,
+        })),
     });
 });
 
+// Tum listeyi birden kaydediyoruz: satir ekleme/silme/duzenleme tek istekte
+// olsun, arayuzle sunucu arasinda yarim kalmis durum olusmasin.
 app.post('/api/oto-yoklama', requireAuth, (req, res) => {
-    const { acik, saat, sebep } = req.body || {};
-    if (typeof acik === 'boolean') panelSettings.otoYoklamaAcik = acik;
-    if (typeof saat === 'string') {
-        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(saat.trim())) {
-            return res.json({ ok: false, error: 'Saat SS:DD biçiminde olmalı (örn. 20:30).' });
-        }
-        panelSettings.otoYoklamaSaat = saat.trim();
-    }
+    const { yoklamalar, sebep } = req.body || {};
+
     if (typeof sebep === 'string' && sebep.trim()) panelSettings.otoYoklamaSebep = sebep.trim();
+
+    if (Array.isArray(yoklamalar)) {
+        if (yoklamalar.length > 12) {
+            return res.json({ ok: false, error: 'En fazla 12 zamanlanmış yoklama olabilir.' });
+        }
+        const temiz = [];
+        const gorulenSaatler = new Set();
+        for (const ham of yoklamalar) {
+            const saat = String((ham && ham.saat) || '').trim();
+            if (!SAAT_BICIMI.test(saat)) {
+                return res.json({ ok: false, error: `Saat SS:DD biçiminde olmalı (örn. 20:30). Hatalı: "${saat}"` });
+            }
+            // Ayni saatte iki satir olursa ikincisi hicbir zaman calismaz
+            // gibi gorunur (ikisi de ayni dakikada tetiklenir) - bastan engelle.
+            if (gorulenSaatler.has(saat)) {
+                return res.json({ ok: false, error: `Aynı saat iki kez girilmiş: ${saat}` });
+            }
+            gorulenSaatler.add(saat);
+
+            const kanal = String((ham && ham.kanal) || '').trim();
+            if (kanal && !/^\d{17,20}$/.test(kanal)) {
+                return res.json({ ok: false, error: `Kanal ID 17-20 haneli sayı olmalı. Hatalı: "${kanal}"` });
+            }
+            const sebepSatir = String((ham && ham.sebep) || '').trim();
+            temiz.push({
+                id: String((ham && ham.id) || '').trim() || `y${Date.now()}${temiz.length}`,
+                saat,
+                kanal: kanal || null,
+                acik: ham ? ham.acik !== false : true,
+                sebep: sebepSatir || null,
+            });
+        }
+        panelSettings.otoYoklamalar = temiz;
+
+        // Silinen satirlarin gunluk kilitleri birikmesin
+        const gecerliIdler = new Set(temiz.map((y) => y.id));
+        Object.keys(panelSettings.otoYoklamaSonGunler).forEach((id) => {
+            if (!gecerliIdler.has(id)) delete panelSettings.otoYoklamaSonGunler[id];
+        });
+    }
+
     savePanelSettings();
-    addAudit('oto-yoklama-ayar', req.session.username,
-        `Otomatik yoklama ${panelSettings.otoYoklamaAcik ? 'açık' : 'kapalı'} · saat ${panelSettings.otoYoklamaSaat}`, req);
-    return res.json({ ok: true, acik: Boolean(panelSettings.otoYoklamaAcik), saat: panelSettings.otoYoklamaSaat });
+    const ozet = (panelSettings.otoYoklamalar || [])
+        .map((y) => `${y.saat}${y.acik ? '' : ' (kapalı)'}${y.kanal ? ` -> ${y.kanal}` : ''}`)
+        .join(', ') || 'yok';
+    addAudit('oto-yoklama-ayar', req.session.username, `Otomatik yoklamalar: ${ozet}`, req);
+    console.log(`[OtoYoklama] Ayarlar guncellendi: ${ozet}`);
+    return res.json({ ok: true, yoklamalar: panelSettings.otoYoklamalar });
 });
 
-// Elle tetikleme - zamanlanmisi beklemeden denemek icin
+// Elle tetikleme - zamanlanmisi beklemeden denemek icin. id verilirse o satirin
+// ayarlariyla (kendi duyuru kanaliyla) calisiyor.
 app.post('/api/oto-yoklama/simdi', requireAuth, async (req, res) => {
+    const id = String((req.body && req.body.id) || '').trim();
+    const satir = id
+        ? (panelSettings.otoYoklamalar || []).find((y) => y.id === id)
+        : null;
+    if (id && !satir) return res.json({ ok: false, error: 'Bu zamanlanmış yoklama bulunamadı.' });
     try {
-        res.json({ ok: true, sonuc: await otoYoklamaCalistir(`elle (${req.session.username})`) });
+        res.json({
+            ok: true,
+            sonuc: await otoYoklamaCalistir(`elle (${req.session.username})`, satir),
+        });
     } catch (error) {
         res.json({ ok: false, error: error.message });
     }

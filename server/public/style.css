@@ -826,3 +826,17 @@ input[type="date"].text-search { color-scheme: dark; padding: 8px 11px; }
 }
 .role-tag.ok  { color: var(--ok);     border-color: var(--ok-line); }
 .role-tag.bad { color: var(--accent); border-color: var(--accent-line); }
+
+/* Otomatik yoklama satırları - her satır bir zamanlanmış çalışma */
+.oto-liste { display: flex; flex-direction: column; gap: 8px; }
+.oto-satir {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+}
+.oto-satir .oto-sil { color: var(--accent); }

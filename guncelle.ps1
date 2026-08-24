@@ -123,10 +123,11 @@ if ($pm2Kayitli) {
         Write-Host "TAMAM - bot calisiyor." -ForegroundColor Cyan
         Write-Host "   commit    : $($surum.commit)  (dal: $($surum.dal))"
         Write-Host "   rol botu  : $($surum.rolBotId)"
-        if ($surum.otoYoklama.acik) {
-            $otoMetin = 'acik - her gun ' + $surum.otoYoklama.saat
+        # Birden fazla zamanlanmis yoklama olabiliyor - hepsini yaz.
+        if ($surum.otoYoklama -and $surum.otoYoklama.Count -gt 0) {
+            $otoMetin = ($surum.otoYoklama -join ', ')
         } else {
-            $otoMetin = 'kapali'
+            $otoMetin = 'yok'
         }
         Write-Host "   oto yoklama: $otoMetin"
 
