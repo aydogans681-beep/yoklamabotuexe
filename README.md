@@ -127,7 +127,7 @@ başına ayrı işlediği için bu güvenli. 54.000 mesajlık bir kurulumda öl�
 yalnızca yeni mesajları görür, silinen/düzenlenen mesajlar ancak tam çekimde
 yansır.
 
-Menüler: Ban, Unban, Kick, Warn, DM, Duyuru, Revive, Ek Log.
+Menüler: Ban, Unban, Kick, Warn, DM, Duyuru, Revive, Ek Log, Para Verme.
 Her menüde 100'erli sayfalama ve içerik + embed üzerinde arama var.
 
 **Kanal ID'si eklemek:** `server/server.js` içindeki `LOG_CHANNELS` listesine
@@ -291,6 +291,11 @@ o kişi sayfayı yenileyene kadar eski haliyle açık kalırdı.
 
 Yetki alanı hiç tanımlanmamış hesaplar (bu özellikten önce açılmış olanlar) tüm
 sekmeleri ve kanalları görmeye devam eder - güncelleme kimseyi kilitlemez.
+
+**Yeni log kanalı eklenince:** yetkisi elle ayarlanmış hesaplar yeni kanalı
+görmez, çünkü izin listelerinde yoktur. Görmelerini istiyorsan Yetkiler
+penceresinden işaretlemen gerekir. Yetkisi hiç ayarlanmamış hesaplar ve
+yöneticiler yeni kanalı kendiliğinden görür.
 
 ## Güvenlik
 

@@ -433,6 +433,7 @@ const LOG_CHANNELS = [
     // ilkCekimSiniri: bu kanalda TUM gecmis inmiyor, yalnizca en yeni N mesaj.
     // Sonrasinda kanala yeni mesaj geldikce canli ekleniyor.
     { key: 'ek', label: 'Ek Log', channelId: '1514634694917095614', group: 'tx', ilkCekimSiniri: 100 },
+    { key: 'para', label: 'Para Verme', channelId: '1500941817242452020', group: 'tx' },
     { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute' },
     { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute' },
     { key: 'feloxlog', label: 'Felox', channelId: '1513234220011749607', group: 'felox' },
