@@ -65,8 +65,19 @@ console.log = (...args) => {
 process.on('unhandledRejection', (reason) => {
     console.log(`[Hata] Yakalanmamış promise reddi: ${reason && reason.stack ? reason.stack : reason}`);
 });
+// Acilis tamamlandi mi? Modul yuklenirken olusan bir hata surecin YARIM
+// kurulmus halde calismaya devam etmesi demek - ayarlar eksik, zamanlayicilar
+// kurulmamis olabiliyor ama Discord baglantisi canli. Bir kez boyle bir hata
+// (TDZ) sessizce yutuldu ve bot bozuk halde ayakta kaldi. Acilista olumcul,
+// sonrasinda tolere ediliyor: calisan bir botu tek bir kacak hata oldurmesin.
+let baslangicTamam = false;
 process.on('uncaughtException', (error) => {
     console.log(`[Hata] Yakalanmamış istisna: ${error && error.stack ? error.stack : error}`);
+    if (!baslangicTamam) {
+        console.log('[Hata] Bu hata acilis sirasinda olustu - surec yarim kurulmus'
+            + ' halde calismasin diye kapaniyor.');
+        process.exit(1);
+    }
 });
 
 // ============================================================================
@@ -2130,6 +2141,14 @@ function loadPanelSettings() {
 const panelSettings = loadPanelSettings();
 if (typeof panelSettings.ticketAutoEnabled !== 'boolean') panelSettings.ticketAutoEnabled = true;
 if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAutoMessage = VARSAYILAN_TICKET_MESAJI;
+// Ticket acildiktan sonra kac saniye beklenip yazilacak.
+// DIKKAT: bu sabit, asagida panelSettings varsayilaninda kullanildigi icin
+// ORADAN ONCE tanimli olmali - sonra tanimlaninca "Cannot access before
+// initialization" ile acilista cokuyordu.
+const TICKET_AUTO_VARSAYILAN_GECIKME_SN = 7;
+if (typeof panelSettings.ticketAutoGecikmeSn !== 'number') {
+    panelSettings.ticketAutoGecikmeSn = TICKET_AUTO_VARSAYILAN_GECIKME_SN;
+}
 // Rol botunun slash komut adlari. sendSlash birebir isim esleştirmesi yapiyor;
 // bot komutu farkli adlandirmissa ("rol ver" gibi alt komut da olabilir)
 // koda dokunmadan buradan degistirilebilsin diye ayarlarda tutuluyor.
@@ -2137,6 +2156,20 @@ if (typeof panelSettings.rolVerKomutu !== 'string') panelSettings.rolVerKomutu =
 if (typeof panelSettings.rolAlKomutu !== 'string') panelSettings.rolAlKomutu = 'rol-al';
 // Komut ID'si adi tamamen geciyor: ID hem komutu hem hangi uygulamaya ait
 // oldugunu tek basina belirliyor, yani ad tahmin etmeye gerek kalmiyor.
+// Prime saat hatirlatmasi. Sabitler asagida tanimli oldugu icin burada duz
+// deger kullaniyoruz - sabit adi yazarsak "before initialization" ile cokuyor.
+if (typeof panelSettings.primeAcik !== 'boolean') panelSettings.primeAcik = true;
+if (!Array.isArray(panelSettings.primeSaatler)) panelSettings.primeSaatler = ['20:00', '21:00', '22:00'];
+if (typeof panelSettings.primeKanal !== 'string') panelSettings.primeKanal = '1470230475485479097';
+if (typeof panelSettings.primeMesaj !== 'string') {
+    panelSettings.primeMesaj = 'Aktif görünüyorsun ama seste değilsin. '
+        + 'Prime saatlerdeyiz, sese geçebilir misin?';
+}
+if (typeof panelSettings.primeDm !== 'boolean') panelSettings.primeDm = true;
+if (!panelSettings.primeSonGunler || typeof panelSettings.primeSonGunler !== 'object') {
+    panelSettings.primeSonGunler = {};
+}
+
 if (typeof panelSettings.rolVerKomutId !== 'string') panelSettings.rolVerKomutId = VARSAYILAN_ROL_VER_KOMUT_ID;
 if (typeof panelSettings.rolAlKomutId !== 'string') panelSettings.rolAlKomutId = VARSAYILAN_ROL_AL_KOMUT_ID;
 if (typeof panelSettings.rolBotId !== 'string') panelSettings.rolBotId = VARSAYILAN_ROLE_BOT_ID;
@@ -2201,6 +2234,11 @@ function savePanelSettings() {
 const ticketAutoYazilan = new Set();
 // Beklenmedik bir durumda kategori yanlis eslesirse spam olmasin diye tavan.
 const TICKET_AUTO_DAKIKA_TAVANI = 12;
+function ticketAutoGecikmeMs() {
+    const sn = Number(panelSettings.ticketAutoGecikmeSn);
+    if (!Number.isFinite(sn) || sn < 0) return TICKET_AUTO_VARSAYILAN_GECIKME_SN * 1000;
+    return Math.min(sn, 120) * 1000; // ust sinir: kanal cok gec yazilmasin
+}
 let ticketAutoPencere = { dakika: 0, adet: 0 };
 const ticketAutoSonGonderimler = [];
 
@@ -2262,6 +2300,18 @@ client.on('channelCreate', async (channel) => {
             return;
         }
         ticketAutoPencere.adet += 1;
+
+        // Ticket botu kanali actiktan sonra kendi karsilama mesajlarini,
+        // butonlarini ve izinlerini yerlestiriyor. Hemen yazarsak mesajimiz
+        // onlarin arasinda kayboluyor; birkac saniye bekleyip yaziyoruz.
+        const bekleme = ticketAutoGecikmeMs();
+        if (bekleme > 0) await new Promise((r) => setTimeout(r, bekleme));
+
+        // Bekleme sirasinda ayar kapatilmis ya da kanal silinmis olabilir.
+        if (!panelSettings.ticketAutoEnabled) {
+            console.log(`[TicketOtomatik] Bekleme sirasinda kapatildi, atlandi: #${channel.name}`);
+            return;
+        }
 
         const acan = await findTicketOpener(channel);
         const metin = (acan ? `<@${acan}>\n\n` : '') + panelSettings.ticketAutoMessage;
@@ -3788,6 +3838,140 @@ app.get('/api/etkinlik/:key/mesajlar', requireIzin('etkinlik'), (req, res) => {
 // Kimse basinda olmadan rol verdigi icin panelden kapatilabiliyor ve her
 // calisma hesap loglarina yaziliyor.
 // ============================================================================
+// ============================================================================
+// --- PRIME SAAT HATIRLATMASI ---
+// Prime saatlerde ONLINE olup seste OLMAYAN yetkililere "sese gecer misin"
+// hatirlatmasi: hem bir duyuru kanalindan hem DM ile.
+//
+// "Aktif" = Discord'da online/idle/dnd. Presence bilgisi gelmemis kisiyi
+// (presence null) BILEREK atliyoruz: emin olmadan DM atmaktansa atmamak yeg,
+// aksi halde cevrimdisi insanlar her saat basi DM alirdi.
+// ============================================================================
+const PRIME_VARSAYILAN_KANAL = '1470230475485479097';
+const PRIME_VARSAYILAN_SAATLER = ['20:00', '21:00', '22:00'];
+const PRIME_VARSAYILAN_MESAJ = 'Aktif görünüyorsun ama seste değilsin. '
+    + 'Prime saatlerdeyiz, sese geçebilir misin?';
+// DM'ler arasi bekleme: selfbot ile arka arkaya DM atmak hesabin
+// isaretlenmesine yol acabiliyor.
+const PRIME_DM_ARALIK_MS = 1500;
+const PRIME_DM_TAVANI = 40;
+
+let primeSonCalisma = null;
+
+function primeSaatleri() {
+    const a = panelSettings.primeSaatler;
+    return Array.isArray(a) && a.length ? a : PRIME_VARSAYILAN_SAATLER;
+}
+
+// Presence "aktif" mi? Bilinmiyorsa false donuyoruz (yukarida aciklandi).
+function uyeAktifMi(member) {
+    const p = member.presence;
+    if (!p || !p.status) return false;
+    return p.status === 'online' || p.status === 'idle' || p.status === 'dnd';
+}
+
+async function primeHatirlatmaCalistir(tetikleyen) {
+    console.log(`[Prime] Başlıyor (${tetikleyen})...`);
+    const sonuc = {
+        at: Date.now(),
+        tetikleyen,
+        yetkili: 0,
+        seste: 0,
+        cevrimdisi: 0,
+        hedef: 0,
+        dmGitti: 0,
+        dmHata: 0,
+        kanalHatasi: null,
+        isimler: [],
+    };
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        const yetkililer = [...guild.members.cache.values()].filter((m) => (
+            ATTENDANCE_ROLE_IDS.some((roleId) => m.roles.cache.has(roleId))
+        ));
+        sonuc.yetkili = yetkililer.length;
+
+        const hedefler = [];
+        yetkililer.forEach((m) => {
+            if (m.voice && m.voice.channelId) { sonuc.seste += 1; return; }
+            if (!uyeAktifMi(m)) { sonuc.cevrimdisi += 1; return; }
+            hedefler.push(m);
+        });
+        sonuc.hedef = hedefler.length;
+        sonuc.isimler = hedefler.map((m) => m.displayName);
+
+        if (hedefler.length === 0) {
+            console.log('[Prime] Aktif olup seste olmayan yetkili yok, bir şey yazılmadı.');
+            primeSonCalisma = sonuc;
+            wsBroadcast({ type: 'prime', sonuc });
+            return sonuc;
+        }
+
+        const metin = panelSettings.primeMesaj || PRIME_VARSAYILAN_MESAJ;
+
+        // 1) Duyuru kanali - tek mesajda hepsini etiketle
+        const kanalId = panelSettings.primeKanal || PRIME_VARSAYILAN_KANAL;
+        try {
+            const kanal = await client.channels.fetch(kanalId);
+            if (!kanal) throw new Error(`Kanal bulunamadı (${kanalId}).`);
+            await kanal.send(`${hedefler.map((m) => `<@${m.id}>`).join(' ')}\n\n${metin}`);
+        } catch (error) {
+            sonuc.kanalHatasi = error.message;
+            console.log(`[Prime] Kanala yazılamadı: ${error.message}`);
+        }
+
+        // 2) DM - araliklarla, tavanla
+        if (panelSettings.primeDm !== false) {
+            for (let i = 0; i < hedefler.length && i < PRIME_DM_TAVANI; i += 1) {
+                const m = hedefler[i];
+                try {
+                    // eslint-disable-next-line no-await-in-loop
+                    await m.send(metin);
+                    sonuc.dmGitti += 1;
+                } catch (error) {
+                    // DM'i kapali olanlar burada dusuyor - normal, hata sayilmaz.
+                    sonuc.dmHata += 1;
+                }
+                if (i < hedefler.length - 1) {
+                    // eslint-disable-next-line no-await-in-loop
+                    await new Promise((r) => setTimeout(r, PRIME_DM_ARALIK_MS));
+                }
+            }
+        }
+
+        console.log(`[Prime] Bitti: ${sonuc.hedef} kişi hedeflendi, `
+            + `${sonuc.dmGitti} DM gitti, ${sonuc.dmHata} DM kapalı/hata. `
+            + `(${sonuc.seste} seste, ${sonuc.cevrimdisi} çevrimdışı)`);
+        addAudit('prime-hatirlatma', 'sistem',
+            `Prime hatırlatma (${tetikleyen}): ${sonuc.hedef} kişi, ${sonuc.dmGitti} DM`, null);
+    } catch (error) {
+        sonuc.hataMesaji = error.message;
+        console.log(`[Prime] Hata: ${error.message}`);
+        addAudit('prime-hatirlatma', 'sistem', `Prime hatırlatma hata verdi: ${error.message}`, null);
+    }
+    primeSonCalisma = sonuc;
+    wsBroadcast({ type: 'prime', sonuc });
+    return sonuc;
+}
+
+// Dakikada bir saate bakiyoruz - oto yoklamayla ayni desen. Gunluk kilit saat
+// basina ayri, yoksa ilk calisan saat digerlerini o gun susturmus olurdu.
+setInterval(() => {
+    if (!panelSettings.primeAcik) return;
+    if (discordStatus !== 'bağlı') return;
+    const simdi = suankiSaat();
+    const bugun = bugununAnahtari();
+    if (!primeSaatleri().includes(simdi)) return;
+    if (!panelSettings.primeSonGunler || typeof panelSettings.primeSonGunler !== 'object') {
+        panelSettings.primeSonGunler = {};
+    }
+    if (panelSettings.primeSonGunler[simdi] === bugun) return; // bu saat bugün çalıştı
+    panelSettings.primeSonGunler[simdi] = bugun;
+    savePanelSettings();
+    primeHatirlatmaCalistir(`zamanlanmış ${simdi}`);
+}, 60 * 1000);
+
 const OTO_YOKLAMA_VARSAYILAN_SAAT = '20:30';
 const saatBicimi = new Intl.DateTimeFormat('en-GB', {
     timeZone: SAAT_DILIMI, hour: '2-digit', minute: '2-digit', hour12: false,
@@ -3961,6 +4145,62 @@ app.post('/api/oto-yoklama/simdi', requireIzin('ayarlar'), async (req, res) => {
     }
 });
 
+// --- PRIME SAAT HATIRLATMASI ---
+app.get('/api/prime', requireIzin('ayarlar'), (req, res) => {
+    res.json({
+        ok: true,
+        acik: Boolean(panelSettings.primeAcik),
+        saatler: primeSaatleri(),
+        kanal: panelSettings.primeKanal || PRIME_VARSAYILAN_KANAL,
+        mesaj: panelSettings.primeMesaj || PRIME_VARSAYILAN_MESAJ,
+        dm: panelSettings.primeDm !== false,
+        saatDilimi: SAAT_DILIMI,
+        suanki: suankiSaat(),
+        sonCalisma: primeSonCalisma,
+    });
+});
+
+app.post('/api/prime', requireIzin('ayarlar'), (req, res) => {
+    const { acik, saatler, kanal, mesaj, dm } = req.body || {};
+    if (typeof acik === 'boolean') panelSettings.primeAcik = acik;
+    if (typeof dm === 'boolean') panelSettings.primeDm = dm;
+
+    if (Array.isArray(saatler)) {
+        if (saatler.length > 24) return res.json({ ok: false, error: 'En fazla 24 saat girilebilir.' });
+        const temiz = [];
+        for (const ham of saatler) {
+            const t = String(ham || '').trim();
+            if (!SAAT_BICIMI.test(t)) {
+                return res.json({ ok: false, error: `Saat SS:DD biçiminde olmalı. Hatalı: "${t}"` });
+            }
+            if (!temiz.includes(t)) temiz.push(t);
+        }
+        temiz.sort();
+        panelSettings.primeSaatler = temiz;
+    }
+    if (typeof kanal === 'string' && kanal.trim()) {
+        if (!/^\d{17,20}$/.test(kanal.trim())) {
+            return res.json({ ok: false, error: 'Kanal ID 17-20 haneli sayı olmalı.' });
+        }
+        panelSettings.primeKanal = kanal.trim();
+    }
+    if (typeof mesaj === 'string' && mesaj.trim()) panelSettings.primeMesaj = mesaj.trim();
+
+    savePanelSettings();
+    addAudit('prime-ayar', req.session.username,
+        `Prime hatırlatma ${panelSettings.primeAcik ? 'açık' : 'kapalı'} · `
+        + `saatler ${primeSaatleri().join(', ')} · DM ${panelSettings.primeDm !== false ? 'açık' : 'kapalı'}`, req);
+    return res.json({ ok: true, acik: Boolean(panelSettings.primeAcik), saatler: primeSaatleri() });
+});
+
+app.post('/api/prime/simdi', requireIzin('ayarlar'), async (req, res) => {
+    try {
+        res.json({ ok: true, sonuc: await primeHatirlatmaCalistir(`elle (${req.session.username})`) });
+    } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
 // --- YOKLAMAYA KATIL ---
 app.get('/api/yoklama/katilim', requireIzin('yoklama'), (req, res) => {
     const benimId = panelUserDiscordId(req.session.username);
@@ -4055,6 +4295,7 @@ app.get('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
         ok: true,
         enabled: panelSettings.ticketAutoEnabled,
         message: panelSettings.ticketAutoMessage,
+        gecikmeSn: Math.round(ticketAutoGecikmeMs() / 1000),
         guildId: TICKET_AUTO_GUILD,
         categoryId: TICKET_AUTO_CATEGORY,
         // Bot o sunucuda mi? Degilse olay hic gelmez, kullanici bunu bilsin.
@@ -4112,8 +4353,15 @@ app.post('/api/rol-komutlari', requireIzin('ayarlar'), (req, res) => {
 });
 
 app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
-    const { enabled, message } = req.body || {};
+    const { enabled, message, gecikmeSn } = req.body || {};
     if (typeof enabled === 'boolean') panelSettings.ticketAutoEnabled = enabled;
+    if (gecikmeSn !== undefined && gecikmeSn !== null && gecikmeSn !== '') {
+        const sn = Number(gecikmeSn);
+        if (!Number.isFinite(sn) || sn < 0 || sn > 120) {
+            return res.json({ ok: false, error: 'Gecikme 0-120 saniye arasında olmalı.' });
+        }
+        panelSettings.ticketAutoGecikmeSn = Math.round(sn);
+    }
     if (typeof message === 'string') {
         const kirpik = message.trim();
         if (!kirpik) return res.json({ ok: false, error: 'Mesaj boş bırakılamaz.' });
@@ -4188,7 +4436,25 @@ server.on('upgrade', (req, socket, head) => {
     });
 });
 
+// Portu alamiyorsak bu surec BASKA bir kopyanin yaninda calisiyor demektir.
+// Eskiden uncaughtException yakalayicisi hatayi yutuyordu ve surec Discord
+// baglantisi CANLI halde ayakta kaliyordu: her kopya ticket mesaji atiyor,
+// 20:30 yoklamasinda ayri ayri rol veriyor, voice-activity.json'a birbirinin
+// uzerine yaziyordu. "Ticket'a 5-6 mesaj gidiyor" sikayetinin sebebi buydu.
+// Bir kopyanin fazlasi asla calismamali - hemen cikiyoruz.
+server.on('error', (error) => {
+    if (error && error.code === 'EADDRINUSE') {
+        console.log(`[Sistem] ${PORT} portu zaten kullanimda - bu kopya kapaniyor.`);
+        console.log('[Sistem] Bot zaten calisiyor olmali. Ikinci bir kopya acmak'
+            + ' ticket mesajlarinin ve uyarilarin cift gitmesine yol acardi.');
+        process.exit(1);
+    }
+    console.log(`[Sistem] HTTP sunucu hatasi: ${error && error.message}`);
+    process.exit(1);
+});
+
 server.listen(PORT, () => {
+    baslangicTamam = true;
     console.log(`[Sistem] Web paneli http://localhost:${PORT} adresinde dinliyor.`);
     // Bellek siniri: TX Logs tum gecmisi bellekte tuttugu icin buyuk log
     // kanallarinda onemli olabiliyor. Sinir dusukse --max-old-space-size ile

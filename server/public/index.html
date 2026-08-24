@@ -488,6 +488,42 @@
             </div>
 
             <div class="card accent-card">
+                <h2>Prime Saat Hatırlatması</h2>
+                <p class="card-desc">
+                    Belirtilen saatlerde <b>Discord'da aktif olup seste olmayan</b> yetkililere
+                    "sese geçer misin" hatırlatması gönderilir: hem aşağıdaki kanaldan tek bir
+                    mesajla, hem de DM ile. Seste olanlara ve çevrimdışı olanlara yazılmaz.
+                    Durumu belli olmayan (Discord presence bilgisi gelmemiş) kişilere de
+                    <b>bilerek yazılmaz</b> - emin olmadan DM atmamak için. Saatler Türkiye saatidir.
+                </p>
+                <div class="toolbar" style="margin-bottom:10px;">
+                    <label class="check-inline"><input type="checkbox" id="primeAcik"> Açık</label>
+                    <label class="check-inline"><input type="checkbox" id="primeDm"> DM de gönder</label>
+                    <span class="scanStatus" id="primeSaatBilgi"></span>
+                </div>
+                <div class="settings-grid">
+                    <div class="field">
+                        <label>Saatler <span class="muted">(virgülle: 20:00, 21:00, 22:00)</span></label>
+                        <input type="text" id="primeSaatler" placeholder="20:00, 21:00, 22:00">
+                    </div>
+                    <div class="field">
+                        <label>Duyuru kanalı ID</label>
+                        <input type="text" id="primeKanal" placeholder="1470230475485479097">
+                    </div>
+                </div>
+                <div class="field" style="margin-top:10px;">
+                    <label>Mesaj</label>
+                    <input type="text" id="primeMesaj" placeholder="Aktif görünüyorsun ama seste değilsin...">
+                </div>
+                <div class="toolbar">
+                    <button id="primeKaydetBtn">Kaydet</button>
+                    <button class="secondary small" id="primeSimdiBtn">Şimdi Çalıştır</button>
+                    <span class="scanStatus" id="primeMsg"></span>
+                </div>
+                <div class="scanStatus" id="primeSon" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card accent-card">
                 <h2>Rol Botu Komutları</h2>
                 <p class="card-desc">
                     Panel rolleri rol botuna slash komut göndererek veriyor. <b>Komut ID'si</b>
@@ -528,6 +564,12 @@
                 <textarea id="ticketAutoMessage" class="text-search" rows="10"
                           style="width:100%; resize:vertical; line-height:1.6;"></textarea>
                 <div class="toolbar" style="margin-top:10px;">
+                    <label class="muted" for="ticketAutoGecikme">Ticket açıldıktan kaç saniye sonra yazılsın</label>
+                    <input type="number" class="text-search" id="ticketAutoGecikme" min="0" max="120"
+                           style="max-width:90px; flex:0 0 auto;">
+                    <span class="scanStatus">Ticket botu kendi mesajlarını yerleştirsin diye beklenir.</span>
+                </div>
+                <div class="toolbar">
                     <button id="ticketAutoSaveBtn">Kaydet</button>
                     <span class="scanStatus" id="ticketAutoMsg"></span>
                 </div>

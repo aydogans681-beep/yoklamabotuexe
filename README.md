@@ -183,6 +183,13 @@ kanal(lar) ve arayüzde bir sekme + bir `createLogTab()` çağrısı demek.
   o günün zamanlanmış çalışmasını iptal etmez. Her çalışma Hesap Logları'na
   yazılır. Aynı saatin iki kez girilmesi engellenir (ikisi de aynı dakikada
   tetiklenip biri hiç çalışmamış gibi görünürdü).
+- **Prime Saat Hatırlatması** - belirtilen saatlerde (varsayılan `20:00`,
+  `21:00`, `22:00`) Discord'da **aktif olup seste olmayan** yetkililere
+  "sese geçer misin" hatırlatması gider: duyuru kanalından tek mesajla ve DM
+  ile. Seste olanlara ve çevrimdışı olanlara yazılmaz. Discord presence
+  bilgisi gelmemiş kişilere de **bilerek yazılmaz** - emin olmadan DM atmamak
+  için. DM'ler 1,5 sn aralıkla ve en fazla 40 kişiye gider (selfbot hesabının
+  işaretlenmemesi için); DM'i kapalı olanlar hata değil, sayılıp geçilir.
 - **Rol Botu Komutları** - rol verme/alma **komut ID'leri** (önerilen), ada göre
   yedek arama için komut adları, ve rol botunun ID'si. "Botun komutlarını
   listele" sunucudaki komutları ID'leriyle listeler; ID'ye tıklayınca panoya
@@ -315,6 +322,20 @@ görmez, çünkü izin listelerinde yoktur. Görmelerini istiyorsan Yetkiler
 penceresinden işaretlemen gerekir. Yetkisi hiç ayarlanmamış hesaplar ve
 yöneticiler yeni kanalı kendiliğinden görür.
 
+## Tek kopya kuralı
+
+Bot aynı anda **yalnızca bir kez** çalışmalı. İkinci bir kopya 3000 portunu
+alamaz; eskiden `uncaughtException` yakalayıcısı bu hatayı yutuyordu ve süreç
+Discord bağlantısı **canlı halde** ayakta kalıyordu. Sonuç: her kopya ticket'a
+ayrı mesaj atıyor, 20:30 yoklamasında ayrı ayrı rol veriyor ve
+`voice-activity.json`'a birbirinin üzerine yazıyordu. "Ticket'a 5-6 mesaj
+gidiyor" şikâyetinin sebebi buydu.
+
+Artık portu alamayan kopya hemen kapanıyor. Ayrıca **açılış sırasında** oluşan
+her hata ölümcül: yarım kurulmuş bir süreç (ayarlar eksik, zamanlayıcılar
+kurulmamış ama Discord bağlı) çalışmaya devam etmiyor. Açılıştan sonraki
+hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
+
 ## Güvenlik
 
 - Şifreler `scrypt` + hesaba özel salt ile saklanır, karşılaştırma
@@ -343,6 +364,7 @@ yöneticiler yeni kanalı kendiliğinden görür.
 | `POST /api/yoklama/acil-toplanti` | Acil toplantı |
 | `GET /api/yoklama/katilim`, `POST /api/yoklama/katil` | Yoklamaya Katıl |
 | `GET/POST /api/oto-yoklama`, `POST /api/oto-yoklama/simdi` | Otomatik günlük yoklamalar (liste) |
+| `GET/POST /api/prime`, `POST /api/prime/simdi` | Prime saat hatırlatması |
 | `POST /api/hesaplar/discord-id` | Bir hesaba Discord ID bağlama *(yönetici)* |
 | `POST /api/hesaplar/izinler`, `GET /api/izin-secenekleri` | Yetki düzenleme *(yönetici)* |
 | `GET/POST /api/rol-komutlari` | Rol botu komut ID'leri, adları ve bot ID'si |

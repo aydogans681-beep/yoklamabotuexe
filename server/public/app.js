@@ -216,6 +216,9 @@ function connectWebSocket() {
             } else if (msg.type === 'yoklama-katilim') {
                 // Baska bir panel kullanicisi katildi - sayac anlik guncellensin.
                 loadKatilim();
+            } else if (msg.type === 'prime') {
+                // Zamanlanmis prime hatirlatmasi calisti - Ayarlar acikken gorunsun.
+                loadPrime();
             } else if (msg.type === 'oto-yoklama') {
                 // Zamanlanmis yoklama calisti - Ayarlar acikken sonucu hemen goster.
                 loadOtoYoklama();
@@ -623,7 +626,7 @@ tabButtons.forEach((btn) => {
         if (btn.dataset.tab === 'felox') feloxLogTab.refreshMenu();
         if (btn.dataset.tab === 'ayarlar') {
             if (currentIsAdmin) refreshAccounts();
-            loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama();
+            loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama(); loadPrime();
         }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
@@ -2515,6 +2518,7 @@ async function loadTicketAuto() {
         if (!d.ok) return;
         ticketAutoEnabled.checked = d.enabled;
         ticketAutoMessage.value = d.message;
+        document.getElementById('ticketAutoGecikme').value = d.gecikmeSn;
         ticketAutoTarget.innerHTML = `Kategori <b>${escapeHtml(d.categoryId)}</b>`
             + (d.inGuild
                 ? ' · sunucuya bağlı ✓'
@@ -2540,13 +2544,95 @@ document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () 
         const res = await fetch('/api/ticket-otomatik', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: ticketAutoEnabled.checked, message: ticketAutoMessage.value }),
+            body: JSON.stringify({
+                enabled: ticketAutoEnabled.checked,
+                message: ticketAutoMessage.value,
+                gecikmeSn: document.getElementById('ticketAutoGecikme').value,
+            }),
         });
         const d = await okuJson(res);
         if (!d.ok) { ticketAutoMsg.textContent = `Hata: ${d.error}`; return; }
         ticketAutoMsg.textContent = d.enabled ? 'Kaydedildi — açık.' : 'Kaydedildi — kapalı.';
     } catch (error) {
         ticketAutoMsg.textContent = `Hata: ${error.message}`;
+    }
+});
+
+// ============================================================================
+// --- PRIME SAAT HATIRLATMASI (Ayarlar) ---
+// ============================================================================
+const primeMsg = document.getElementById('primeMsg');
+const primeSon = document.getElementById('primeSon');
+
+function primeSonucMetni(x) {
+    if (!x) return 'Henüz çalışmadı.';
+    if (x.hataMesaji) return `Son çalışma (${formatDate(x.at)}) hata verdi: ${x.hataMesaji}`;
+    return `Son çalışma: ${formatDate(x.at)} (${x.tetikleyen}) · `
+        + `${x.yetkili} yetkiliden ${x.hedef} kişiye yazıldı `
+        + `(${x.seste} seste, ${x.cevrimdisi} çevrimdışı/bilinmiyor) · `
+        + `${x.dmGitti} DM gitti`
+        + (x.dmHata ? `, ${x.dmHata} kişinin DM'i kapalı` : '')
+        + (x.kanalHatasi ? ` — kanala yazılamadı: ${x.kanalHatasi}` : '')
+        + (x.isimler && x.isimler.length ? ` · ${x.isimler.join(', ')}` : '');
+}
+
+async function loadPrime() {
+    try {
+        const res = await fetch('/api/prime');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) return;
+        document.getElementById('primeAcik').checked = d.acik;
+        document.getElementById('primeDm').checked = d.dm;
+        document.getElementById('primeSaatler').value = d.saatler.join(', ');
+        document.getElementById('primeKanal').value = d.kanal;
+        document.getElementById('primeMesaj').value = d.mesaj;
+        document.getElementById('primeSaatBilgi').textContent =
+            `Sunucuda şu an ${d.suanki} (${d.saatDilimi})`;
+        primeSon.textContent = primeSonucMetni(d.sonCalisma);
+    } catch (error) {
+        primeMsg.textContent = `Hata: ${error.message}`;
+    }
+}
+
+document.getElementById('primeKaydetBtn').addEventListener('click', async () => {
+    primeMsg.textContent = 'Kaydediliyor...';
+    try {
+        const res = await fetch('/api/prime', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                acik: document.getElementById('primeAcik').checked,
+                dm: document.getElementById('primeDm').checked,
+                // "20:00, 21:00" -> ["20:00","21:00"]
+                saatler: document.getElementById('primeSaatler').value
+                    .split(',').map((x) => x.trim()).filter(Boolean),
+                kanal: document.getElementById('primeKanal').value.trim(),
+                mesaj: document.getElementById('primeMesaj').value,
+            }),
+        });
+        const d = await okuJson(res);
+        if (!d.ok) { primeMsg.textContent = `Hata: ${d.error}`; return; }
+        primeMsg.textContent = d.acik
+            ? `Kaydedildi — her gün ${d.saatler.join(', ')}`
+            : 'Kaydedildi — kapalı';
+        loadPrime();
+    } catch (error) {
+        primeMsg.textContent = `Hata: ${error.message}`;
+    }
+});
+
+document.getElementById('primeSimdiBtn').addEventListener('click', async () => {
+    if (!window.confirm('Aktif olup seste olmayan yetkililere ŞİMDİ hatırlatma gönderilecek (kanal + DM). Onaylıyor musun?')) return;
+    primeMsg.textContent = 'Gönderiliyor, DM\'ler aralıklı gittiği için sürebilir...';
+    try {
+        const res = await fetch('/api/prime/simdi', { method: 'POST' });
+        const d = await okuJson(res);
+        if (!d.ok) { primeMsg.textContent = `Hata: ${d.error}`; return; }
+        primeMsg.textContent = 'Bitti.';
+        primeSon.textContent = primeSonucMetni(d.sonuc);
+    } catch (error) {
+        primeMsg.textContent = `Hata: ${error.message}`;
     }
 });
 
