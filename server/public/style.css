@@ -127,29 +127,81 @@ button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
 .brand-mark-lg .brand-fallback small { font-size: 21px; }
 
 /* --- sol gezinme --- */
-.side-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.side-nav .tab-btn {
-    display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
-    background: none; border: 1px solid transparent; border-radius: var(--radius-s);
-    color: var(--ink-3); padding: 9px 11px; cursor: pointer;
-    font-size: 12.5px; font-weight: 600; font-family: inherit;
-    transition: color .12s, background .12s;
+.side-nav { display: flex; flex-direction: column; gap: 14px; flex: 1; overflow-y: auto; }
+.nav-grup { display: flex; flex-direction: column; gap: 2px; }
+.nav-baslik {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-3); opacity: .6; padding: 0 11px 5px;
 }
-.side-nav .tab-btn .ico { font-size: 13px; width: 17px; text-align: center; flex-shrink: 0; }
+.side-nav .tab-btn {
+    /* Sol tarafta ince bir aksan cubugu icin yer: aktifken dolunca
+       satirlar kaymiyor. */
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    background: none; border: 1px solid transparent; border-radius: var(--radius-s);
+    color: var(--ink-3); padding: 8px 11px 8px 10px; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; font-family: inherit;
+    transition: color .14s, background .14s;
+}
+.side-nav .tab-btn::before {
+    content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 0; border-radius: 0 3px 3px 0;
+    background: var(--accent); transition: height .18s ease;
+}
+/* Ikonlar kare kutularda: emojiler farkli genislikte, kutu olmadan
+   etiketler hizasiz duruyordu. */
+.side-nav .tab-btn .ico {
+    flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; line-height: 1;
+    background: var(--surface-3); border: 1px solid var(--border);
+    transition: background .14s, border-color .14s;
+}
+.side-nav .tab-btn .etiket { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-nav .tab-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.side-nav .tab-btn:hover:not(:disabled) .ico { border-color: var(--border-strong); }
 .side-nav .tab-btn.active,
 .side-nav .tab-btn.active:hover:not(:disabled) {
     color: var(--ink);
-    background: linear-gradient(90deg, var(--accent-soft), transparent 78%), var(--surface-3);
-    border-color: var(--accent-line);
-    box-shadow: inset 3px 0 0 var(--accent), 0 0 20px -6px var(--accent-glow);
+    background: linear-gradient(90deg, var(--accent-soft), transparent 80%);
+    border-color: transparent;
 }
-.side-nav .tab-btn.active .ico { filter: drop-shadow(0 0 6px var(--accent-glow)); }
+.side-nav .tab-btn.active::before { height: 17px; }
+.side-nav .tab-btn.active .ico {
+    background: var(--accent-soft); border-color: var(--accent-line);
+    filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+
+/* --- canlı özet kartı --- */
+.side-canli {
+    display: flex; flex-direction: column; gap: 1px; text-align: left; width: 100%;
+    padding: 10px 12px; cursor: pointer; font-family: inherit;
+    border: 1px solid var(--border); border-radius: var(--radius-s);
+    background: linear-gradient(150deg, var(--surface-3), var(--surface-2));
+    transition: border-color .14s, transform .14s;
+}
+.side-canli:hover:not(:disabled) {
+    border-color: var(--ok-line); transform: translateY(-1px); background: linear-gradient(150deg, var(--surface-3), var(--surface-2));
+}
+.side-canli .sc-bas { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.side-canli .sc-deger { display: flex; align-items: baseline; gap: 4px; }
+.side-canli .sc-deger b { font-size: 21px; font-weight: 800; color: var(--ok); line-height: 1.25; }
+.side-canli .sc-deger small { font-size: 11px; color: var(--ink-3); font-weight: 600; }
+.side-canli .sc-alt { font-size: 10.5px; color: var(--ink-3); }
 
 /* --- kenar çubuğu altı: bağlantı + kullanıcı --- */
 .side-foot { display: flex; flex-direction: column; gap: 9px; padding-top: 12px; border-top: 1px solid var(--border); }
 .side-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-2); }
-.side-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side-user { display: flex; align-items: center; gap: 8px; }
+.side-user .avatar {
+    flex: 0 0 auto; width: 28px; height: 28px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; color: var(--accent);
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
+    text-transform: uppercase;
+}
+.side-user .who-blok { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; }
+.side-user .who-rol { font-size: 9.5px; color: var(--ink-3); font-weight: 600; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .status-dot.ok     { background: var(--ok);     box-shadow: 0 0 0 3px var(--ok-soft); }
 .status-dot.warn   { background: var(--attn);   box-shadow: 0 0 0 3px var(--attn-soft); }

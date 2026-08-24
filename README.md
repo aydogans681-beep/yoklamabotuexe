@@ -104,6 +104,23 @@ ID'leri ve komut ayarları yalnızca yerel isteklere (`tani.ps1`, `guncelle.ps1`
 ve giriş yapmış kullanıcılara döner. Panel dışarıya açıksa bu bilgiler
 sızmasın diye.
 
+## Kenar çubuğu
+
+Sekmeler dört gruba ayrılmıştır: **Yoklama** (Yoklama, Yetkililer, Rol Ver/Al),
+**Raporlar** (Aktiflik, Etkinlik), **Loglar** (TX Logs, Mute Logları, Felox),
+**Sistem** (Hesap Logları, Ayarlar). Bir grubun bütün maddeleri yetkiyle
+gizlenirse başlığı da gizlenir.
+
+Aktif sekme, solda ince bir aksan çubuğu ve yumuşak bir dolguyla belirtilir.
+İkonlar eşit boyutlu kare kutulardadır - emojiler farklı genişlikte olduğu için
+kutusuz hâlde etiketler hizasız duruyordu.
+
+Altta **canlı özet** kartı: şu an kaç yetkilinin seste olduğunu ve bugünkü
+toplam süreyi gösterir, tıklayınca Aktiflik sekmesine gider. 45 saniyede bir
+tazelenir. Aktiflik yetkisi olmayan hesapta uç 403 döndüğü için kart gizlenir -
+hata yazmaz. En altta bağlantı durumu ve kullanıcı (baş harf rozeti, kullanıcı
+adı, Yönetici/Yetkili).
+
 ## Sekmeler
 
 ### Yoklama

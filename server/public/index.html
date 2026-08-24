@@ -107,17 +107,45 @@
             </button>
 
             <nav class="side-nav">
-                <button class="tab-btn active" data-tab="yoklama"><span class="ico">📋</span>Yoklama</button>
-                <button class="tab-btn" data-tab="yetkililer"><span class="ico">👥</span>Yetkililer</button>
-                <button class="tab-btn" data-tab="roller"><span class="ico">🏷️</span>Rol Ver/Al</button>
-                <button class="tab-btn" data-tab="aktiflik"><span class="ico">🟢</span>Aktiflik</button>
-                <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span>Etkinlik</button>
-                <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span>TX Logs</button>
-                <button class="tab-btn" data-tab="mutelog"><span class="ico">🔇</span>Mute Logları</button>
-                <button class="tab-btn" data-tab="felox"><span class="ico">🛡️</span>Felox</button>
-                <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico">🔑</span>Hesap Logları</button>
-                <button class="tab-btn" data-tab="ayarlar"><span class="ico">⚙️</span>Ayarlar</button>
+                <!-- Gruplar: 10 madde duz liste halinde taranmasi zordu.
+                     Bir grubun butun maddeleri yetkiyle gizlenirse baslik da
+                     gizleniyor (bkz. applyAdminVisibility). -->
+                <div class="nav-grup">
+                    <span class="nav-baslik">Yoklama</span>
+                    <button class="tab-btn active" data-tab="yoklama"><span class="ico">📋</span><span class="etiket">Yoklama</span></button>
+                    <button class="tab-btn" data-tab="yetkililer"><span class="ico">👥</span><span class="etiket">Yetkililer</span></button>
+                    <button class="tab-btn" data-tab="roller"><span class="ico">🏷️</span><span class="etiket">Rol Ver/Al</span></button>
+                </div>
+
+                <div class="nav-grup">
+                    <span class="nav-baslik">Raporlar</span>
+                    <button class="tab-btn" data-tab="aktiflik"><span class="ico">🟢</span><span class="etiket">Aktiflik</span></button>
+                    <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span><span class="etiket">Etkinlik</span></button>
+                </div>
+
+                <div class="nav-grup">
+                    <span class="nav-baslik">Loglar</span>
+                    <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span><span class="etiket">TX Logs</span></button>
+                    <button class="tab-btn" data-tab="mutelog"><span class="ico">🔇</span><span class="etiket">Mute Logları</span></button>
+                    <button class="tab-btn" data-tab="felox"><span class="ico">🛡️</span><span class="etiket">Felox</span></button>
+                </div>
+
+                <div class="nav-grup">
+                    <span class="nav-baslik">Sistem</span>
+                    <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico">🔑</span><span class="etiket">Hesap Logları</span></button>
+                    <button class="tab-btn" data-tab="ayarlar"><span class="ico">⚙️</span><span class="etiket">Ayarlar</span></button>
+                </div>
             </nav>
+
+            <!-- Canli ozet: bos kalan alani dolduruyor ve sekmeye girmeden
+                 "su an kac kisi seste" sorusunu cevapliyor. Aktiflik yetkisi
+                 olmayanlarda gizli kaliyor. -->
+            <button class="side-canli" id="sideCanli" style="display:none;"
+                    title="Aktiflik sekmesine git">
+                <span class="sc-bas">Şu an seste</span>
+                <span class="sc-deger"><b id="sideSeste">—</b><small id="sideToplam"></small></span>
+                <span class="sc-alt" id="sideCanliAlt">yükleniyor...</span>
+            </button>
 
             <div class="side-foot">
                 <div class="side-status">
@@ -125,7 +153,11 @@
                     <span id="statusText">Bağlanıyor...</span>
                 </div>
                 <div class="side-user">
-                    <span class="who" id="whoAmI"></span>
+                    <span class="avatar" id="whoAvatar" aria-hidden="true">?</span>
+                    <span class="who-blok">
+                        <span class="who" id="whoAmI"></span>
+                        <span class="who-rol" id="whoRol"></span>
+                    </span>
                     <button class="ghost small" id="logoutBtn">Çıkış</button>
                 </div>
             </div>

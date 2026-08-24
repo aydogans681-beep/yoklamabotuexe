@@ -95,6 +95,13 @@ function applyAdminVisibility() {
         if (izinli && !ilkAcik) ilkAcik = btn;
     });
 
+    // Butun maddeleri gizlenen grubun basligi tek basina kalmasin.
+    document.querySelectorAll('.nav-grup').forEach((grup) => {
+        const gorunen = [...grup.querySelectorAll('.tab-btn')]
+            .some((b) => b.style.display !== 'none');
+        grup.style.display = gorunen ? '' : 'none';
+    });
+
     // Acik sekme artik izinli degilse bos ekranda kalmasin - izinli ilk
     // sekmeye geciyoruz.
     const acik = document.querySelector('.tab-panel.active');
@@ -127,8 +134,11 @@ function showLogin() {
 function showApp() {
     loginWrap.style.display = 'none';
     appWrap.style.display = 'flex';
-    document.getElementById('whoAmI').textContent = currentUsername ? `· ${currentUsername}` : '';
+    document.getElementById('whoAmI').textContent = currentUsername || '';
+    document.getElementById('whoAvatar').textContent = (currentUsername || '?').slice(0, 1);
+    document.getElementById('whoRol').textContent = currentIsAdmin ? 'Yönetici' : 'Yetkili';
     applyAdminVisibility();
+    sideCanliTazele();
     connectWebSocket();
     refreshLogMenu();
     if (currentIsAdmin) refreshAccounts();
@@ -667,6 +677,49 @@ scanBtn.addEventListener('click', async () => {
     }
 });
 
+
+// ============================================================================
+// --- KENAR CUBUGU: CANLI "SU AN SESTE" OZETI ---
+// Bos duran alani dolduruyor ve sekmeye girmeden kac kisinin seste oldugunu
+// gosteriyor. Aktiflik yetkisi olmayan hesapta uc 403 donuyor - kart o zaman
+// gizli kaliyor, hata yazmiyor.
+// ============================================================================
+const sideCanli = document.getElementById('sideCanli');
+let sideCanliTimer = null;
+
+async function sideCanliTazele() {
+    if (!sideCanli) return;
+    try {
+        const res = await fetch('/api/aktiflik');
+        if (res.status === 403 || res.status === 401) {
+            sideCanli.style.display = 'none';
+            if (sideCanliTimer) { clearInterval(sideCanliTimer); sideCanliTimer = null; }
+            return;
+        }
+        const d = await res.json();
+        if (!d.ok) { sideCanli.style.display = 'none'; return; }
+        document.getElementById('sideSeste').textContent = d.inVoiceCount;
+        document.getElementById('sideToplam').textContent = `/ ${d.members.length} yetkili`;
+        const sure = typeof sureBicimle === 'function' ? sureBicimle(d.totalSeconds) : '';
+        document.getElementById('sideCanliAlt').textContent = sure && sure !== '—'
+            ? `bugün toplam ${sure}`
+            : 'bugün henüz ses kaydı yok';
+        sideCanli.style.display = 'flex';
+    } catch (error) {
+        sideCanli.style.display = 'none';
+    }
+}
+
+if (sideCanli) {
+    sideCanli.addEventListener('click', () => {
+        const btn = document.querySelector('.side-nav .tab-btn[data-tab="aktiflik"]');
+        if (btn) btn.click();
+    });
+    // 45 sn: ses sayaci zaten 30 sn'de bir isliyor, daha sik sormanin karsiligi yok.
+    sideCanliTimer = setInterval(() => {
+        if (appWrap.style.display !== 'none') sideCanliTazele();
+    }, 45000);
+}
 
 // ============================================================================
 // --- SEKMELER ---
