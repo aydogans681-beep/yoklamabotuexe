@@ -65,8 +65,14 @@ Write-Host ""
 Write-Host "[2/3] Bagimliliklar kontrol ediliyor..." -ForegroundColor Green
 $sunucuDizini = Join-Path $kok "server"
 Set-Location $sunucuDizini
-npm install --no-audit --no-fund
-if ($LASTEXITCODE -ne 0) { Write-Host "npm install basarisiz oldu." -ForegroundColor Red; exit 1 }
+try {
+    npm install --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { Write-Host "npm install basarisiz oldu." -ForegroundColor Red; exit 1 }
+} finally {
+    # Kok klasore geri donuyoruz: betik server\ icinde bitiyordu ve sonrasinda
+    # ".\tani.ps1" gibi kokteki dosyalar "not recognized" hatasi veriyordu.
+    Set-Location $kok
+}
 
 # --- 4) Yeniden baslat ---
 Write-Host ""
