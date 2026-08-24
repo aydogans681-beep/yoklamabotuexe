@@ -174,6 +174,64 @@ async function doLogin() {
     }
 }
 
+// --- Giris ekrani kucuk davranislari ---
+
+// Sifre goster/gizle
+const sifreGoster = document.getElementById('sifreGoster');
+if (sifreGoster) {
+    sifreGoster.addEventListener('click', () => {
+        const gizli = loginPassword.type === 'password';
+        loginPassword.type = gizli ? 'text' : 'password';
+        sifreGoster.textContent = gizli ? 'Gizle' : 'Göster';
+        sifreGoster.setAttribute('aria-label', gizli ? 'Şifreyi gizle' : 'Şifreyi göster');
+        loginPassword.focus();
+    });
+}
+
+// Caps Lock uyarisi - "sifre yanlis" sanip ugrasmasin diye.
+const capsUyari = document.getElementById('capsUyari');
+if (capsUyari) {
+    const capsBak = (evt) => {
+        // getModifierState bazi ortamlarda yok; yoksa uyariyi hic gostermiyoruz.
+        if (typeof evt.getModifierState !== 'function') return;
+        capsUyari.style.display = evt.getModifierState('CapsLock') ? 'block' : 'none';
+    };
+    [loginUsername, loginPassword].forEach((el) => {
+        el.addEventListener('keyup', capsBak);
+        el.addEventListener('keydown', capsBak);
+    });
+    loginPassword.addEventListener('blur', () => { capsUyari.style.display = 'none'; });
+}
+
+// Bot ayakta mi? /api/surum giris gerektirmiyor. Panelin acilmamasi ile
+// sifrenin yanlis olmasi kullanicinin gozunde ayni goruntuyu veriyordu.
+async function loginDurumGoster() {
+    const chip = document.getElementById('loginDurum');
+    if (!chip) return;
+    const txt = chip.querySelector('.txt');
+    try {
+        const res = await fetch('/api/surum');
+        const d = await res.json();
+        if (!d.ok) throw new Error('yanit yok');
+        const sn = Number(d.calismaSuresiSn) || 0;
+        const saat = Math.floor(sn / 3600);
+        const dk = Math.floor((sn % 3600) / 60);
+        const sure = saat ? `${saat} sa ${dk} dk` : `${dk} dk`;
+        chip.classList.add('ok');
+        chip.classList.remove('bad');
+        txt.textContent = `Bot çalışıyor · ${sure}` + (d.commit ? ` · ${d.commit}` : '');
+    } catch (error) {
+        chip.classList.add('bad');
+        chip.classList.remove('ok');
+        txt.textContent = 'Bota ulaşılamıyor';
+    }
+}
+loginDurumGoster();
+setInterval(() => {
+    // Yalnizca giris ekrani acikken - panel acikken bosuna istek atmayalim.
+    if (loginWrap.style.display !== 'none') loginDurumGoster();
+}, 30000);
+
 loginBtn.addEventListener('click', doLogin);
 [loginUsername, loginPassword].forEach((el) => {
     el.addEventListener('keydown', (evt) => { if (evt.key === 'Enter') doLogin(); });
@@ -1956,9 +2014,12 @@ document.getElementById('sideBrand').addEventListener('click', () => {
 });
 
 // Giriş ekranındaki logo: fareyi izleyerek hafifçe eğilir.
+// Kap olarak logonun KENDI bolumunu aliyoruz; ".login-card" yaziliyordu ve
+// duzen degisince logo baska bir kapsayiciya tasindigi icin null donup
+// sayfanin geri kalan betigini de dusuruyordu.
 const loginBrand = document.getElementById('loginBrand');
-if (loginBrand) {
-    const loginCard = loginBrand.closest('.login-card');
+const loginCard = loginBrand && (loginBrand.closest('.login-brand') || loginBrand.closest('.login-shell'));
+if (loginBrand && loginCard) {
     loginCard.addEventListener('mousemove', (evt) => {
         const k = loginCard.getBoundingClientRect();
         const x = (evt.clientX - k.left) / k.width - 0.5;

@@ -2574,12 +2574,25 @@ function calisanCommit() {
     }
 }
 
+// Istek sunucunun kendisinden mi geliyor? tani.ps1 / guncelle.ps1 hep
+// localhost'tan calisiyor - onlar tam ayrinti gorsun, disaridan gelen
+// gormesin.
+function yerelIstekMi(req) {
+    const ip = String((req.socket && req.socket.remoteAddress) || '');
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
 app.get('/api/surum', (req, res) => {
     let dosyaZamani = null;
     try {
         dosyaZamani = fs.statSync(__filename).mtime.toISOString();
     } catch (error) { /* yoksay */ }
     const surum = calisanCommit();
+    // Kanal/bot ID'leri ve komut ayarlari ayrinti sayiliyor: giris ekrani da bu
+    // ucu cagirdigi icin, panel disariya acikken bunlar herkese gorunmesin.
+    // Yerel istekler (tani.ps1, guncelle.ps1) ve giris yapmis kullanicilar
+    // tam cikti aliyor.
+    const ayrinti = yerelIstekMi(req) || Boolean(getSession(req));
     res.json({
         ok: true,
         baslatildi: new Date(SUNUCU_BASLANGIC).toISOString(),
@@ -2587,20 +2600,25 @@ app.get('/api/surum', (req, res) => {
         serverJsTarihi: dosyaZamani,
         commit: surum.commit,
         dal: surum.dal,
+        ayrintili: ayrinti,
         // Rol islemlerinde kullanilan bot - yanlis ID'de butun rol verme
         // sessizce calismiyordu, o yuzden burada gorunuyor.
-        rolBotId: rolBotId(),
-        rolVerKomutId: rolVerKomutId() || null,
-        rolAlKomutId: rolAlKomutId() || null,
-        rolVerKomutu: panelSettings.rolVerKomutu,
-        rolAlKomutu: panelSettings.rolAlKomutu,
-        otoYoklama: (panelSettings.otoYoklamalar || [])
-            .map((y) => `${y.saat}${y.acik ? '' : ' (kapalı)'}${y.kanal ? ` -> ${y.kanal}` : ''}`),
+        ...(ayrinti ? {
+            rolBotId: rolBotId(),
+            rolVerKomutId: rolVerKomutId() || null,
+            rolAlKomutId: rolAlKomutId() || null,
+            rolVerKomutu: panelSettings.rolVerKomutu,
+            rolAlKomutu: panelSettings.rolAlKomutu,
+        } : {}),
+        otoYoklama: ayrinti
+            ? (panelSettings.otoYoklamalar || [])
+                .map((y) => `${y.saat}${y.acik ? '' : ' (kapalı)'}${y.kanal ? ` -> ${y.kanal}` : ''}`)
+            : undefined,
         // Hangi log kanallari YUKLU koda kayitli ve durumlari ne. "Menu
         // gorunmuyor" derdinde tek bakista ayrisiyor: kanal listede yoksa kod
         // eski, listede ama 'hata' ise bot kanali goremiyor, 'hazir' ise sorun
         // yetkide.
-        logKanallari: LOG_CHANNELS.map((c) => {
+        logKanallari: !ayrinti ? undefined : LOG_CHANNELS.map((c) => {
             const st = logStore.get(c.key);
             return {
                 key: c.key,

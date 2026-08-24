@@ -461,20 +461,146 @@ code.md-block { display: block; padding: 6px 8px; margin: 4px 0; white-space: pr
     border: 1px solid var(--border-strong); color: var(--ink-3);
 }
 
-/* ---------- giriş ekranı ---------- */
-.login-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.login-card {
-    background: linear-gradient(180deg, var(--surface-2), var(--surface) 60%);
-    border: 1px solid var(--border); border-radius: 20px;
-    padding: 38px 34px; width: 100%; max-width: 390px;
-    box-shadow: var(--edge), var(--shadow), 0 0 90px -50px var(--accent-glow);
+/* ---------- giriş ekranı ----------
+   Iki sutun: solda marka, sagda form. Dar ekranda tek sutuna dusuyor.
+   Arka plandaki isik lekeleri ve izgara tamamen dekoratif. */
+.login-wrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 24px; position: relative; overflow: hidden;
 }
-.login-card h1 { font-size: 20px; margin: 0 0 7px; font-weight: 750; letter-spacing: -.022em; text-align: center; }
-.login-card .desc { font-size: 12px; color: var(--ink-3); margin: 0 0 24px; line-height: 1.6; text-align: center; }
+
+/* Atmosfer */
+.login-bg { position: absolute; inset: 0; pointer-events: none; }
+.login-bg .glow {
+    position: absolute; border-radius: 50%;
+    filter: blur(90px); opacity: .55;
+}
+.login-bg .glow-a {
+    width: 520px; height: 520px; top: -140px; left: -120px;
+    background: radial-gradient(circle, rgba(255,59,71,.30), transparent 68%);
+    animation: gezin-a 22s ease-in-out infinite alternate;
+}
+.login-bg .glow-b {
+    width: 620px; height: 620px; bottom: -220px; right: -160px;
+    background: radial-gradient(circle, rgba(255,59,71,.17), transparent 70%);
+    animation: gezin-b 27s ease-in-out infinite alternate;
+}
+/* Ince izgara - kenarlarda yumusayarak kayboluyor */
+.login-bg .grid {
+    position: absolute; inset: 0;
+    background-image:
+        linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(ellipse 75% 65% at 50% 45%, #000 35%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 45%, #000 35%, transparent 78%);
+}
+@keyframes gezin-a { to { transform: translate3d(70px, 50px, 0) scale(1.12); } }
+@keyframes gezin-b { to { transform: translate3d(-60px, -45px, 0) scale(1.08); } }
+/* Hareketi azaltma tercihi olanlarda animasyon durur */
+@media (prefers-reduced-motion: reduce) {
+    .login-bg .glow-a, .login-bg .glow-b { animation: none; }
+}
+
+.login-shell {
+    position: relative; z-index: 1;
+    display: grid; grid-template-columns: 1.05fr .95fr;
+    width: 100%; max-width: 940px; min-height: 470px;
+    background: linear-gradient(150deg, rgba(31,31,33,.92), rgba(16,16,17,.94));
+    border: 1px solid var(--border-strong); border-radius: 22px;
+    overflow: hidden;
+    box-shadow: var(--edge), 0 30px 90px -40px rgba(0,0,0,.9), 0 0 130px -70px var(--accent-glow);
+}
+
+/* Sol: marka */
+.login-brand {
+    /* Iki sutun da dikeyde ORTALI - biri ustten biri ortadan baslayinca
+       hizasiz gorunuyordu. */
+    padding: 46px 40px; display: flex; flex-direction: column; justify-content: center;
+    border-right: 1px solid var(--border);
+    background:
+        radial-gradient(ellipse 90% 60% at 15% 0%, rgba(255,59,71,.13), transparent 60%),
+        linear-gradient(180deg, rgba(255,255,255,.022), transparent 45%);
+}
+.login-brand .brand-mark-lg { margin: 0 0 26px; justify-content: flex-start; }
+.brand-title {
+    font-size: 27px; line-height: 1.18; margin: 0 0 12px;
+    font-weight: 800; letter-spacing: -.03em; color: var(--ink);
+}
+.brand-title span { color: var(--accent); }
+.brand-sub { font-size: 13px; color: var(--ink-2); margin: 0 0 22px; line-height: 1.65; max-width: 34ch; }
+.brand-list {
+    list-style: none; margin: 0; padding: 20px 0 0; border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 11px;
+}
+.brand-list li {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.5;
+}
+.brand-list .bi {
+    flex: 0 0 auto; width: 25px; height: 25px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
+}
+
+/* Sag: form */
+.login-card {
+    padding: 46px 40px; display: flex; flex-direction: column; justify-content: center;
+    background: linear-gradient(180deg, rgba(22,22,23,.6), rgba(16,16,17,.75));
+}
+.login-head { margin-bottom: 26px; }
+.login-card h1 { font-size: 22px; margin: 0 0 7px; font-weight: 750; letter-spacing: -.024em; }
+.login-card .desc { font-size: 12.5px; color: var(--ink-3); margin: 0; line-height: 1.6; }
+
 .field { margin-bottom: 15px; }
-.field label { display: block; font-size: 11.5px; font-weight: 600; margin-bottom: 5px; color: var(--ink-2); }
+.field label { display: block; font-size: 11.5px; font-weight: 600; margin-bottom: 6px; color: var(--ink-2); }
 .field input { width: 100%; }
+.field-hint { display: block; font-size: 11px; color: var(--attn); margin-top: 6px; }
+
+/* Ikonlu girdi: ikon ve "Goster" dugmesi input'un UZERINDE duruyor,
+   metnin altlarina kaymamasi icin padding ile yer aciliyor. */
+.input-wrap { position: relative; display: flex; align-items: center; }
+.input-wrap input { padding-left: 36px; }
+.input-wrap input[type="password"], .input-wrap input#loginPassword { padding-right: 68px; }
+.input-ico {
+    position: absolute; left: 12px; font-size: 13px; opacity: .55;
+    pointer-events: none; line-height: 1;
+}
+.input-btn {
+    position: absolute; right: 6px; padding: 5px 9px; font-size: 11px;
+    background: transparent; border: 1px solid var(--border); color: var(--ink-3);
+    border-radius: 7px; cursor: pointer;
+}
+.input-btn:hover { color: var(--ink); border-color: var(--border-strong); background: var(--surface-3); }
+
 button.primary { width: 100%; padding: 10px; font-size: 13px; margin-top: 4px; }
+.login-btn { margin-top: 8px; padding: 11px; font-size: 13.5px; }
+
+/* Alt: bot durumu. Panelin ayakta olup olmadigini giris yapmadan gosteriyor -
+   "guncelledim ama degismedi" durumlarinda ilk isaret burasi. */
+.login-foot { margin-top: 20px; display: flex; justify-content: center; }
+.conn-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11.5px; color: var(--ink-3);
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-2);
+}
+.conn-chip .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-3); flex: 0 0 auto;
+}
+.conn-chip.ok .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.conn-chip.bad .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.conn-chip.ok { color: var(--ink-2); }
+
+@media (max-width: 860px) {
+    .login-shell { grid-template-columns: 1fr; max-width: 430px; min-height: 0; }
+    /* Dar ekranda marka listesi yer kaplamasin - logo ve baslik kalsin */
+    .login-brand { padding: 32px 28px 26px; border-right: none; border-bottom: 1px solid var(--border); }
+    .brand-list { display: none; }
+    .brand-sub { margin-bottom: 0; }
+    .login-card { padding: 30px 28px 34px; }
+}
 
 /* ---------- önizleme penceresi ---------- */
 .modal-backdrop {

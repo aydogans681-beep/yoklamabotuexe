@@ -89,6 +89,21 @@ görünmüyorsa üç sebebi ayırt eder:
 
 Panele hiç ulaşılamıyorsa hangi komutlarla bakılacağını da yazar.
 
+## Giriş ekranı
+
+İki sütun: solda marka ve panelin ne yaptığı, sağda form. Dar ekranda tek
+sütuna düşer. Logo fareyi izleyerek hafifçe eğilir; dosya yoksa yazı logosuna
+düşer, panel logosuz da çalışır.
+
+Formda şifre göster/gizle ve Caps Lock uyarısı var. Altta **bot durumu** çipi:
+`/api/surum`'dan çalışma süresi ve commit okunur, 30 saniyede bir tazelenir -
+"bot kapalı" ile "şifre yanlış" kullanıcının gözünde aynı görünüyordu.
+
+`/api/surum` giriş gerektirmez ama **ayrıntıyı herkese vermez**: kanal/bot
+ID'leri ve komut ayarları yalnızca yerel isteklere (`tani.ps1`, `guncelle.ps1`)
+ve giriş yapmış kullanıcılara döner. Panel dışarıya açıksa bu bilgiler
+sızmasın diye.
+
 ## Sekmeler
 
 ### Yoklama

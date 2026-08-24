@@ -9,26 +9,74 @@
 <body>
     <!-- --- GİRİŞ EKRANI --- -->
     <div class="login-wrap" id="loginWrap">
-        <div class="login-card">
-            <!-- Logo: server/public/logo.png. Dosya yoksa onerror ile yazı
-                 logosuna düşüyor, panel logosuz da çalışmaya devam ediyor. -->
-            <div class="brand-mark brand-mark-lg" id="loginBrand">
-                <img src="/logo" alt="MD PvP" class="brand-img"
-                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                <div class="brand-fallback" style="display:none;"><span>MD</span><small>PvP</small></div>
+        <!-- Arka plan atmosferi: iki kirmizi isik lekesi + ince izgara.
+             Tamami dekoratif, aria-hidden - ekran okuyucuya gurultu olmasin. -->
+        <div class="login-bg" aria-hidden="true">
+            <span class="glow glow-a"></span>
+            <span class="glow glow-b"></span>
+            <span class="grid"></span>
+        </div>
+
+        <div class="login-shell">
+            <!-- SOL: marka tarafi. Dar ekranda gizleniyor. -->
+            <aside class="login-brand">
+                <div class="brand-mark brand-mark-lg" id="loginBrand">
+                    <img src="/logo" alt="MD PvP" class="brand-img"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="brand-fallback" style="display:none;"><span>MD</span><small>PvP</small></div>
+                </div>
+                <h2 class="brand-title">MD PvP<br><span>Yoklama Paneli</span></h2>
+                <p class="brand-sub">
+                    Yetkili yoklaması, ses aktifliği ve sunucu logları tek yerden.
+                </p>
+                <ul class="brand-list">
+                    <li><span class="bi">📋</span> Yoklama al, uyarıları tek tuşla uygula</li>
+                    <li><span class="bi">🟢</span> Kim ne kadar seste, gün gün gör</li>
+                    <li><span class="bi">📜</span> Ban, mute, para ve tüm log kanalları</li>
+                    <li><span class="bi">🕗</span> Otomatik günlük yoklama ve prime hatırlatması</li>
+                </ul>
+            </aside>
+
+            <!-- SAG: giris formu -->
+            <div class="login-card">
+                <div class="login-head">
+                    <h1>Giriş Yap</h1>
+                    <p class="desc">Devam etmek için panel hesabınla giriş yap.</p>
+                </div>
+
+                <div id="loginError" style="display:none;"></div>
+
+                <div class="field">
+                    <label for="loginUsername">Kullanıcı Adı</label>
+                    <div class="input-wrap">
+                        <span class="input-ico" aria-hidden="true">👤</span>
+                        <input type="text" id="loginUsername" autocomplete="username"
+                               placeholder="kullanıcı adın" spellcheck="false">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="loginPassword">Şifre</label>
+                    <div class="input-wrap">
+                        <span class="input-ico" aria-hidden="true">🔒</span>
+                        <input type="password" id="loginPassword" autocomplete="current-password"
+                               placeholder="••••••••">
+                        <button type="button" class="input-btn" id="sifreGoster"
+                                aria-label="Şifreyi göster">Göster</button>
+                    </div>
+                    <span class="field-hint" id="capsUyari" style="display:none;">
+                        ⚠ Caps Lock açık
+                    </span>
+                </div>
+
+                <button class="primary login-btn" id="loginBtn">Giriş Yap</button>
+
+                <div class="login-foot">
+                    <span class="conn-chip" id="loginDurum">
+                        <span class="dot"></span><span class="txt">Bot durumu kontrol ediliyor...</span>
+                    </span>
+                </div>
             </div>
-            <h1>MD PvP Yoklama Botu</h1>
-            <p class="desc">Devam etmek için kullanıcı adını ve şifreni gir.</p>
-            <div id="loginError" style="display:none;"></div>
-            <div class="field">
-                <label>Kullanıcı Adı</label>
-                <input type="text" id="loginUsername" autocomplete="username">
-            </div>
-            <div class="field">
-                <label>Şifre</label>
-                <input type="password" id="loginPassword" autocomplete="current-password">
-            </div>
-            <button class="primary" id="loginBtn">Giriş Yap</button>
         </div>
     </div>
 
