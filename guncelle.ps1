@@ -168,15 +168,48 @@ if ($pm2Kayitli) {
     Write-Host ""
     Write-Host "Loglari gormek icin:  pm2 logs yoklama" -ForegroundColor DarkGray
 } elseif ($pm2Kurulu) {
-    Write-Host "TAMAM - dosyalar guncellendi." -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "pm2 kurulu ama 'yoklama' surecini tanimiyor - hic kaydedilmemis." -ForegroundColor Yellow
-    Write-Host "Botu pm2'ye bir kez kaydedersen bundan sonra bu script kendisi" -ForegroundColor Yellow
-    Write-Host "yeniden baslatir (ve bot pencere kapaninca olmez):" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "    cd `"$sunucuDizini`""
-    Write-Host "    pm2 start server.js --name yoklama"
-    Write-Host "    pm2 save"
+    # pm2 kurulu ama surec kayitli degil. Eskiden burada sadece "su komutlari
+    # calistir" yaziliyordu ve bot kapali kaliyordu; pm2 kaydi bir kez silinince
+    # (ornegin 'pm2 save' yapilmadan daemon yeniden basladiginda) guncelleme
+    # sessizce isini gormuyordu. Artik kendimiz kaydedip baslatiyoruz.
+    Write-Host "pm2 kurulu ama 'yoklama' surecini tanimiyor - kaydediliyor..." -ForegroundColor Yellow
+
+    $eskiEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    Set-Location $sunucuDizini
+    try {
+        # --max-old-space-size: log gecmisleri bellekte tutuluyor, varsayilan
+        # heap sinirinda buyuk sunucularda yetmiyor.
+        & pm2 start server.js --name yoklama --node-args="--max-old-space-size=4096" 2>&1 | Out-Null
+        & pm2 save 2>&1 | Out-Null
+    } catch {
+        Write-Host "pm2'ye kaydedilemedi: $($_.Exception.Message)" -ForegroundColor Red
+    } finally {
+        Set-Location $kok
+        $ErrorActionPreference = $eskiEAP
+        $global:LASTEXITCODE = 0
+    }
+
+    Write-Host "Baslamasi bekleniyor..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 12
+    $surum = $null
+    try {
+        $surum = (Invoke-WebRequest "http://localhost:3000/api/surum" -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json
+    } catch {
+        $surum = $null
+    }
+    if ($surum -and $surum.ok) {
+        Write-Host ""
+        Write-Host "TAMAM - bot pm2'ye kaydedildi ve calisiyor." -ForegroundColor Cyan
+        Write-Host "   commit    : $($surum.commit)  (dal: $($surum.dal))"
+        Write-Host "   rol botu  : $($surum.rolBotId)"
+        Write-Host "Bundan sonra bu script yeniden baslatmayi kendisi yapacak." -ForegroundColor DarkGray
+    } else {
+        Write-Host ""
+        Write-Host "DIKKAT: pm2'ye kaydedildi ama 3000 portundan cevap alinamadi." -ForegroundColor Red
+        Write-Host "    pm2 logs yoklama --err --lines 30 --nostream" -ForegroundColor Yellow
+        Write-Host "    Get-NetTCPConnection -LocalPort 3000 -State Listen | Select OwningProcess" -ForegroundColor Yellow
+    }
 } else {
     # pm2 yoksa calisan node surecini kendimiz bulup yeniden baslatiyoruz.
     # Elle yeniden baslatmayi unutmak en sik yasanan sorundu: dosyalar
