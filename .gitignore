@@ -12,6 +12,10 @@ panel-settings.json
 voice-activity.json
 yoklama-katilim.json
 
+# Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
+# Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.
+log-cache/
+
 # Loglar
 *.log
 server/debug-web.log

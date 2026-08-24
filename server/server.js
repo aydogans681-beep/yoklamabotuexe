@@ -357,7 +357,20 @@ const LOG_CHANNELS = [
 // Discord sayfa basina en fazla 100 mesaj veriyor. Sayfalar arasinda kisa bir
 // bekleme koyuyoruz - "tum gecmisi cek" binlerce istek demek, rate limit'e
 // carpmadan ilerlemek icin.
-const LOG_PAGE_DELAY_MS = 350;
+const LOG_PAGE_DELAY_MS = 250;
+
+// Kac kanal ayni anda cekilsin. Discord mesaj gecmisi kotasi kanal basina
+// ayri islediginden farkli kanallar paralel cekilebiliyor. Selfbot oldugumuz
+// icin bilerek olculu: 3 kanal x 250 ms ~ 12 istek/sn, hesabin supheli
+// gorunmesini istemiyoruz.
+const LOG_CONCURRENCY = 3;
+
+// Cekilen gecmis diske yaziliyor; yeniden baslatmada bastan cekmek yerine
+// yalnizca eksik kalan yeni mesajlar aliniyor. Asil bekleme buydu - her
+// yeniden baslatmada butun kanallarin tum gecmisi tekrar iniyordu.
+const LOG_CACHE_DIR = path.join(ROOT_DIR, 'log-cache');
+const LOG_CACHE_SURUM = 1;
+const LOG_CACHE_YAZMA_ARALIGI_MS = 5 * 60 * 1000;
 
 // --- YOKLAMAYI AL: mazeret tepkileri ---
 // Tepki adi hem unicode emoji (reaction.emoji.name === '✅') hem de ayni
@@ -1488,6 +1501,82 @@ function addToDailyIndex(store, entry) {
     return { gun, kisi, adet: yeni.c, last: yeni.last };
 }
 
+// ============================================================================
+// --- LOG ONBELLEGI (disk) ---
+// Kanal gecmisleri her acilista bastan cekiliyordu; 9 log kanali sirayla,
+// sayfa basina beklemeyle, on binlerce mesaj -> dakikalarca surer. Artik
+// gecmis diske yaziliyor ve yeniden baslatmada yalnizca "en son gordugumuz
+// mesajdan sonrasi" cekiliyor.
+//
+// Discord snowflake ID'leri Number.MAX_SAFE_INTEGER'i astigi icin (19 hane)
+// karsilastirmalar BigInt ile yapiliyor - Number'a cevirmek son hanelerde
+// sessizce yanlis sonuc verirdi.
+// ============================================================================
+function idDahaYeni(a, b) {
+    try {
+        return BigInt(a) > BigInt(b);
+    } catch (error) {
+        return false;
+    }
+}
+
+function logCacheYolu(key) {
+    return path.join(LOG_CACHE_DIR, `${key}.json`);
+}
+
+function logCacheOku(key, channelId) {
+    try {
+        const ham = JSON.parse(fs.readFileSync(logCacheYolu(key), 'utf8'));
+        if (!ham || ham.v !== LOG_CACHE_SURUM) return null;
+        // Kanal ID'si degistiyse eski onbellek baska bir kanalin verisi -
+        // kullanmak sessizce yanlis log gostermek olurdu.
+        if (ham.channelId !== channelId) return null;
+        if (!Array.isArray(ham.messages) || ham.messages.length === 0) return null;
+        return ham;
+    } catch (error) {
+        return null; // yok ya da bozuk - tam cekime dusulur
+    }
+}
+
+function logCacheYaz(store) {
+    if (!store.channelId || !store.messages.length) return;
+    try {
+        fs.mkdirSync(LOG_CACHE_DIR, { recursive: true });
+        // _s (arama metni) turetilmis veri - yazmiyoruz, dosyayi neredeyse
+        // iki katina cikarirdi; okurken yeniden uretiliyor.
+        const govde = JSON.stringify({
+            v: LOG_CACHE_SURUM,
+            channelId: store.channelId,
+            fetchedAt: store.fetchedAt || Date.now(),
+            messages: store.messages.map(stripInternal),
+        });
+        // Once gecici dosyaya yazip tasiyoruz: yazarken surec olurse yarim
+        // dosya kalmasin, bir sonraki acilista bozuk onbellek okunmasin.
+        const gecici = `${logCacheYolu(store.key)}.tmp`;
+        fs.writeFileSync(gecici, govde);
+        fs.renameSync(gecici, logCacheYolu(store.key));
+        store.cacheKirli = false;
+    } catch (error) {
+        console.log(`[Loglar] ${store.label} onbellegi yazilamadi: ${error.message}`);
+    }
+}
+
+// Canli gelen mesajlar da onbellege yansisin diye periyodik yazma. Her mesajda
+// yazmak on binlerce satirlik dosyayi surekli yeniden yazmak demekti.
+setInterval(() => {
+    logStore.forEach((store) => {
+        if (store.cacheKirli && store.status === 'hazir') logCacheYaz(store);
+    });
+}, LOG_CACHE_YAZMA_ARALIGI_MS);
+
+// Kapanirken de yaz - aksi halde son 5 dakikanin mesajlari onbellekte olmaz
+// ve bir sonraki acilista tekrar cekilir.
+function logCacheHepsiniYaz() {
+    logStore.forEach((store) => {
+        if (store.cacheKirli && store.messages.length) logCacheYaz(store);
+    });
+}
+
 function serializeLogMessage(message) {
     return {
         id: message.id,
@@ -1528,7 +1617,10 @@ function broadcastLogStatus(store) {
     });
 }
 
-async function fetchAllChannelMessages(key) {
+// tamCekim=true: onbellegi yoksay, kanalin tum gecmisini bastan cek.
+// "Yenile" dugmesi bunu kullaniyor - silinmis/duzenlenmis mesajlar ancak
+// boyle yakalanir, artimli cekim yalnizca YENI mesajlari gorur.
+async function fetchAllChannelMessages(key, { tamCekim = false } = {}) {
     const store = logStore.get(key);
     if (!store) throw new Error(`Bilinmeyen log anahtari: ${key}`);
     if (!store.channelId) {
@@ -1560,33 +1652,96 @@ async function fetchAllChannelMessages(key) {
         return store;
     }
 
-    const collected = [];
-    let beforeId;
-    // Kanalin en basina inene kadar 100'erli sayfalarla geriye dogru gidiyoruz.
-    for (;;) {
-        const options = { limit: 100 };
-        if (beforeId) options.before = beforeId;
-        let batch;
-        try {
-            // eslint-disable-next-line no-await-in-loop
-            batch = await channel.messages.fetch(options);
-        } catch (error) {
-            store.error = `Mesajlar alinirken durdu (${collected.length} mesaj cekilmisti): ${error.message}`;
-            console.log(`[Loglar] ${store.label}: ${store.error}`);
-            break;
+    // --- Onbellek: varsa gecmisi diskten al, sadece eksigi cek ---
+    let collected = [];
+    let onbellekten = 0;
+    if (!tamCekim) {
+        const cache = logCacheOku(store.key, store.channelId);
+        if (cache) {
+            collected = cache.messages;
+            onbellekten = collected.length;
+            store.loaded = onbellekten;
+            broadcastLogStatus(store);
         }
-        if (batch.size === 0) break;
-
-        batch.forEach((message) => collected.push(serializeLogMessage(message)));
-        beforeId = batch.last() ? batch.last().id : undefined;
-
-        store.loaded = collected.length;
-        broadcastLogStatus(store);
-
-        if (batch.size < 100 || !beforeId) break;
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((resolve) => setTimeout(resolve, LOG_PAGE_DELAY_MS));
     }
+
+    const basladi = Date.now();
+    let yeniSayisi = 0;
+
+    if (onbellekten > 0) {
+        // Artimli: onbellekteki EN YENI mesajdan sonrasini al. Discord "after"
+        // ile ileri dogru sayfaliyor; her turda gordugumuz en buyuk ID imlec
+        // oluyor.
+        let imlec = collected[0].id;
+        collected.forEach((m) => { if (idDahaYeni(m.id, imlec)) imlec = m.id; });
+
+        for (;;) {
+            let batch;
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                batch = await channel.messages.fetch({ limit: 100, after: imlec });
+            } catch (error) {
+                store.error = `Yeni mesajlar alinirken durdu: ${error.message}`;
+                console.log(`[Loglar] ${store.label}: ${store.error}`);
+                break;
+            }
+            if (batch.size === 0) break;
+
+            let enBuyuk = imlec;
+            batch.forEach((message) => {
+                collected.push(serializeLogMessage(message));
+                if (idDahaYeni(message.id, enBuyuk)) enBuyuk = message.id;
+            });
+            yeniSayisi += batch.size;
+            imlec = enBuyuk;
+
+            store.loaded = collected.length;
+            broadcastLogStatus(store);
+
+            if (batch.size < 100) break;
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => setTimeout(resolve, LOG_PAGE_DELAY_MS));
+        }
+    } else {
+        // Ilk kez (ya da "Yenile"): kanalin en basina inene kadar 100'erli
+        // sayfalarla geriye dogru gidiyoruz.
+        let beforeId;
+        for (;;) {
+            const options = { limit: 100 };
+            if (beforeId) options.before = beforeId;
+            let batch;
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                batch = await channel.messages.fetch(options);
+            } catch (error) {
+                store.error = `Mesajlar alinirken durdu (${collected.length} mesaj cekilmisti): ${error.message}`;
+                console.log(`[Loglar] ${store.label}: ${store.error}`);
+                break;
+            }
+            if (batch.size === 0) break;
+
+            batch.forEach((message) => collected.push(serializeLogMessage(message)));
+            beforeId = batch.last() ? batch.last().id : undefined;
+            yeniSayisi = collected.length;
+
+            store.loaded = collected.length;
+            broadcastLogStatus(store);
+
+            if (batch.size < 100 || !beforeId) break;
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => setTimeout(resolve, LOG_PAGE_DELAY_MS));
+        }
+    }
+
+    // Ayni mesaj iki kez girmesin: canli 'messageCreate' ile onbellek arasinda
+    // ortusme olabiliyor (mesaj hem canli eklenip hem onbellege yazilmis, sonra
+    // "after" ile tekrar gelmis olabilir).
+    const gorulen = new Set();
+    collected = collected.filter((entry) => {
+        if (gorulen.has(entry.id)) return false;
+        gorulen.add(entry.id);
+        return true;
+    });
 
     collected.sort((a, b) => b.createdTimestamp - a.createdTimestamp); // en yeni ustte
     collected.forEach((entry) => { entry._s = logSearchText(entry); });
@@ -1597,7 +1752,18 @@ async function fetchAllChannelMessages(key) {
     if (store.kind === 'aktivite') buildDailyIndex(store);
     store.status = store.error ? 'hata' : 'hazir';
     broadcastLogStatus(store);
-    console.log(`[Loglar] ${store.label}: ${collected.length} mesaj cekildi.`);
+
+    const saniye = ((Date.now() - basladi) / 1000).toFixed(1);
+    if (onbellekten > 0) {
+        console.log(`[Loglar] ${store.label}: ${onbellekten} mesaj onbellekten, `
+            + `${yeniSayisi} yeni mesaj ${saniye} sn'de cekildi (toplam ${collected.length}).`);
+    } else {
+        console.log(`[Loglar] ${store.label}: ${collected.length} mesaj ${saniye} sn'de cekildi.`);
+    }
+
+    // Onbellegi tazele - artimli cekimde bile yaziyoruz ki bir sonraki acilis
+    // bu noktadan devam etsin.
+    if (!store.error) logCacheYaz(store);
     return store;
 }
 
@@ -1605,19 +1771,34 @@ let logPrimingStarted = false;
 async function primeAllLogs() {
     if (logPrimingStarted) return;
     logPrimingStarted = true;
-    console.log('[Loglar] Kanal gecmisleri arka planda cekiliyor (once etkinlik/ticket)...');
-    // Kanallari SIRAYLA cekiyoruz - hepsini ayni anda baslatmak Discord rate
-    // limit'ini cok daha hizli tuketirdi.
-    for (const channel of ALL_CHANNELS) {
-        if (!channel.channelId) continue;
-        try {
-            // eslint-disable-next-line no-await-in-loop
-            await fetchAllChannelMessages(channel.key);
-        } catch (error) {
-            console.log(`[Loglar] ${channel.label} cekilemedi: ${error.message}`);
+    const basladi = Date.now();
+    const sira = ALL_CHANNELS.filter((c) => c.channelId);
+    console.log(`[Loglar] ${sira.length} kanal arka planda cekiliyor `
+        + `(${LOG_CONCURRENCY} paralel, once etkinlik/ticket)...`);
+
+    // Eskiden hepsi TEK TEK cekiliyordu; 9 log kanaliyla bu dakikalar suruyordu.
+    // Discord mesaj gecmisi kotasi kanal basina ayri isledigi icin birkac kanali
+    // ayni anda cekmek guvenli. Sira korunuyor: etkinlik/ticket once basliyor.
+    let sonraki = 0;
+    async function isci() {
+        for (;;) {
+            const index = sonraki;
+            sonraki += 1;
+            if (index >= sira.length) return;
+            const channel = sira[index];
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                await fetchAllChannelMessages(channel.key);
+            } catch (error) {
+                console.log(`[Loglar] ${channel.label} cekilemedi: ${error.message}`);
+            }
         }
     }
-    console.log('[Loglar] Arka plan yuklemesi bitti.');
+    await Promise.all(Array.from({ length: Math.min(LOG_CONCURRENCY, sira.length) }, isci));
+
+    const toplam = [...logStore.values()].reduce((t, st) => t + st.messages.length, 0);
+    console.log(`[Loglar] Arka plan yuklemesi bitti: ${toplam} mesaj, `
+        + `${((Date.now() - basladi) / 1000).toFixed(1)} sn.`);
 }
 
 // Ilk yukleme bittikten sonra yeni gelen log mesajlarini canli olarak ekliyoruz -
@@ -1631,6 +1812,7 @@ client.on('messageCreate', (message) => {
     entry._s = logSearchText(entry);
     store.messages.unshift(entry);
     store.loaded = store.messages.length;
+    store.cacheKirli = true; // periyodik yazma bunu diske gecirecek
     wsBroadcast({ type: 'log-yeni', key, entry: stripInternal(entry), loaded: store.loaded });
 
     // Etkinlik/ticket kanallarinda gunluk sayaci ANLIK guncelle ve yayinla.
@@ -2533,7 +2715,9 @@ app.post('/api/loglar/:key/yenile', requireAuth, async (req, res) => {
     if (!store) return res.status(404).json({ ok: false, error: 'Bilinmeyen log menüsü.' });
     if (!store.channelId) return res.json({ ok: false, error: 'Bu menü için kanal ID girilmemiş.' });
     // Cekme uzun surebilir - istegi hemen kapatiyoruz, ilerleme WebSocket'ten gelir.
-    fetchAllChannelMessages(store.key)
+    // Yenile = onbellegi yoksay, bastan cek. Artimli cekim yalnizca yeni
+    // mesajlari gorur; silinen/duzenlenen mesajlar ancak tam cekimde yansir.
+    fetchAllChannelMessages(store.key, { tamCekim: true })
         .catch((error) => console.log(`[Loglar] ${store.label} yenilenemedi: ${error.message}`));
     return res.json({ ok: true, started: true });
 });
@@ -3042,6 +3226,25 @@ function voiceTick() {
 setInterval(() => { voiceTick(); persistVoiceData(); }, VOICE_TICK_MS);
 setInterval(trimVoiceData, 60 * 60 * 1000);
 process.on('exit', persistVoiceData);
+// Log onbellegini de kapanirken yaz - aksi halde son periyodik yazmadan
+// sonraki canli mesajlar diske gecmez ve bir sonraki acilista tekrar cekilir.
+process.on('exit', logCacheHepsiniYaz);
+
+// DIKKAT: 'exit' olayi SIGINT/SIGTERM'de CALISMIYOR (olculdu). pm2 restart
+// SIGINT gonderdigi icin bu iki sinyali acikca yakalayip diske yazdiktan
+// sonra cikiyoruz; yoksa her yeniden baslatmada son yazmadan sonraki mesajlar
+// onbellege gecmez ve tekrar cekilirdi.
+let kapaniyor = false;
+['SIGINT', 'SIGTERM'].forEach((sinyal) => {
+    process.on(sinyal, () => {
+        if (kapaniyor) return; // ikinci sinyalde beklemeden cik
+        kapaniyor = true;
+        console.log(`[Kapanis] ${sinyal} alindi, veriler diske yaziliyor...`);
+        try { persistVoiceData(); } catch (error) { /* yine de cikacagiz */ }
+        try { logCacheHepsiniYaz(); } catch (error) { /* yine de cikacagiz */ }
+        process.exit(0);
+    });
+});
 
 async function buildVoiceReport(gun) {
     const hedefGun = gun || bugununAnahtari();

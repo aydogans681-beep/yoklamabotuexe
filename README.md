@@ -46,6 +46,7 @@ panel-settings.json   Panel ayarları: otomatik yoklama, rol botu, ticket mesaj�
 panel-audit.json      Hesap Logları (kim ne yaptı)
 voice-activity.json   Aktiflik sekmesi - günlük ses süreleri
 yoklama-katilim.json  "Yoklamaya Katıl" kayıtları (gün gün)
+log-cache/            Log geçmişi önbelleği (silinebilir, yeniden üretilir)
 server/
   server.js           Backend: Discord istemcisi + HTTP/WebSocket API
   public/             Ön yüz (index.html, app.js, style.css)
@@ -104,6 +105,22 @@ botun kendi hesabı yazılır.
 Log kanallarının **tüm geçmişi**, sunucu Discord'a bağlanır bağlanmaz arka
 planda çekilip bellekte tutulur; panele girildiğinde veri hazırdır. Sekme
 açıkken yeni gelen log mesajları canlı olarak eklenir.
+
+**Çekme hızı.** Geçmiş `log-cache/` altına diske yazılır; yeniden başlatmada
+baştan çekilmez, yalnızca en son görülen mesajdan sonrası (`after`) alınır.
+Kanallar ayrıca 3'erli paralel çekilir - Discord mesaj geçmişi kotası kanal
+başına ayrı işlediği için bu güvenli. 54.000 mesajlık bir kurulumda ölçüm:
+
+| | Süre |
+|---|---|
+| Eskiden (sıralı, önbelleksiz) | 192 sn |
+| İlk çekim (3 paralel) | 48 sn |
+| Yeniden başlatma (önbellekli) | 3 sn |
+
+Önbellek bozuksa, sürümü eskiyse ya da kanal ID'si değişmişse yok sayılıp tam
+çekime dönülür. **Yenile** düğmesi her zaman tam çekim yapar - artımlı çekim
+yalnızca yeni mesajları görür, silinen/düzenlenen mesajlar ancak tam çekimde
+yansır.
 
 Menüler: Ban, Unban, Kick, Warn, DM, Duyuru, Revive.
 Her menüde 100'erli sayfalama ve içerik + embed üzerinde arama var.
