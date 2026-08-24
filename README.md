@@ -261,23 +261,36 @@ yaz saati geçişlerinde bir günün atlanmaması ya da iki kez sayılmaması i�
 
 ## Yetkiler
 
-**Yönetici**, hesap listesinin ilk kaydıdır - masaüstü sürümünün de kullandığı
-ana hesap. Kullanıcı adı değişse bile sıra değişmediği için bu bağ kopmaz.
+**Yönetici** her şeyi görür ve hesap açar/siler, Discord ID bağlar, başka
+hesaplara yetki verir. Hesap listesinin **ilk kaydı** (masaüstü sürümünün de
+kullandığı ana hesap) her zaman yöneticidir ve yetkileri kısıtlanamaz - aksi
+halde panelde hiç yönetici kalmayabilir ve kimse geri veremezdi. Diğer
+hesaplara yöneticilik **Ayarlar > Panel Hesapları > Yetkiler**'den verilir.
 
-| | Yönetici | Diğer hesaplar |
-|---|---|---|
-| Yoklama, Yetkililer, Rol Ver/Al, Aktiflik, Etkinlik, TX Logs, Mute Logları, Felox | ✔ | ✔ |
-| Kendi şifresi / Discord ID'si | ✔ | ✔ |
-| Panel Hesapları (ekleme/silme/listeleme) | ✔ | ✘ |
-| Hesap Logları | ✔ | ✘ |
+Yönetici olmayan hesaplar için tek tek seçilir:
 
-Kısıt hem sunucuda (`requireAdmin`, 403 döner) hem arayüzde (sekme ve kart
-gizlenir) uygulanır - arayüzü gizlemek tek başına yeterli değil, uçlar da
-kapalı. Yönetici hesabı silinemez: silinseydi yöneticilik sessizce sıradaki
-hesaba geçer ve silen kişi de dışarı düşerdi.
+- **Görebileceği sekmeler**: Yoklama, Yetkililer, Rol Ver/Al, Aktiflik,
+  Etkinlik, TX Logs, Mute Logları, Felox, Ayarlar
+- **Görebileceği log kanalları**: her log grubunun içindeki menüler ayrı ayrı
+  (ör. yalnızca Ban ve Unban). Grubun sekmesi kapalıysa içindeki kanalların
+  hükmü kalmaz - pencerede bu açıkça yazar.
 
-Not: otomatik yoklama, rol botu komutları, ticket mesajı ve logo ayarları
-şu an tüm hesaplara açık.
+Hesap yönetimi (**Panel Hesapları**) ve **Hesap Logları** her zaman yalnızca
+yöneticiye açıktır, sekme izni olarak verilemez.
+
+Kısıt **hem sunucuda hem arayüzde** uygulanır. Arayüzde izinsiz sekmeler menüden
+kalkar ve izinsiz log kanalları listeye hiç girmez; sunucuda ilgili uçlar 403
+döner. Arayüzü gizlemek tek başına yeterli değildir - tarayıcı konsolundan uca
+istek atılabilir.
+
+401 yerine 403 kullanılır: istemci 401'i "oturum düştü" sayıp kullanıcıyı giriş
+ekranına atardı.
+
+Yetkisi değiştirilen hesabın **açık oturumları düşürülür** - yoksa daralan yetki
+o kişi sayfayı yenileyene kadar eski haliyle açık kalırdı.
+
+Yetki alanı hiç tanımlanmamış hesaplar (bu özellikten önce açılmış olanlar) tüm
+sekmeleri ve kanalları görmeye devam eder - güncelleme kimseyi kilitlemez.
 
 ## Güvenlik
 
@@ -308,6 +321,7 @@ Not: otomatik yoklama, rol botu komutları, ticket mesajı ve logo ayarları
 | `GET /api/yoklama/katilim`, `POST /api/yoklama/katil` | Yoklamaya Katıl |
 | `GET/POST /api/oto-yoklama`, `POST /api/oto-yoklama/simdi` | Otomatik günlük yoklamalar (liste) |
 | `POST /api/hesaplar/discord-id` | Bir hesaba Discord ID bağlama *(yönetici)* |
+| `POST /api/hesaplar/izinler`, `GET /api/izin-secenekleri` | Yetki düzenleme *(yönetici)* |
 | `GET/POST /api/rol-komutlari` | Rol botu komut ID'leri, adları ve bot ID'si |
 | `GET /api/surum` | Çalışan commit, dal, rol botu/komut ayarları (girişsiz) |
 | `GET /api/loglar[?grup=tx\|mute\|felox]`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs + Mute Logları + Felox |

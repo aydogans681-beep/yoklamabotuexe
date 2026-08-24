@@ -73,6 +73,7 @@ function hideError() {
 // --- GİRİŞ / OTURUM ---
 let currentUsername = null;
 let currentIsAdmin = false;
+let currentSekmeler = null; // null = kisit yok (yetki bilgisi henuz gelmedi)
 
 // Yonetici olmayan hesaplarda hesap yonetimi ve hesap loglari gizleniyor.
 // Sunucu tarafinda da kapali (requireAdmin) - burasi sadece gorunum.
@@ -80,13 +81,27 @@ function applyAdminVisibility() {
     document.querySelectorAll('.admin-only').forEach((el) => {
         el.style.display = currentIsAdmin ? '' : 'none';
     });
-    // Yonetici olmayan biri Hesap Logları sekmesindeyken yetkisi alinirsa
-    // bos ekranda kalmasin - Yoklama'ya donduruyoruz.
-    if (!currentIsAdmin) {
-        const acik = document.querySelector('.tab-panel.active');
-        if (acik && acik.id === 'tab-hesaploglari') {
-            document.querySelector('.tab-btn[data-tab="yoklama"]').click();
-        }
+
+    // Sekme izinleri: izinsiz sekmeler menuden kalkiyor. Sunucu da ayni
+    // kisiti uyguluyor - burasi yalnizca gorunum.
+    let ilkAcik = null;
+    document.querySelectorAll('.side-nav .tab-btn').forEach((btn) => {
+        const sekme = btn.dataset.tab;
+        if (sekme === 'hesaploglari') return; // .admin-only ile yonetiliyor
+        const izinli = currentIsAdmin
+            || !Array.isArray(currentSekmeler)
+            || currentSekmeler.includes(sekme);
+        btn.style.display = izinli ? '' : 'none';
+        if (izinli && !ilkAcik) ilkAcik = btn;
+    });
+
+    // Acik sekme artik izinli degilse bos ekranda kalmasin - izinli ilk
+    // sekmeye geciyoruz.
+    const acik = document.querySelector('.tab-panel.active');
+    if (acik) {
+        const acikSekme = acik.id.replace(/^tab-/, '');
+        const dugme = document.querySelector(`.side-nav .tab-btn[data-tab="${acikSekme}"]`);
+        if (dugme && dugme.style.display === 'none' && ilkAcik) ilkAcik.click();
     }
 }
 
@@ -96,6 +111,7 @@ async function checkSession() {
     if (data.loggedIn) {
         currentUsername = data.username;
         currentIsAdmin = Boolean(data.isAdmin);
+        currentSekmeler = Array.isArray(data.sekmeler) ? data.sekmeler : null;
         showApp();
     } else {
         showLogin();
@@ -139,13 +155,14 @@ async function doLogin() {
         }
         currentUsername = username;
         // Yetkiyi tahmin etmiyoruz - /api/me'den okuyoruz ki sunucuyla ayni
-        // kaynaktan gelsin.
-        currentIsAdmin = Boolean(data.isAdmin);
-        if (data.isAdmin === undefined) {
-            try {
-                const me = await okuJson(await fetch('/api/me'));
-                currentIsAdmin = Boolean(me.isAdmin);
-            } catch (hata) { currentIsAdmin = false; }
+        // kaynaktan gelsin (sekme listesi yalnizca orada donuyor).
+        try {
+            const me = await okuJson(await fetch('/api/me'));
+            currentIsAdmin = Boolean(me.isAdmin);
+            currentSekmeler = Array.isArray(me.sekmeler) ? me.sekmeler : null;
+        } catch (hata) {
+            currentIsAdmin = Boolean(data.isAdmin);
+            currentSekmeler = null;
         }
         showApp();
     } catch (error) {
@@ -942,7 +959,11 @@ async function refreshAccounts() {
                     : '<span class="acc-badge" style="opacity:.6">Discord ID yok</span>'}
                 ${user.isPrimary ? '<span class="acc-badge">Ana hesap</span>' : ''}
                 ${user.isSelf ? '<span class="acc-badge">Sen</span>' : ''}
+                ${user.admin
+                    ? '<span class="acc-badge ok">Yönetici</span>'
+                    : `<span class="acc-badge" title="Görebildiği sekmeler">${user.sekmeler.length}/${IZIN_TOPLAM_SEKME} sekme · ${user.loglar.length} log</span>`}
                 <span class="acc-spacer"></span>
+                ${user.isPrimary ? '' : `<button class="secondary small" data-izin="${escapeHtml(user.username)}">Yetkiler</button>`}
                 <button class="secondary small" data-dcid="${escapeHtml(user.username)}"
                         data-dcidval="${escapeHtml(user.discordId || '')}"
                         title="Bu hesaba Discord ID bağla - 'Yoklamaya Katıl' için gerekli">Discord ID</button>
@@ -954,6 +975,10 @@ async function refreshAccounts() {
         });
         accountList.querySelectorAll('[data-dcid]').forEach((btn) => {
             btn.addEventListener('click', () => setAccountDiscordId(btn.dataset.dcid, btn.dataset.dcidval));
+        });
+        accountList.querySelectorAll('[data-izin]').forEach((btn) => {
+            const kullanici = data.users.find((u) => u.username === btn.dataset.izin);
+            btn.addEventListener('click', () => izinAc(kullanici));
         });
     } catch (error) {
         accountList.innerHTML = `<div class="empty-hint">Hesaplar alınamadı: ${escapeHtml(error.message)}</div>`;
@@ -990,6 +1015,141 @@ async function setAccountDiscordId(username, mevcut) {
         addAccountMsg.textContent = `Hata: ${error.message}`;
     }
 }
+
+// ============================================================================
+// --- YETKİ DÜZENLEME (yalnızca yönetici) ---
+// Bir hesabın yöneticiliği, görebileceği sekmeler ve log kanalları.
+// ============================================================================
+let IZIN_TOPLAM_SEKME = 9;
+let izinSecenekleri = null;
+let izinHedef = null;
+
+const izinModal = document.getElementById('izinModal');
+const izinBody = document.getElementById('izinBody');
+const izinMsg = document.getElementById('izinMsg');
+
+async function izinSecenekleriniAl() {
+    if (izinSecenekleri) return izinSecenekleri;
+    const res = await fetch('/api/izin-secenekleri');
+    const d = await okuJson(res);
+    if (!d.ok) throw new Error(d.error || 'Seçenekler alınamadı.');
+    izinSecenekleri = d;
+    IZIN_TOPLAM_SEKME = d.sekmeler.length;
+    return d;
+}
+
+function izinCiz() {
+    const { sekmeler, loglar, gruplar } = izinSecenekleri;
+    const secSekme = new Set(izinHedef.sekmeler || []);
+    const secLog = new Set(izinHedef.loglar || []);
+    const admin = Boolean(izinHedef.admin);
+
+    // Log kanallarını grubuna göre topluyoruz - grup sekmesi kapalıysa
+    // içindeki kanalların bir hükmü kalmadığını göstermek için.
+    const grupBloklari = gruplar.map((g) => {
+        const kanallar = loglar.filter((l) => l.group === g.key);
+        if (!kanallar.length) return '';
+        const grupAcik = secSekme.has(kanallar[0].grupSekmesi);
+        return `
+            <div class="izin-grup${grupAcik ? '' : ' pasif'}">
+                <div class="izin-grup-bas">
+                    ${escapeHtml(g.label)}
+                    ${grupAcik ? '' : '<span class="muted"> — sekme kapalı, kanallar geçersiz</span>'}
+                </div>
+                <div class="izin-kutular">
+                    ${kanallar.map((l) => `
+                        <label class="check-inline">
+                            <input type="checkbox" data-log="${escapeHtml(l.key)}"
+                                   ${secLog.has(l.key) ? 'checked' : ''} ${admin ? 'disabled' : ''}>
+                            ${escapeHtml(l.label)}
+                        </label>`).join('')}
+                </div>
+            </div>`;
+    }).join('');
+
+    izinBody.innerHTML = `
+        <label class="check-inline izin-admin">
+            <input type="checkbox" id="izinAdmin" ${admin ? 'checked' : ''}>
+            <b>Yönetici</b> — her şeyi görür, hesap açar/siler, yetki verir
+        </label>
+        <div class="izin-bolum${admin ? ' pasif' : ''}" id="izinAyrinti">
+            <div class="izin-grup-bas" style="margin-top:14px;">Görebileceği sekmeler</div>
+            <div class="izin-kutular">
+                ${sekmeler.map((sk) => `
+                    <label class="check-inline">
+                        <input type="checkbox" data-sekme="${escapeHtml(sk.key)}"
+                               ${secSekme.has(sk.key) ? 'checked' : ''} ${admin ? 'disabled' : ''}>
+                        ${escapeHtml(sk.label)}
+                    </label>`).join('')}
+            </div>
+            <div class="izin-grup-bas" style="margin-top:16px;">Görebileceği log kanalları</div>
+            ${grupBloklari}
+        </div>`;
+
+    // Yönetici işaretlenince ayrıntılar anlamsızlaşıyor - kapatıyoruz.
+    document.getElementById('izinAdmin').addEventListener('change', (evt) => {
+        izinHedef.admin = evt.target.checked;
+        izinToplaVeCiz();
+    });
+    izinBody.querySelectorAll('[data-sekme],[data-log]').forEach((el) => {
+        el.addEventListener('change', () => izinToplaVeCiz());
+    });
+}
+
+// Ekrandaki kutuları modele yazıp yeniden çiziyoruz - grup sekmesi
+// kapatıldığında altındaki kanalların "geçersiz" görünmesi için gerekli.
+function izinToplaVeCiz() {
+    izinHedef.admin = document.getElementById('izinAdmin').checked;
+    if (!izinHedef.admin) {
+        izinHedef.sekmeler = [...izinBody.querySelectorAll('[data-sekme]:checked')].map((e) => e.dataset.sekme);
+        izinHedef.loglar = [...izinBody.querySelectorAll('[data-log]:checked')].map((e) => e.dataset.log);
+    }
+    izinCiz();
+}
+
+async function izinAc(kullanici) {
+    izinMsg.textContent = '';
+    try {
+        await izinSecenekleriniAl();
+    } catch (error) {
+        addAccountMsg.textContent = `Hata: ${error.message}`;
+        return;
+    }
+    izinHedef = {
+        username: kullanici.username,
+        admin: Boolean(kullanici.admin),
+        sekmeler: [...(kullanici.sekmeler || [])],
+        loglar: [...(kullanici.loglar || [])],
+    };
+    document.getElementById('izinBaslik').textContent = `${kullanici.username} — Yetkiler`;
+    izinCiz();
+    izinModal.style.display = 'flex';
+}
+
+document.getElementById('izinKapat').addEventListener('click', () => { izinModal.style.display = 'none'; });
+izinModal.addEventListener('click', (evt) => {
+    if (evt.target === izinModal) izinModal.style.display = 'none';
+});
+
+document.getElementById('izinKaydet').addEventListener('click', async () => {
+    if (!izinHedef) return;
+    izinMsg.textContent = 'Kaydediliyor...';
+    try {
+        const res = await fetch('/api/hesaplar/izinler', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(izinHedef),
+        });
+        const d = await okuJson(res);
+        if (!d.ok) { izinMsg.textContent = `Hata: ${d.error}`; return; }
+        izinModal.style.display = 'none';
+        addAccountMsg.textContent = `${d.username} yetkileri kaydedildi`
+            + ' — o hesabın açık oturumları düşürüldü.';
+        refreshAccounts();
+    } catch (error) {
+        izinMsg.textContent = `Hata: ${error.message}`;
+    }
+});
 
 async function deleteAccount(username) {
     if (!window.confirm(`"${username}" hesabı silinsin mi? Bu hesapla artık panele girilemez.`)) return;

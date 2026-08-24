@@ -840,3 +840,12 @@ input[type="date"].text-search { color-scheme: dark; padding: 8px 11px; }
     background: var(--surface-2);
 }
 .oto-satir .oto-sil { color: var(--accent); }
+
+/* Yetki düzenleme penceresi */
+.izin-admin { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.izin-bolum.pasif { opacity: .45; pointer-events: none; }
+.izin-grup-bas { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 8px; }
+.izin-kutular { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.izin-grup { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.izin-grup.pasif { opacity: .5; }
+.acc-badge.ok { color: var(--ok); border-color: var(--ok-line); }

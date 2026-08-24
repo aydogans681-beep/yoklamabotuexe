@@ -223,12 +223,90 @@ function requireAuth(req, res, next) {
     return next();
 }
 
+// ============================================================================
+// --- YETKILER ---
+// Her hesabin gorebilecegi sekmeler ve log kanallari ayri ayri veriliyor.
+// Kisit HEM sunucuda (uc bazinda 403) HEM arayuzde uygulanmali - arayuzu
+// gizlemek tek basina yetmez, tarayici konsolundan uca istek atilabilir.
+// ============================================================================
+const IZIN_SEKMELERI = [
+    { key: 'yoklama', label: 'Yoklama' },
+    { key: 'yetkililer', label: 'Yetkililer' },
+    { key: 'roller', label: 'Rol Ver/Al' },
+    { key: 'aktiflik', label: 'Aktiflik' },
+    { key: 'etkinlik', label: 'Etkinlik' },
+    { key: 'loglar', label: 'TX Logs' },
+    { key: 'mutelog', label: 'Mute Logları' },
+    { key: 'felox', label: 'Felox' },
+    { key: 'ayarlar', label: 'Ayarlar' },
+];
+const IZIN_SEKME_ANAHTARLARI = IZIN_SEKMELERI.map((x) => x.key);
+
+// Log grubu -> o gruba karsilik gelen sekme izni. Grup sekmesi kapaliysa
+// icindeki kanallara da erisilemiyor.
+const GRUP_SEKMESI = { tx: 'loglar', mute: 'mutelog', felox: 'felox' };
+
+// Bir hesabin etkin yetkileri. Alan yoksa "hepsi serbest" kabul ediliyor -
+// yetki sistemi eklenmeden once acilmis hesaplar aniden kilitlenmesin.
+function kullaniciYetkileri(username) {
+    const users = loadPanelUsers();
+    const index = users.findIndex((u) => u.username === username);
+    if (index < 0) return { admin: false, sekmeler: [], loglar: [] };
+    const u = users[index];
+    // Listenin ilk kaydi HER ZAMAN yonetici: yoneticiligi elinden alinabilseydi
+    // panelde hic yonetici kalmayabilir ve kimse geri veremezdi.
+    const admin = index === 0 || u.admin === true;
+    if (admin) {
+        return {
+            admin: true,
+            sekmeler: IZIN_SEKME_ANAHTARLARI.slice(),
+            loglar: LOG_CHANNELS.map((c) => c.key),
+        };
+    }
+    return {
+        admin: false,
+        sekmeler: Array.isArray(u.sekmeler) ? u.sekmeler : IZIN_SEKME_ANAHTARLARI.slice(),
+        loglar: Array.isArray(u.loglar) ? u.loglar : LOG_CHANNELS.map((c) => c.key),
+    };
+}
+
+function sekmeIzniVar(username, ...sekmeler) {
+    const y = kullaniciYetkileri(username);
+    if (y.admin) return true;
+    return sekmeler.some((s2) => y.sekmeler.includes(s2));
+}
+
+function logIzniVar(username, key) {
+    const y = kullaniciYetkileri(username);
+    if (y.admin) return true;
+    const kanal = LOG_CHANNELS.find((c) => c.key === key);
+    if (!kanal) return false;
+    // Once grubun sekmesi acik mi, sonra kanalin kendisi izinli mi.
+    if (!y.sekmeler.includes(GRUP_SEKMESI[kanal.group || 'tx'])) return false;
+    return y.loglar.includes(key);
+}
+
+// Sekme izni gerektiren uclar icin ara katman. 403 donuyor (401 degil):
+// istemci 401'i "oturum dustu" sayip kullaniciyi giris ekranina atiyor.
+function requireIzin(...sekmeler) {
+    return (req, res, next) => {
+        const session = getSession(req);
+        if (!session) return res.status(401).json({ ok: false, error: 'Giriş yapılmamış.' });
+        if (!sekmeIzniVar(session.username, ...sekmeler)) {
+            return res.status(403).json({ ok: false, error: 'Bu bölüm için yetkin yok.' });
+        }
+        req.session = session;
+        return next();
+    };
+}
+
 // Yonetici = hesap listesinin ILK kaydi (masaustu surumunun de kullandigi ana
 // hesap). Hesap ekleme/silme ve hesap loglari yalnizca ona acik. Kullanici adi
 // degisse bile sira degismedigi icin bu bag kopmuyor.
+// Tek kaynak: kullaniciYetkileri. Burada ayri bir kural yazsaydik, yonetici
+// yapilan bir hesap requireAdmin'den gecemez ama /api/me'de yonetici gorunurdu.
 function isAdmin(username) {
-    const users = loadPanelUsers();
-    return Boolean(users.length && users[0].username === username);
+    return kullaniciYetkileri(username).admin;
 }
 
 function requireAdmin(req, res, next) {
@@ -2523,11 +2601,15 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
     const session = getSession(req);
+    if (!session) return res.json({ ok: true, loggedIn: false, username: null, isAdmin: false });
+    const yetki = kullaniciYetkileri(session.username);
     return res.json({
         ok: true,
-        loggedIn: Boolean(session),
-        username: session ? session.username : null,
-        isAdmin: session ? isAdmin(session.username) : false,
+        loggedIn: true,
+        username: session.username,
+        isAdmin: yetki.admin,
+        sekmeler: yetki.sekmeler,
+        loglar: yetki.loglar,
     });
 });
 
@@ -2535,7 +2617,7 @@ app.get('/api/status', requireAuth, (req, res) => {
     res.json({ state: discordStatus, detail: discordStatusDetail });
 });
 
-app.post('/api/yoklama/tara', requireAuth, async (req, res) => {
+app.post('/api/yoklama/tara', requireIzin('yoklama'), async (req, res) => {
     try {
         const data = await runYoklamaScan();
         res.json({ ok: true, data });
@@ -2545,11 +2627,11 @@ app.post('/api/yoklama/tara', requireAuth, async (req, res) => {
     }
 });
 
-app.get('/api/uyari-gecmisi', requireAuth, (req, res) => {
+app.get('/api/uyari-gecmisi', requireIzin('yoklama'), (req, res) => {
     res.json(warningHistory);
 });
 
-app.post('/api/yoklama/rol-ver', requireAuth, async (req, res) => {
+app.post('/api/yoklama/rol-ver', requireIzin('yoklama'), async (req, res) => {
     const { memberId, reason } = req.body || {};
     try {
         const sonuc = await giveNextWarningRole(memberId, reason, true, panelUserDiscordId(req.session.username));
@@ -2561,7 +2643,7 @@ app.post('/api/yoklama/rol-ver', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/yoklama/rol-geri-al', requireAuth, async (req, res) => {
+app.post('/api/yoklama/rol-geri-al', requireIzin('yoklama'), async (req, res) => {
     const { memberId } = req.body || {};
     try {
         const sonuc = await undoLastWarning(memberId);
@@ -2573,7 +2655,7 @@ app.post('/api/yoklama/rol-geri-al', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/yoklama/toplu-uyari-ver', requireAuth, async (req, res) => {
+app.post('/api/yoklama/toplu-uyari-ver', requireIzin('yoklama'), async (req, res) => {
     const { memberIds, reason } = req.body || {};
     try {
         const sonuc = await giveBulkWarning(memberIds || [], reason, panelUserDiscordId(req.session.username));
@@ -2586,7 +2668,7 @@ app.post('/api/yoklama/toplu-uyari-ver', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/yoklama/toplu-rol-geri-al', requireAuth, async (req, res) => {
+app.post('/api/yoklama/toplu-rol-geri-al', requireIzin('yoklama'), async (req, res) => {
     const { memberIds } = req.body || {};
     try {
         const sonuc = await bulkUndoWarning(memberIds || []);
@@ -2599,7 +2681,7 @@ app.post('/api/yoklama/toplu-rol-geri-al', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/yoklama/acil-toplanti', requireAuth, async (req, res) => {
+app.post('/api/yoklama/acil-toplanti', requireIzin('yoklama'), async (req, res) => {
     try {
         const veri = await pullEveryoneToMyVoiceChannel();
         addAudit('acil-toplanti', req.session.username,
@@ -2628,13 +2710,19 @@ function validateCredentials(username, password, { requirePassword = true } = {}
 }
 
 app.get('/api/hesaplar', requireAdmin, (req, res) => {
-    const users = loadPanelUsers().map((u, index) => ({
-        username: u.username,
-        discordId: u.discordId || null,
-        createdAt: u.createdAt || null,
-        isPrimary: index === 0, // masaustu surumunun kullandigi hesap
-        isSelf: u.username === req.session.username,
-    }));
+    const users = loadPanelUsers().map((u, index) => {
+        const yetki = kullaniciYetkileri(u.username);
+        return {
+            username: u.username,
+            discordId: u.discordId || null,
+            createdAt: u.createdAt || null,
+            isPrimary: index === 0, // masaustu surumunun kullandigi hesap
+            isSelf: u.username === req.session.username,
+            admin: yetki.admin,
+            sekmeler: yetki.sekmeler,
+            loglar: yetki.loglar,
+        };
+    });
     res.json({ ok: true, users, self: req.session.username });
 });
 
@@ -2736,6 +2824,77 @@ app.post('/api/hesaplar/discord-id', requireAdmin, (req, res) => {
     return res.json({ ok: true, username, discordId: kayit.discordId });
 });
 
+// Yonetici bir hesabin yetkilerini duzenliyor: yoneticilik, gorebilecegi
+// sekmeler ve log kanallari. Liste bicimini secmemizin sebebi, tek istekte
+// tutarli bir durum kaydedilmesi - alan alan kaydetseydik yarim kalmis yetki
+// birlesimleri olusabilirdi.
+app.post('/api/hesaplar/izinler', requireAdmin, (req, res) => {
+    const username = String((req.body && req.body.username) || '').trim();
+    const users = loadPanelUsers();
+    const index = users.findIndex((u) => u.username === username);
+    if (index < 0) return res.json({ ok: false, error: 'Böyle bir hesap yok.' });
+
+    if (index === 0) {
+        return res.json({
+            ok: false,
+            error: 'Ana hesabın yetkileri kısıtlanamaz - panelde yönetici kalmazsa kimse geri veremez.',
+        });
+    }
+
+    const govde = req.body || {};
+    const kayit = users[index];
+
+    if (typeof govde.admin === 'boolean') kayit.admin = govde.admin;
+
+    if (Array.isArray(govde.sekmeler)) {
+        const bilinmeyen = govde.sekmeler.filter((k) => !IZIN_SEKME_ANAHTARLARI.includes(k));
+        if (bilinmeyen.length) {
+            return res.json({ ok: false, error: `Bilinmeyen sekme: ${bilinmeyen.join(', ')}` });
+        }
+        kayit.sekmeler = [...new Set(govde.sekmeler)];
+    }
+
+    if (Array.isArray(govde.loglar)) {
+        const gecerli = LOG_CHANNELS.map((c) => c.key);
+        const bilinmeyen = govde.loglar.filter((k) => !gecerli.includes(k));
+        if (bilinmeyen.length) {
+            return res.json({ ok: false, error: `Bilinmeyen log kanalı: ${bilinmeyen.join(', ')}` });
+        }
+        kayit.loglar = [...new Set(govde.loglar)];
+    }
+
+    try {
+        savePanelUsers(users);
+    } catch (error) {
+        return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
+    }
+    // Yetkisi degisen kisinin acik oturumlari dusuyor: aksi halde daralan
+    // yetki, sayfa yenilenene kadar eski haliyle acik kalirdi.
+    dropSessionsFor(username);
+
+    const ozet = kayit.admin
+        ? 'yönetici'
+        : `${(kayit.sekmeler || []).length} sekme, ${(kayit.loglar || []).length} log kanalı`;
+    console.log(`[Yetki] ${username} -> ${ozet} (yapan: ${req.session.username})`);
+    addAudit('yetki-degistir', req.session.username, `"${username}" yetkileri: ${ozet}`, req);
+    return res.json({ ok: true, username, ...kullaniciYetkileri(username) });
+});
+
+// Yetki ekraninin secenekleri - sekme ve log kanali listesi tek kaynaktan.
+app.get('/api/izin-secenekleri', requireAdmin, (req, res) => {
+    res.json({
+        ok: true,
+        sekmeler: IZIN_SEKMELERI,
+        loglar: LOG_CHANNELS.map((c) => ({
+            key: c.key,
+            label: c.label,
+            group: c.group || 'tx',
+            grupSekmesi: GRUP_SEKMESI[c.group || 'tx'],
+        })),
+        gruplar: LOG_GROUPS,
+    });
+});
+
 app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
     const currentPassword = String((req.body && req.body.currentPassword) || '');
     const rawNewUsername = String((req.body && req.body.newUsername) || '').trim();
@@ -2806,9 +2965,12 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
 app.get('/api/loglar', requireAuth, (req, res) => {
     // grup verilmezse hepsi doner - eski istemciler bozulmasin.
     const grup = String(req.query.grup || '').trim();
-    const secilenler = grup
+    // Yetkisi olmayan kanallar listeye hic girmiyor - menude gorunup
+    // tiklayinca 403 almaktansa hic gorunmesin.
+    const secilenler = (grup
         ? LOG_CHANNELS.filter((c) => (c.group || 'tx') === grup)
-        : LOG_CHANNELS;
+        : LOG_CHANNELS
+    ).filter((c) => logIzniVar(req.session.username, c.key));
     res.json({
         ok: true,
         groups: LOG_GROUPS,
@@ -2832,6 +2994,9 @@ app.get('/api/loglar', requireAuth, (req, res) => {
 app.get('/api/loglar/:key', requireAuth, (req, res) => {
     const store = logStore.get(req.params.key);
     if (!store) return res.status(404).json({ ok: false, error: 'Bilinmeyen log menüsü.' });
+    if (!logIzniVar(req.session.username, req.params.key)) {
+        return res.status(403).json({ ok: false, error: 'Bu log kanalı için yetkin yok.' });
+    }
 
     const term = String(req.query.q || '').trim().toLocaleLowerCase('tr');
     const offset = Math.max(0, Number(req.query.offset) || 0);
@@ -2860,6 +3025,9 @@ app.get('/api/loglar/:key', requireAuth, (req, res) => {
 app.post('/api/loglar/:key/yenile', requireAuth, async (req, res) => {
     const store = logStore.get(req.params.key);
     if (!store) return res.status(404).json({ ok: false, error: 'Bilinmeyen log menüsü.' });
+    if (!logIzniVar(req.session.username, req.params.key)) {
+        return res.status(403).json({ ok: false, error: 'Bu log kanalı için yetkin yok.' });
+    }
     if (!store.channelId) return res.json({ ok: false, error: 'Bu menü için kanal ID girilmemiş.' });
     // Cekme uzun surebilir - istegi hemen kapatiyoruz, ilerleme WebSocket'ten gelir.
     // Yenile = onbellegi yoksay, bastan cek. Artimli cekim yalnizca yeni
@@ -2870,7 +3038,7 @@ app.post('/api/loglar/:key/yenile', requireAuth, async (req, res) => {
 });
 
 // --- YOKLAMAYI AL ---
-app.post('/api/yoklama/al-onizleme', requireAuth, async (req, res) => {
+app.post('/api/yoklama/al-onizleme', requireIzin('yoklama'), async (req, res) => {
     try {
         res.json({ ok: true, data: await buildAttendancePreview() });
     } catch (error) {
@@ -2879,7 +3047,7 @@ app.post('/api/yoklama/al-onizleme', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/yoklama/al-uygula', requireAuth, async (req, res) => {
+app.post('/api/yoklama/al-uygula', requireIzin('yoklama'), async (req, res) => {
     const { memberIds, reason } = req.body || {};
     if (!Array.isArray(memberIds) || memberIds.length === 0) {
         return res.json({ ok: false, error: 'Uyarı verilecek kimse seçilmemiş.' });
@@ -2900,7 +3068,7 @@ app.post('/api/yoklama/al-uygula', requireAuth, async (req, res) => {
 });
 
 // --- YETKILILER + ROL VER/AL ---
-app.get('/api/roller', requireAuth, async (req, res) => {
+app.get('/api/roller', requireIzin('roller', 'yetkililer'), async (req, res) => {
     try {
         res.json({ ok: true, ...(await listGuildRoles()) });
     } catch (error) {
@@ -2909,7 +3077,7 @@ app.get('/api/roller', requireAuth, async (req, res) => {
     }
 });
 
-app.get('/api/yetkililer', requireAuth, async (req, res) => {
+app.get('/api/yetkililer', requireIzin('yetkililer'), async (req, res) => {
     const roleId = req.query.roleId ? String(req.query.roleId) : null;
     try {
         res.json({ ok: true, ...(await listStaff(roleId)) });
@@ -2919,7 +3087,7 @@ app.get('/api/yetkililer', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/rol/ver', requireAuth, async (req, res) => {
+app.post('/api/rol/ver', requireIzin('roller', 'yetkililer'), async (req, res) => {
     const { memberId, roleId } = req.body || {};
     try {
         const sonuc = await sendRoleCommand('rol-ver', memberId, roleId);
@@ -2931,7 +3099,7 @@ app.post('/api/rol/ver', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/rol/al', requireAuth, async (req, res) => {
+app.post('/api/rol/al', requireIzin('roller', 'yetkililer'), async (req, res) => {
     const { memberId, roleId } = req.body || {};
     try {
         const sonuc = await sendRoleCommand('rol-al', memberId, roleId);
@@ -3007,7 +3175,7 @@ app.get('/api/logo/durum', requireAuth, (req, res) => {
     res.json({ ok: true, var: Boolean(logo), name: logo ? logo.name : null, size: boyut });
 });
 
-app.post('/api/logo', requireAuth, express.raw({ type: '*/*', limit: '3mb' }), (req, res) => {
+app.post('/api/logo', requireIzin('ayarlar'), express.raw({ type: '*/*', limit: '3mb' }), (req, res) => {
     const buf = req.body;
     if (!Buffer.isBuffer(buf) || buf.length === 0) {
         return res.json({ ok: false, error: 'Dosya alınamadı.' });
@@ -3039,7 +3207,7 @@ app.post('/api/logo', requireAuth, express.raw({ type: '*/*', limit: '3mb' }), (
     return res.json({ ok: true, name: `logo${ext}`, size: buf.length });
 });
 
-app.post('/api/logo/sil', requireAuth, (req, res) => {
+app.post('/api/logo/sil', requireIzin('ayarlar'), (req, res) => {
     const logo = findLogoFile();
     if (!logo) return res.json({ ok: false, error: 'Zaten logo yok.' });
     try {
@@ -3213,7 +3381,7 @@ async function buildDailyReport(key, aralik) {
 // BICIM KONTROLU: ticket botunun mesaj bicimini gormeden kurulan cikarim
 // dogru calisiyor mu? Hangi stratejinin ne kadar tuttugunu ve ornek mesajlari
 // dondurur - ekran goruntusu beklemeden teshis edilebilsin diye.
-app.get('/api/etkinlik/:key/bicim', requireAuth, async (req, res) => {
+app.get('/api/etkinlik/:key/bicim', requireIzin('etkinlik'), async (req, res) => {
     const store = logStore.get(req.params.key);
     if (!store || (store.kind !== 'aktivite' && store.kind !== 'aktiflik')) {
         return res.status(404).json({ ok: false, error: 'Bilinmeyen menü.' });
@@ -3267,7 +3435,7 @@ app.get('/api/etkinlik/:key/bicim', requireAuth, async (req, res) => {
     });
 });
 
-app.get('/api/etkinlik/:key/gunluk', requireAuth, async (req, res) => {
+app.get('/api/etkinlik/:key/gunluk', requireIzin('etkinlik'), async (req, res) => {
     let aralik;
     try {
         aralik = araligiCoz(req.query);
@@ -3479,7 +3647,7 @@ async function buildVoiceReport(aralik) {
 
 // TESHIS: sayac su an neyi goruyor? "Hic veri yok" ile "sayac calismiyor"
 // arasindaki farki ayirt etmek icin.
-app.get('/api/aktiflik/tani', requireAuth, (req, res) => {
+app.get('/api/aktiflik/tani', requireIzin('aktiflik'), (req, res) => {
     const guild = client.guilds.cache.get(GUILD_ID);
     const simdi = Date.now();
     const gun = bugununAnahtari();
@@ -3535,7 +3703,7 @@ app.get('/api/aktiflik/tani', requireAuth, (req, res) => {
     });
 });
 
-app.get('/api/aktiflik', requireAuth, async (req, res) => {
+app.get('/api/aktiflik', requireIzin('aktiflik'), async (req, res) => {
     let aralik;
     try {
         aralik = araligiCoz(req.query);
@@ -3550,7 +3718,7 @@ app.get('/api/aktiflik', requireAuth, async (req, res) => {
     }
 });
 
-app.get('/api/etkinlik', requireAuth, (req, res) => {
+app.get('/api/etkinlik', requireIzin('etkinlik'), (req, res) => {
     res.json({
         ok: true,
         channels: ACTIVITY_CHANNELS.map((channel) => {
@@ -3566,7 +3734,7 @@ app.get('/api/etkinlik', requireAuth, (req, res) => {
     });
 });
 
-app.get('/api/etkinlik/:key', requireAuth, async (req, res) => {
+app.get('/api/etkinlik/:key', requireIzin('etkinlik'), async (req, res) => {
     try {
         res.json({ ok: true, ...(await buildActivityReport(req.params.key)) });
     } catch (error) {
@@ -3576,7 +3744,7 @@ app.get('/api/etkinlik/:key', requireAuth, async (req, res) => {
 });
 
 // Bir kisinin o kanaldaki mesajlari - listede uzerine tiklayinca aciliyor.
-app.get('/api/etkinlik/:key/mesajlar', requireAuth, (req, res) => {
+app.get('/api/etkinlik/:key/mesajlar', requireIzin('etkinlik'), (req, res) => {
     const store = logStore.get(req.params.key);
     if (!store || (store.kind !== 'aktivite' && store.kind !== 'aktiflik')) {
         return res.status(404).json({ ok: false, error: 'Bilinmeyen menü.' });
@@ -3686,7 +3854,7 @@ setInterval(() => {
 
 const SAAT_BICIMI = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-app.get('/api/oto-yoklama', requireAuth, (req, res) => {
+app.get('/api/oto-yoklama', requireIzin('ayarlar'), (req, res) => {
     const bugun = bugununAnahtari();
     res.json({
         ok: true,
@@ -3704,7 +3872,7 @@ app.get('/api/oto-yoklama', requireAuth, (req, res) => {
 
 // Tum listeyi birden kaydediyoruz: satir ekleme/silme/duzenleme tek istekte
 // olsun, arayuzle sunucu arasinda yarim kalmis durum olusmasin.
-app.post('/api/oto-yoklama', requireAuth, (req, res) => {
+app.post('/api/oto-yoklama', requireIzin('ayarlar'), (req, res) => {
     const { yoklamalar, sebep } = req.body || {};
 
     if (typeof sebep === 'string' && sebep.trim()) panelSettings.otoYoklamaSebep = sebep.trim();
@@ -3760,7 +3928,7 @@ app.post('/api/oto-yoklama', requireAuth, (req, res) => {
 
 // Elle tetikleme - zamanlanmisi beklemeden denemek icin. id verilirse o satirin
 // ayarlariyla (kendi duyuru kanaliyla) calisiyor.
-app.post('/api/oto-yoklama/simdi', requireAuth, async (req, res) => {
+app.post('/api/oto-yoklama/simdi', requireIzin('ayarlar'), async (req, res) => {
     const id = String((req.body && req.body.id) || '').trim();
     const satir = id
         ? (panelSettings.otoYoklamalar || []).find((y) => y.id === id)
@@ -3777,7 +3945,7 @@ app.post('/api/oto-yoklama/simdi', requireAuth, async (req, res) => {
 });
 
 // --- YOKLAMAYA KATIL ---
-app.get('/api/yoklama/katilim', requireAuth, (req, res) => {
+app.get('/api/yoklama/katilim', requireIzin('yoklama'), (req, res) => {
     const benimId = panelUserDiscordId(req.session.username);
     const katilanlar = bugunKatilanlar();
     res.json({
@@ -3790,7 +3958,7 @@ app.get('/api/yoklama/katilim', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/yoklama/katil', requireAuth, (req, res) => {
+app.post('/api/yoklama/katil', requireIzin('yoklama'), (req, res) => {
     const benimId = panelUserDiscordId(req.session.username);
     if (!benimId) {
         return res.json({
@@ -3808,7 +3976,7 @@ app.post('/api/yoklama/katil', requireAuth, (req, res) => {
 // sendSlash komut adini BIREBIR esleştiriyor; ad tutmazsa "SlashCommand X is
 // not found" hatasi geliyor. Botun gercekte hangi komutlari sundugunu
 // listeleyip dogru adi secebilmek icin.
-app.get('/api/rol-komutlari', requireAuth, async (req, res) => {
+app.get('/api/rol-komutlari', requireIzin('ayarlar'), async (req, res) => {
     try {
         const guild = await getReadyGuild();
         // sendSlash ile AYNI kaynak: sunucunun komut dizini.
@@ -3865,7 +4033,7 @@ app.get('/api/rol-komutlari', requireAuth, async (req, res) => {
 });
 
 // --- YENI TICKET OTOMATIK MESAJI (ayarlar) ---
-app.get('/api/ticket-otomatik', requireAuth, (req, res) => {
+app.get('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
     res.json({
         ok: true,
         enabled: panelSettings.ticketAutoEnabled,
@@ -3878,7 +4046,7 @@ app.get('/api/ticket-otomatik', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/rol-komutlari', requireAuth, (req, res) => {
+app.post('/api/rol-komutlari', requireIzin('ayarlar'), (req, res) => {
     const { ver, al } = req.body || {};
     const gecerli = (x) => typeof x === 'string' && x.trim() && x.trim().length <= 64;
     if (ver !== undefined) {
@@ -3926,7 +4094,7 @@ app.post('/api/rol-komutlari', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/ticket-otomatik', requireAuth, (req, res) => {
+app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
     const { enabled, message } = req.body || {};
     if (typeof enabled === 'boolean') panelSettings.ticketAutoEnabled = enabled;
     if (typeof message === 'string') {

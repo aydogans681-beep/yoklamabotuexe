@@ -32,6 +32,22 @@
         </div>
     </div>
 
+    <!-- --- YETKİ DÜZENLEME PENCERESİ (yalnızca yönetici) --- -->
+    <div class="modal-backdrop" id="izinModal" style="display:none;">
+        <div class="modal">
+            <div class="modal-head">
+                <span class="modal-title" id="izinBaslik">Yetkiler</span>
+                <button class="secondary small" id="izinKapat">Kapat</button>
+            </div>
+            <div class="modal-body" id="izinBody"></div>
+            <div class="modal-foot">
+                <span class="scanStatus" id="izinMsg"></span>
+                <span class="grow"></span>
+                <button id="izinKaydet">Kaydet</button>
+            </div>
+        </div>
+    </div>
+
     <!-- --- ANA PANEL (giriş sonrası) --- -->
     <div id="appWrap" style="display:none;">
         <!-- Sol kenar çubuğu: logo, gezinme, altta bağlantı durumu -->
