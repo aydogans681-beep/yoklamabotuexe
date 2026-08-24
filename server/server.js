@@ -1393,6 +1393,56 @@ function bugununAnahtari() {
     return dayKey(Date.now());
 }
 
+// --- TARIH ARALIGI ---
+// Gun anahtarlari "YYYY-MM-DD" metni. Aralik hesabini UTC uzerinden yapiyoruz:
+// yerel saatle Date kurmak yaz saati gecislerinde bir gunu atlatabilir ya da
+// iki kez saydirabilirdi. Anahtarlar zaten Turkiye saatine gore uretiliyor,
+// burada sadece metin uzerinde gun sayiyoruz.
+const GUN_BICIM = /^\d{4}-\d{2}-\d{2}$/;
+
+function gunToUTC(gun) {
+    const [y, a, g] = gun.split('-').map(Number);
+    return Date.UTC(y, a - 1, g);
+}
+function utcToGun(ms) {
+    return new Date(ms).toISOString().slice(0, 10);
+}
+
+// bas..bit arasindaki tum gunler (her iki uc dahil). Ters verilirse duzeltiyor.
+function gunAraligi(bas, bit) {
+    let b = gunToUTC(bas);
+    let s = gunToUTC(bit);
+    if (b > s) { const t = b; b = s; s = t; }
+    const gunler = [];
+    for (let ms = b; ms <= s; ms += 86400000) {
+        gunler.push(utcToGun(ms));
+        if (gunler.length > 400) break; // guvenlik freni
+    }
+    return gunler;
+}
+
+// Istekten aralik cikar. gun=... verilirse tek gun; bas/bit verilirse aralik.
+// Hicbiri yoksa bugun.
+function araligiCoz(query) {
+    const bas = String((query && query.bas) || '').trim();
+    const bit = String((query && query.bit) || '').trim();
+    const gun = String((query && query.gun) || '').trim();
+
+    if (bas || bit) {
+        if (!GUN_BICIM.test(bas) || !GUN_BICIM.test(bit)) {
+            throw new Error('Tarih biçimi YYYY-AA-GG olmalı (başlangıç ve bitiş birlikte verilmeli).');
+        }
+        const gunler = gunAraligi(bas, bit);
+        return { gunler, bas: gunler[0], bit: gunler[gunler.length - 1], aralikMi: true };
+    }
+    if (gun) {
+        if (!GUN_BICIM.test(gun)) throw new Error('Tarih biçimi YYYY-AA-GG olmalı.');
+        return { gunler: [gun], bas: gun, bit: gun, aralikMi: false };
+    }
+    const bugun = bugununAnahtari();
+    return { gunler: [bugun], bas: bugun, bit: bugun, aralikMi: false };
+}
+
 // Yazarin yetkili olup olmadigi - onbellekten. Uye listesi henuz cekilmediyse
 // temkinli davranip false donuyor (yanlis kisiye saymaktansa saymamak yeg).
 function isStaffId(id) {
@@ -3081,18 +3131,21 @@ async function buildActivityReport(key) {
 }
 
 // Belirli bir GUNUN kisi basina sayilari. Varsayilan bugun (Turkiye saati).
-async function buildDailyReport(key, gun) {
+async function buildDailyReport(key, aralik) {
     const store = logStore.get(key);
     if (!store || store.kind !== 'aktivite') throw new Error('Bilinmeyen etkinlik menusu.');
 
-    const hedefGun = gun || bugununAnahtari();
     const temel = {
         key: store.key,
         label: store.label,
         configured: Boolean(store.channelId),
         status: store.status,
         personFrom: store.personFrom,
-        day: hedefGun,
+        day: aralik.bas,          // tek gunde eski davranis
+        bas: aralik.bas,
+        bit: aralik.bit,
+        gunSayisi: aralik.gunler.length,
+        aralikMi: aralik.aralikMi,
         today: bugununAnahtari(),
     };
     if (!store.channelId) {
@@ -3100,7 +3153,19 @@ async function buildDailyReport(key, gun) {
     }
     if (!store.dailyIndex) buildDailyIndex(store);
 
-    const gunluk = store.dailyIndex.get(hedefGun) || new Map();
+    // Araliktaki gunleri tek bir tabloda topluyoruz.
+    const gunluk = new Map();
+    aralik.gunler.forEach((g) => {
+        const o = store.dailyIndex.get(g);
+        if (!o) return;
+        o.forEach((v, kisi) => {
+            const onceki = gunluk.get(kisi);
+            gunluk.set(kisi, {
+                c: (onceki ? onceki.c : 0) + v.c,
+                last: Math.max(onceki ? onceki.last : 0, v.last),
+            });
+        });
+    });
 
     let yetkililer = [];
     try {
@@ -3203,12 +3268,14 @@ app.get('/api/etkinlik/:key/bicim', requireAuth, async (req, res) => {
 });
 
 app.get('/api/etkinlik/:key/gunluk', requireAuth, async (req, res) => {
-    const gun = String(req.query.gun || '').trim();
-    if (gun && !/^\d{4}-\d{2}-\d{2}$/.test(gun)) {
-        return res.json({ ok: false, error: 'Tarih biçimi YYYY-AA-GG olmalı.' });
+    let aralik;
+    try {
+        aralik = araligiCoz(req.query);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
     }
     try {
-        return res.json({ ok: true, ...(await buildDailyReport(req.params.key, gun || null)) });
+        return res.json({ ok: true, ...(await buildDailyReport(req.params.key, aralik)) });
     } catch (error) {
         console.log(`[Etkinlik] Gunluk rapor hatasi (${req.params.key}): ${error.message}`);
         return res.json({ ok: false, error: error.message });
@@ -3343,9 +3410,15 @@ let kapaniyor = false;
     });
 });
 
-async function buildVoiceReport(gun) {
-    const hedefGun = gun || bugununAnahtari();
-    const gunVerisi = voiceData[hedefGun] || {};
+async function buildVoiceReport(aralik) {
+    const hedefGun = aralik.bas;
+    // Araliktaki gunlerin sureleri kisi basina toplaniyor.
+    const gunVerisi = {};
+    aralik.gunler.forEach((g) => {
+        const o = voiceData[g];
+        if (!o) return;
+        Object.entries(o).forEach(([id, sn]) => { gunVerisi[id] = (gunVerisi[id] || 0) + sn; });
+    });
     const simdi = Date.now();
 
     let yetkililer = [];
@@ -3360,7 +3433,8 @@ async function buildVoiceReport(gun) {
         console.log(`[Aktiflik] Yetkili listesi alinamadi: ${error.message}`);
     }
 
-    const bugunMu = hedefGun === bugununAnahtari();
+    // "Su an seste" bilgisi yalnizca aralik BUGUNU kapsiyorsa anlamli.
+    const bugunMu = aralik.gunler.includes(bugununAnahtari());
     const uyeler = yetkililer.map((member) => {
         // Kanali distaki guild uzerinden aliyoruz - member.guild her ortamda
         // dolu gelmiyor.
@@ -3390,6 +3464,10 @@ async function buildVoiceReport(gun) {
 
     return {
         day: hedefGun,
+        bas: aralik.bas,
+        bit: aralik.bit,
+        gunSayisi: aralik.gunler.length,
+        aralikMi: aralik.aralikMi,
         today: bugununAnahtari(),
         trackingSince: Object.keys(voiceData).sort()[0] || null,
         members: uyeler,
@@ -3458,12 +3536,14 @@ app.get('/api/aktiflik/tani', requireAuth, (req, res) => {
 });
 
 app.get('/api/aktiflik', requireAuth, async (req, res) => {
-    const gun = String(req.query.gun || '').trim();
-    if (gun && !/^\d{4}-\d{2}-\d{2}$/.test(gun)) {
-        return res.json({ ok: false, error: 'Tarih biçimi YYYY-AA-GG olmalı.' });
+    let aralik;
+    try {
+        aralik = araligiCoz(req.query);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
     }
     try {
-        return res.json({ ok: true, ...(await buildVoiceReport(gun || null)) });
+        return res.json({ ok: true, ...(await buildVoiceReport(aralik)) });
     } catch (error) {
         console.log(`[Aktiflik] Rapor hatasi: ${error.message}`);
         return res.json({ ok: false, error: error.message });

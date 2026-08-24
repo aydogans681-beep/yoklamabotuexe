@@ -239,6 +239,26 @@ pm2 save
 Belleği yükseltmek taramayı **hızlandırmaz** - yavaşlık üye listesinden
 geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
 
+## Tarih aralığı (Etkinlik ve Aktiflik)
+
+Her iki sekme de tek gün yerine **tarih aralığı** ile çalışabiliyor: aralıktaki
+günlerin sayıları kişi başına toplanıyor.
+
+Hazır dönemler: Bugün · Son 7 gün · **Bu hafta (Cuma–Perş.)** · Geçen hafta ·
+Son 30 gün. Başlangıç ve bitiş elle de girilebilir.
+
+"Cumadan cumaya" dönem, Cuma günü başlayan 7 günlük dilimdir (Cuma → Perşembe).
+Ayın 15'i Cuma ise dönem 15–21'dir. Dönem içindeki hangi güne bakılırsa
+bakılsın aynı aralık bulunur.
+
+`←` / `→` düğmeleri **aralık uzunluğu kadar** kaydırır: 7 günlük dönemdeyken bir
+önceki 7 güne gider, tek gündeyken bir önceki güne. Tek gün adımı atsaydı
+haftalık dönemler örtüşürdü.
+
+Uçlar `?bas=YYYY-AA-GG&bit=YYYY-AA-GG` alır; eski `?gun=` tek gün için çalışmaya
+devam eder. Aralık ters verilirse düzeltilir. Gün hesabı UTC üzerinden yapılır -
+yaz saati geçişlerinde bir günün atlanmaması ya da iki kez sayılmaması için.
+
 ## Yetkiler
 
 **Yönetici**, hesap listesinin ilk kaydıdır - masaüstü sürümünün de kullandığı
@@ -291,5 +311,7 @@ Not: otomatik yoklama, rol botu komutları, ticket mesajı ve logo ayarları
 | `GET/POST /api/rol-komutlari` | Rol botu komut ID'leri, adları ve bot ID'si |
 | `GET /api/surum` | Çalışan commit, dal, rol botu/komut ayarları (girişsiz) |
 | `GET /api/loglar[?grup=tx\|mute\|felox]`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs + Mute Logları + Felox |
+| `GET /api/aktiflik[?bas=&bit=]` | Aktiflik - seste geçirilen süre |
+| `GET /api/etkinlik/:key/gunluk[?bas=&bit=]` | Etkinlik - kişi başına mesaj sayısı |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
 | `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi |

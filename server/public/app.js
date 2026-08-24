@@ -2062,10 +2062,20 @@ async function initActivityTab() {
 // --- ETKİNLİK: GÜNLÜK GÖRÜNÜM + CANLI SAYAÇ ---
 // ============================================================================
 const actDayControls = document.getElementById('actDayControls');
+const actPresetRow = document.getElementById('actPresetRow');
 const actDayInput = document.getElementById('actDay');
+const actDayBitInput = document.getElementById('actDayBit');
+const actPresets = document.getElementById('actPresets');
+const actRangeInfo = document.getElementById('actRangeInfo');
 let actMode = 'toplam';   // 'toplam' | 'gunluk'
-let actDay = null;        // YYYY-MM-DD
+let actDay = null;        // aralik baslangici (YYYY-MM-DD)
+let actDayBit = null;     // aralik bitisi
 let actToday = null;
+
+function bugunIso() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function gunKaydir(gun, adim) {
     const [y, a, g] = gun.split('-').map(Number);
@@ -2074,26 +2084,87 @@ function gunKaydir(gun, adim) {
     return d.toISOString().slice(0, 10);
 }
 
+// İki gün arası kaç gün (her iki uç dahil).
+function gunFarki(bas, bit) {
+    const ms = (g) => { const [y, a, d] = g.split('-').map(Number); return Date.UTC(y, a - 1, d); };
+    return Math.round((ms(bit) - ms(bas)) / 86400000) + 1;
+}
+
+// "Cumadan cumaya" dönem: Cuma günü başlayan 7 günlük dilim (Cuma..Perşembe).
+// Örnek: ayın 15'i Cuma ise dönem 15-21. offset=-1 bir önceki dönem.
+function cumaDonemi(bugun, offset = 0) {
+    const [y, a, g] = bugun.split('-').map(Number);
+    const d = new Date(Date.UTC(y, a - 1, g));
+    // getUTCDay: 0=Paz, 5=Cuma. Bugünden geriye en yakın Cuma'ya kaç gün var?
+    const geri = (d.getUTCDay() - 5 + 7) % 7;
+    const bas = gunKaydir(bugun, -geri + offset * 7);
+    return { bas, bit: gunKaydir(bas, 6) };
+}
+
+// Hazır dönem düğmelerinin karşılığı.
+function hazirAralik(ad, bugun) {
+    switch (ad) {
+        case 'bugun': return { bas: bugun, bit: bugun };
+        case 'son7': return { bas: gunKaydir(bugun, -6), bit: bugun };
+        case 'son30': return { bas: gunKaydir(bugun, -29), bit: bugun };
+        case 'hafta': return cumaDonemi(bugun, 0);
+        case 'oncekiHafta': return cumaDonemi(bugun, -1);
+        default: return { bas: bugun, bit: bugun };
+    }
+}
+
+// Seçili aralığı okunur biçimde yazar.
+function aralikMetni(bas, bit, bugun) {
+    if (bas === bit) return bas === bugun ? 'Bugün' : bas;
+    return `${bas} → ${bit} (${gunFarki(bas, bit)} gün)`;
+}
+
+// Hangi hazır düğme seçili aralığa denk geliyorsa onu işaretler.
+function presetIsaretle(kap, bas, bit, bugun) {
+    kap.querySelectorAll('[data-preset]').forEach((btn) => {
+        const a = hazirAralik(btn.dataset.preset, bugun);
+        btn.classList.toggle('active', a.bas === bas && a.bit === bit);
+    });
+}
+
 document.querySelectorAll('[data-actmode]').forEach((btn) => {
     btn.addEventListener('click', () => {
         actMode = btn.dataset.actmode;
         document.querySelectorAll('[data-actmode]').forEach((b) => b.classList.toggle('active', b === btn));
         actDayControls.style.display = actMode === 'gunluk' ? 'flex' : 'none';
+        actPresetRow.style.display = actMode === 'gunluk' ? 'flex' : 'none';
         actMemberId = null;
         loadActivityReport();
     });
 });
-document.getElementById('actDayPrev').addEventListener('click', () => {
-    if (!actDay) return; actDay = gunKaydir(actDay, -1); actDayInput.value = actDay; loadActivityReport();
+// ← / → aralığın UZUNLUĞU kadar kaydırıyor: 7 günlük dönemdeyken bir önceki
+// 7 güne gidiyor, tek gündeyken bir önceki güne. Tek gün adımı atsaydı
+// haftalık dönemler örtüşürdü.
+function actAralikKaydir(yon) {
+    if (!actDay || !actDayBit) return;
+    const uzunluk = gunFarki(actDay, actDayBit);
+    actDay = gunKaydir(actDay, yon * uzunluk);
+    actDayBit = gunKaydir(actDayBit, yon * uzunluk);
+    loadActivityReport();
+}
+document.getElementById('actDayPrev').addEventListener('click', () => actAralikKaydir(-1));
+document.getElementById('actDayNext').addEventListener('click', () => actAralikKaydir(1));
+
+actPresets.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('[data-preset]');
+    if (!btn) return;
+    const a = hazirAralik(btn.dataset.preset, actToday || bugunIso());
+    actDay = a.bas; actDayBit = a.bit;
+    loadActivityReport();
 });
-document.getElementById('actDayNext').addEventListener('click', () => {
-    if (!actDay) return; actDay = gunKaydir(actDay, 1); actDayInput.value = actDay; loadActivityReport();
-});
-document.getElementById('actDayToday').addEventListener('click', () => {
-    actDay = actToday; actDayInput.value = actDay; loadActivityReport();
-});
-actDayInput.addEventListener('change', () => {
-    if (!actDayInput.value) return; actDay = actDayInput.value; loadActivityReport();
+
+[actDayInput, actDayBitInput].forEach((girdi) => {
+    girdi.addEventListener('change', () => {
+        if (!actDayInput.value || !actDayBitInput.value) return;
+        actDay = actDayInput.value;
+        actDayBit = actDayBitInput.value;
+        loadActivityReport();
+    });
 });
 
 // Günlük moddaki raporu çeker. Tüm zamanlar modu mevcut loadActivityReport'u
@@ -2102,16 +2173,24 @@ async function loadDailyReport() {
     if (!actChannelKey) return;
     activityList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
     try {
-        const params = actDay ? `?gun=${encodeURIComponent(actDay)}` : '';
+        const params = actDay
+            ? `?bas=${encodeURIComponent(actDay)}&bit=${encodeURIComponent(actDayBit || actDay)}`
+            : '';
         const res = await fetch(`/api/etkinlik/${actChannelKey}/gunluk${params}`);
         if (res.status === 401) { showLogin(); return; }
         const data = await okuJson(res);
         if (!data.ok) { activityStatus.textContent = `Hata: ${data.error}`; return; }
 
         actToday = data.today;
-        actDay = data.day;
+        actDay = data.bas;
+        actDayBit = data.bit;
         actDayInput.value = actDay;
+        actDayBitInput.value = actDayBit;
         actDayInput.max = actToday;
+        // Bitise ust sinir koymuyoruz: suren donem (or. Cuma-Persembe) bugunden
+        // sonra bitiyor ve max=bugun degeri kendi sinirinin disinda birakirdi.
+        actRangeInfo.textContent = aralikMetni(actDay, actDayBit, actToday);
+        presetIsaretle(actPresets, actDay, actDayBit, actToday);
         actReport = data;
 
         if (!data.configured) {
@@ -2126,7 +2205,7 @@ async function loadDailyReport() {
         document.getElementById('actSilent').textContent = data.members.length - yazan;
         activityKpis.style.display = 'flex';
 
-        const gunAdi = actDay === actToday ? 'Bugün' : actDay;
+        const gunAdi = aralikMetni(actDay, actDayBit, actToday);
         activityStatus.textContent = `${gunAdi}: ${data.dayTotal} kayıt`
             + (data.otherTotal ? ` (${data.otherTotal} yetkili dışı)` : '')
             + (data.unmatched ? ` · ${data.unmatched} mesajda kişi bulunamadı` : '');
@@ -2152,7 +2231,7 @@ async function loadDailyReport() {
             if (atla) {
                 atla.addEventListener('click', () => {
                     actDay = sonGun.day;
-                    actDayInput.value = actDay;
+                    actDayBit = sonGun.day;
                     loadActivityReport();
                 });
             }
@@ -2319,9 +2398,13 @@ const presenceList = document.getElementById('presenceList');
 const presenceSearch = document.getElementById('presenceSearch');
 const presenceStatus = document.getElementById('presenceStatus');
 const presDayInput = document.getElementById('presDay');
+const presDayBitInput = document.getElementById('presDayBit');
+const presPresets = document.getElementById('presPresets');
+const presRangeInfo = document.getElementById('presRangeInfo');
 
 let presReport = null;
-let presDay = null;
+let presDay = null;      // aralik baslangici
+let presDayBit = null;   // aralik bitisi
 let presToday = null;
 let presTimer = null;
 let presSearchTimer = null;
@@ -2333,13 +2416,6 @@ function sureBicimle(saniye) {
     const saat = Math.floor(dakika / 60);
     if (saat === 0) return `${dakika} dk`;
     return `${saat} sa ${dakika % 60} dk`;
-}
-
-function presGunKaydir(gun, adim) {
-    const [y, a, g] = gun.split('-').map(Number);
-    const d = new Date(Date.UTC(y, a - 1, g));
-    d.setUTCDate(d.getUTCDate() + adim);
-    return d.toISOString().slice(0, 10);
 }
 
 function renderPresence() {
@@ -2382,23 +2458,30 @@ function renderPresence() {
 
 async function loadPresence(vurgula) {
     try {
-        const params = presDay ? `?gun=${encodeURIComponent(presDay)}` : '';
+        const params = presDay
+            ? `?bas=${encodeURIComponent(presDay)}&bit=${encodeURIComponent(presDayBit || presDay)}`
+            : '';
         const res = await fetch(`/api/aktiflik${params}`);
         if (res.status === 401) { showLogin(); return; }
         const d = await okuJson(res);
         if (!d.ok) { presenceStatus.textContent = `Hata: ${d.error}`; return; }
         presReport = d;
         presToday = d.today;
-        presDay = d.day;
+        presDay = d.bas;
+        presDayBit = d.bit;
         presDayInput.value = presDay;
+        presDayBitInput.value = presDayBit;
         presDayInput.max = presToday;
+        // Bkz. Etkinlik: suren donem bugunden ileri bitebiliyor.
+        presRangeInfo.textContent = aralikMetni(presDay, presDayBit, presToday);
+        presetIsaretle(presPresets, presDay, presDayBit, presToday);
 
         const hicGirmeyen = d.members.filter((m) => m.seconds === 0).length;
         document.getElementById('presInVoice').textContent = d.inVoiceCount;
         document.getElementById('presTotalTime').textContent = sureBicimle(d.totalSeconds);
         document.getElementById('presZero').textContent = hicGirmeyen;
 
-        const gunAdi = presDay === presToday ? 'Bugün' : presDay;
+        const gunAdi = aralikMetni(presDay, presDayBit, presToday);
         // Veri ne zamandan beri toplanıyor - geçmiş yok, bu özellik
         // açıldığından beri birikiyor.
         presenceStatus.textContent = `${gunAdi} · ${d.members.length} yetkili`
@@ -2431,17 +2514,32 @@ presenceSearch.addEventListener('input', () => {
     presSearchTimer = setTimeout(renderPresence, 200);
 });
 document.getElementById('presenceRefreshBtn').addEventListener('click', () => loadPresence());
-document.getElementById('presDayPrev').addEventListener('click', () => {
-    if (!presDay) return; presDay = presGunKaydir(presDay, -1); loadPresence();
+// ← / → aralik uzunlugu kadar kaydiriyor - haftalik donemlerde ortusme olmasin.
+function presAralikKaydir(yon) {
+    if (!presDay || !presDayBit) return;
+    const uzunluk = gunFarki(presDay, presDayBit);
+    presDay = gunKaydir(presDay, yon * uzunluk);
+    presDayBit = gunKaydir(presDayBit, yon * uzunluk);
+    loadPresence();
+}
+document.getElementById('presDayPrev').addEventListener('click', () => presAralikKaydir(-1));
+document.getElementById('presDayNext').addEventListener('click', () => presAralikKaydir(1));
+
+presPresets.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('[data-preset]');
+    if (!btn) return;
+    const a = hazirAralik(btn.dataset.preset, presToday || bugunIso());
+    presDay = a.bas; presDayBit = a.bit;
+    loadPresence();
 });
-document.getElementById('presDayNext').addEventListener('click', () => {
-    if (!presDay) return; presDay = presGunKaydir(presDay, 1); loadPresence();
-});
-document.getElementById('presDayToday').addEventListener('click', () => {
-    presDay = presToday; loadPresence();
-});
-presDayInput.addEventListener('change', () => {
-    if (presDayInput.value) { presDay = presDayInput.value; loadPresence(); }
+
+[presDayInput, presDayBitInput].forEach((girdi) => {
+    girdi.addEventListener('change', () => {
+        if (!presDayInput.value || !presDayBitInput.value) return;
+        presDay = presDayInput.value;
+        presDayBit = presDayBitInput.value;
+        loadPresence();
+    });
 });
 
 // Süre sürekli artıyor - sekme açıkken düzenli tazele.

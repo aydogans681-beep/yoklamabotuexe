@@ -205,14 +205,26 @@
         <div class="tab-panel" id="tab-aktiflik">
             <div class="toolbar logs-toolbar" style="margin-bottom:12px;">
                 <span class="logs-title">Seste Geçirilen Süre</span>
-                <button class="secondary small" id="presDayPrev">←</button>
+                <button class="secondary small" id="presDayPrev" title="Önceki dönem">←</button>
                 <input type="date" class="text-search" id="presDay" style="flex:0 0 auto; min-width:0;">
-                <button class="secondary small" id="presDayNext">→</button>
-                <button class="secondary small" id="presDayToday">Bugün</button>
+                <span class="muted">→</span>
+                <input type="date" class="text-search" id="presDayBit" style="flex:0 0 auto; min-width:0;">
+                <button class="secondary small" id="presDayNext" title="Sonraki dönem">→</button>
                 <span class="live-dot" id="presenceLive">CANLI</span>
                 <span class="grow"></span>
                 <button class="secondary small" id="presenceDiagBtn" title="Sayaç şu an neyi görüyor?">Teşhis</button>
                 <button class="secondary small" id="presenceRefreshBtn">Yenile</button>
+            </div>
+
+            <div class="toolbar" style="margin-bottom:12px;">
+                <div class="filter-chips" id="presPresets">
+                    <button class="chip" data-preset="bugun">Bugün</button>
+                    <button class="chip" data-preset="son7">Son 7 gün</button>
+                    <button class="chip" data-preset="hafta">Bu hafta (Cuma–Perş.)</button>
+                    <button class="chip" data-preset="oncekiHafta">Geçen hafta</button>
+                    <button class="chip" data-preset="son30">Son 30 gün</button>
+                </div>
+                <span class="scanStatus" id="presRangeInfo"></span>
             </div>
 
             <div class="kpi-row" style="margin-bottom:12px;">
@@ -260,12 +272,24 @@
                     <button class="chip" id="actModeGunluk" data-actmode="gunluk">Günlük</button>
                 </div>
                 <div class="toolbar" id="actDayControls" style="display:none; gap:7px;">
-                    <button class="secondary small" id="actDayPrev">←</button>
+                    <button class="secondary small" id="actDayPrev" title="Önceki dönem">←</button>
                     <input type="date" class="text-search" id="actDay" style="flex:0 0 auto; min-width:0;">
-                    <button class="secondary small" id="actDayNext">→</button>
-                    <button class="secondary small" id="actDayToday">Bugün</button>
+                    <span class="muted">→</span>
+                    <input type="date" class="text-search" id="actDayBit" style="flex:0 0 auto; min-width:0;">
+                    <button class="secondary small" id="actDayNext" title="Sonraki dönem">→</button>
                     <span class="live-dot" id="actLive" title="Yeni mesajlar anlık işleniyor">CANLI</span>
                 </div>
+            </div>
+
+            <div class="toolbar" id="actPresetRow" style="margin-bottom:12px; display:none;">
+                <div class="filter-chips" id="actPresets">
+                    <button class="chip" data-preset="bugun">Bugün</button>
+                    <button class="chip" data-preset="son7">Son 7 gün</button>
+                    <button class="chip" data-preset="hafta">Bu hafta (Cuma–Perş.)</button>
+                    <button class="chip" data-preset="oncekiHafta">Geçen hafta</button>
+                    <button class="chip" data-preset="son30">Son 30 gün</button>
+                </div>
+                <span class="scanStatus" id="actRangeInfo"></span>
             </div>
 
             <div class="kpi-row" id="activityKpis" style="margin-bottom:12px; display:none;">
