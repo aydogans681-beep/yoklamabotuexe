@@ -11,6 +11,7 @@ panel-audit.json
 panel-settings.json
 voice-activity.json
 yoklama-katilim.json
+canli-sahiplenme.json
 
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.

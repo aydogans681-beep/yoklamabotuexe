@@ -406,6 +406,16 @@ const EMERGENCY_MEETING_DELAY_MS = 500;
 //   'mention' -> mesaj icindeki ILK kullanici etiketi. Ticket loglarini
 //                genelde bot atiyor ve ilgilenen yetkili mesajin icinde
 //                etiketleniyor; yazara gore saymak "Ticket Botu: 5000" verirdi.
+// --- TICKET SAHIPLENME ---
+// Ticket botu, bir yetkili ticket'i sahiplenince kanala su bicimde bir embed
+// atiyor:  "Merhaba, ben <@ID>. Size nasil yardimci olabilirim?"
+// Sahiplenen kisiyi buradan sayiyoruz - eski ticket logu kanalina bot mesaj
+// atmadigi icin oradan sayim calismiyordu.
+const TICKET_SAHIP_KATEGORI = '1470230378424832162';
+// "ben <@ID>" kalibi. Yalnizca bu kalibi kabul ediyoruz: embed'deki ilk
+// etiketi almak, metin degisirse sessizce yanlis kisiyi sayardi.
+const TICKET_SAHIP_KALIP = /\bben\s*<@!?(\d{17,20})>/i;
+
 const ACTIVITY_CHANNELS = [
     { key: 'etkinlik', label: 'Etkinlik', channelId: '1456032067325263965', personFrom: 'author' },
     // Ticket logunu bot atiyor ve embed'de IKI kisi geciyor:
@@ -421,6 +431,17 @@ const ACTIVITY_CHANNELS = [
         personFrom: 'label',
         botId: '1538263121678827570',              // yalnizca bu botun mesajlari sayilir
         personLabel: /silen|kapatan|kapat[ıi]ld[ıi]/i,
+    },
+    // Ticket SAHIPLENME sayaci. Ticket kanallari kategorinin altinda acilip
+    // kapaniyor, yani "gecmisi cekilecek" tek bir kanal yok - bu yuzden
+    // digerlerinden farkli olarak CANLI toplaniyor ve diske yaziliyor.
+    // canliKaynak: acilista gecmis cekilmiyor, kayit dosyadan okunuyor.
+    {
+        key: 'sahiplenme',
+        label: 'Ticket Sahiplenme',
+        channelId: TICKET_SAHIP_KATEGORI, // "yapilandirilmis" sayilmasi icin
+        personFrom: 'author',             // entry.authorId'yi sahiplenen olarak yaziyoruz
+        canliKaynak: true,
     },
 ];
 
@@ -1460,6 +1481,7 @@ ALL_CHANNELS.forEach((channel) => {
         label: channel.label,
         channelId: channel.channelId,
         ilkCekimSiniri: channel.ilkCekimSiniri || null,
+        canliKaynak: Boolean(channel.canliKaynak),
         status: channel.channelId ? 'bekliyor' : 'yapilandirilmamis',
         messages: [],
         loaded: 0,
@@ -1927,12 +1949,119 @@ async function fetchAllChannelMessages(key, { tamCekim = false } = {}) {
     return store;
 }
 
+// ============================================================================
+// --- TICKET SAHIPLENME SAYACI ---
+// Ticket kanallari kategorinin altinda acilip siliniyor; silinen kanalin
+// gecmisi cekilemez. Bu yuzden sahiplenme mesajlari CANLI yakalanip diske
+// yaziliyor, acilista oradan geri yukleniyor.
+//
+// Kayitlar log makinesinin anladigi bicimde (serializeLogMessage ciktisi gibi)
+// tutuluyor: boylece gunluk indeks, tarih araligi, kisi basina liste ve
+// Etkinlik sekmesi hicbir degisiklik olmadan calisiyor.
+// ============================================================================
+function canliKaynakYolu(key) {
+    return path.join(ROOT_DIR, `canli-${key}.json`);
+}
+
+function canliKaynagiYukle(key) {
+    const store = logStore.get(key);
+    if (!store) return;
+    let kayitlar = [];
+    try {
+        const ham = JSON.parse(fs.readFileSync(canliKaynakYolu(key), 'utf8'));
+        if (Array.isArray(ham)) kayitlar = ham;
+    } catch (error) {
+        kayitlar = []; // ilk calisma ya da bozuk dosya - bostan basliyoruz
+    }
+    kayitlar.forEach((entry) => { entry._s = logSearchText(entry); });
+    store.messages = kayitlar;
+    store.loaded = kayitlar.length;
+    store.fetchedAt = Date.now();
+    buildDailyIndex(store);
+    store.status = 'hazir';
+    broadcastLogStatus(store);
+    console.log(`[Sahiplenme] ${kayitlar.length} kayit diskten yuklendi.`);
+}
+
+function canliKaynagiYaz(key) {
+    const store = logStore.get(key);
+    if (!store) return;
+    try {
+        const gecici = `${canliKaynakYolu(key)}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(store.messages.map(stripInternal)));
+        fs.renameSync(gecici, canliKaynakYolu(key));
+    } catch (error) {
+        console.log(`[Sahiplenme] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+// Eslesmeyen mesajlar: bot metni degistirirse sessizce sayim durmasin diye
+// son birkacini teshis icin tutuyoruz.
+const sahiplenmeEslesmeyen = [];
+
+function sahiplenmeYakala(message) {
+    const store = logStore.get('sahiplenme');
+    if (!store) return;
+
+    // Ayni mesaj iki kez sayilmasin
+    if (store.messages.some((m) => m.id === message.id)) return;
+
+    const embed = (message.embeds && message.embeds[0]) || null;
+    const metinler = [
+        embed ? (embed.description || '') : '',
+        embed ? (embed.title || '') : '',
+        message.content || '',
+    ];
+    let sahip = null;
+    for (const metin of metinler) {
+        const m = TICKET_SAHIP_KALIP.exec(metin || '');
+        if (m) { sahip = m[1]; break; }
+    }
+
+    if (!sahip) {
+        sahiplenmeEslesmeyen.unshift({
+            at: Date.now(),
+            channelName: message.channel ? message.channel.name : null,
+            authorId: message.author ? message.author.id : null,
+            baslik: embed ? embed.title : null,
+            metin: (metinler.find(Boolean) || '').slice(0, 200),
+        });
+        sahiplenmeEslesmeyen.length = Math.min(sahiplenmeEslesmeyen.length, 10);
+        return;
+    }
+
+    const entry = serializeLogMessage(message);
+    // personFrom 'author' oldugu icin sayim authorId uzerinden yapiliyor;
+    // yazan bot degil SAHIPLENEN kisi sayilsin diye burayi degistiriyoruz.
+    entry.authorId = sahip;
+    entry.ticketKanali = message.channel ? message.channel.name : null;
+    entry._s = logSearchText(entry);
+
+    store.messages.unshift(entry);
+    store.loaded = store.messages.length;
+    const artis = addToDailyIndex(store, entry);
+    canliKaynagiYaz('sahiplenme');
+
+    console.log(`[Sahiplenme] ${entry.ticketKanali || 'ticket'} -> ${sahip} `
+        + `(bugun ${artis ? artis.adet : '?'})`);
+    wsBroadcast({ type: 'log-yeni', key: 'sahiplenme', entry: stripInternal(entry), loaded: store.loaded });
+    if (artis) {
+        wsBroadcast({
+            type: 'etkinlik-artis',
+            key: 'sahiplenme', gun: artis.gun, memberId: artis.kisi, count: artis.adet,
+        });
+    }
+}
+
 let logPrimingStarted = false;
 async function primeAllLogs() {
     if (logPrimingStarted) return;
     logPrimingStarted = true;
     const basladi = Date.now();
-    const sira = ALL_CHANNELS.filter((c) => c.channelId);
+    // Canli kaynaklar (ticket sahiplenme) cekilmiyor - kayitlari diskten
+    // geliyor ve messageCreate ile buyuyor.
+    ALL_CHANNELS.filter((c) => c.canliKaynak).forEach((c) => canliKaynagiYukle(c.key));
+    const sira = ALL_CHANNELS.filter((c) => c.channelId && !c.canliKaynak);
     console.log(`[Loglar] ${sira.length} kanal arka planda cekiliyor `
         + `(${LOG_CONCURRENCY} paralel, once etkinlik/ticket)...`);
 
@@ -1964,6 +2093,15 @@ async function primeAllLogs() {
 // Ilk yukleme bittikten sonra yeni gelen log mesajlarini canli olarak ekliyoruz -
 // boylece sekme acikken kanal yeniden cekilmeden guncel kaliyor.
 client.on('messageCreate', (message) => {
+    // Ticket sahiplenme: kanal ID'si sabit degil, KATEGORIYE bakiyoruz.
+    try {
+        if (message.channel && message.channel.parentId === TICKET_SAHIP_KATEGORI) {
+            sahiplenmeYakala(message);
+        }
+    } catch (error) {
+        console.log(`[Sahiplenme] Yakalama hatasi: ${error.message}`);
+    }
+
     const key = logChannelIdToKey.get(message.channelId);
     if (!key) return;
     const store = logStore.get(key);
@@ -4161,6 +4299,26 @@ app.post('/api/oto-yoklama/simdi', requireIzin('ayarlar'), async (req, res) => {
     } catch (error) {
         res.json({ ok: false, error: error.message });
     }
+});
+
+// Sahiplenme teshisi: sayim durduysa bot metni mi degisti, kategori mi yanlis?
+app.get('/api/sahiplenme/tani', requireIzin('etkinlik'), (req, res) => {
+    const store = logStore.get('sahiplenme');
+    const bugun = store && store.dailyIndex ? (store.dailyIndex.get(bugununAnahtari()) || new Map()) : new Map();
+    res.json({
+        ok: true,
+        kategori: TICKET_SAHIP_KATEGORI,
+        kalip: String(TICKET_SAHIP_KALIP),
+        toplamKayit: store ? store.messages.length : 0,
+        bugun: [...bugun.entries()].map(([id, v]) => ({ id, adet: v.c })),
+        sonKayitlar: store
+            ? store.messages.slice(0, 5).map((m) => ({
+                at: m.createdTimestamp, kisi: m.authorId, kanal: m.ticketKanali || null,
+            }))
+            : [],
+        // Kategoride mesaj gorulup de kalip tutmazsa buraya dusuyor.
+        eslesmeyenler: sahiplenmeEslesmeyen,
+    });
 });
 
 // --- PRIME SAAT HATIRLATMASI ---

@@ -46,6 +46,7 @@ panel-settings.json   Panel ayarları: otomatik yoklama, rol botu, ticket mesaj�
 panel-audit.json      Hesap Logları (kim ne yaptı)
 voice-activity.json   Aktiflik sekmesi - günlük ses süreleri
 yoklama-katilim.json  "Yoklamaya Katıl" kayıtları (gün gün)
+canli-sahiplenme.json Ticket sahiplenme kayıtları (canlı toplanır)
 log-cache/            Log geçmişi önbelleği (silinebilir, yeniden üretilir)
 server/
   server.js           Backend: Discord istemcisi + HTTP/WebSocket API
@@ -206,6 +207,33 @@ belirtilir.
 Her kaydın `group` alanı hangi sekmede görüneceğini belirler (`tx` ya da
 `mute`); yeni bir grup eklemek için `LOG_GROUPS`'a bir satır ve arayüzde bir
 sekme yeter - çekme, saklama, arama ve canlı güncelleme kodu ortak.
+
+### Ticket Sahiplenme (Etkinlik sekmesinde)
+
+Ticket botu, bir yetkili ticket'ı sahiplenince kanala şu embed'i atıyor:
+
+```
+Ticket Sistemi - Destek
+Merhaba, ben @Yetkili. Size nasıl yardımcı olabilirim? 👋
+```
+
+Bu mesajlar **canlı** yakalanıp `canli-sahiplenme.json`'a yazılıyor; ticket
+kanalları kategorinin (`1470230378424832162`) altında açılıp silindiği için
+geçmişi sonradan çekilebilecek tek bir kanal yok. Açılışta kayıtlar diskten
+geri yükleniyor, sonrası canlı büyüyor.
+
+Yalnızca `ben <@ID>` kalıbı kabul edilir. Embed'deki ilk etiketi almak, bot
+metni değişirse sessizce yanlış kişiyi sayardı. Kalıba uymayan mesajlar
+sayılmaz ama `GET /api/sahiplenme/tani` ile son 10 tanesi görülebilir - sayım
+durursa metin mi değişti, kategori mi yanlış, oradan anlaşılır. Aynı mesaj ID'si
+iki kez sayılmaz.
+
+Kayıtlar log makinesinin anladığı biçimde tutulduğu için günlük indeks, tarih
+aralığı ve kişi başına liste hiçbir ek kod olmadan çalışır.
+
+> Not: eski **Ticket** menüsü ticket log kanalını okur ve "ticket'ı silen kişi"yi
+> sayar. Bot o kanala mesaj atmadığı için orada sayım oluşmuyordu; Ticket
+> Sahiplenme onun yerine geçer.
 
 ### Mute Logları ve Felox
 
@@ -419,5 +447,6 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `GET /api/loglar[?grup=tx\|mute\|felox]`, `/api/loglar/:key`, `POST /api/loglar/:key/yenile` | TX Logs + Mute Logları + Felox |
 | `GET /api/aktiflik[?bas=&bit=]` | Aktiflik - seste geçirilen süre |
 | `GET /api/etkinlik/:key/gunluk[?bas=&bit=]` | Etkinlik - kişi başına mesaj sayısı |
+| `GET /api/sahiplenme/tani` | Ticket sahiplenme teşhisi (eşleşmeyen mesajlar) |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
 | `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi |
