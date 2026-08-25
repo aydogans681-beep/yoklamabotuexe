@@ -83,6 +83,13 @@ Discord girişi olmaz ve bütün log kanalları `bekliyor` durumunda kalır.
 | Token'ın süresi dolmuştur | Ancak bot yeniden başlatılınca anlaşılır |
 | Dosya düzeltilir ama bot yeniden başlatılmaz | `config.env` yalnızca açılışta okunur |
 
+Token'ı yapıştırmak da ayrı bir dert: Windows konsolunda `Ctrl+V` genelde
+çalışmaz (yapıştırma **sağ tık**tır) ve gizli girişte ekranda hiçbir şey
+görünmediği için yapıştırma olmamış gibi hissettirir. Bu yüzden betik önce
+**panoya** bakar - token'ı kopyalayıp `.\token.ps1` demen yeterli, konsola
+hiçbir şey yapıştırmazsın. Panodakini maskeli gösterip onay ister. Doğrudan
+vermek istersen `.\token.ps1 -Token "OTMy..."` da çalışır.
+
 Betik beşini de kapatır: kendi klasörünü kendisi bulur, girdiyi temizler
 (tırnak, boşluk, görünmez karakterler), ilk parçayı çözüp hesap ID'sine denk
 geliyor mu bakar, **diske yazmadan önce** token'ı Discord'a sorar, dosyayı

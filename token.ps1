@@ -2,7 +2,13 @@
 # token.ps1 - Discord token'ini config.env'e guvenli sekilde yazar.
 #
 # Kullanim (PowerShell, bu klasorun icinde):
-#     .\token.ps1
+#     .\token.ps1                     token'i PANODAN okur (en kolayi)
+#     .\token.ps1 -Token "OTMy..."    token'i dogrudan verir
+#
+# Panodan okuma varsayilan yol: Windows konsoluna yapistirmak Ctrl+V ile
+# genelde calismiyor (sag tik gerekiyor) ve gizli giriste ekranda hicbir sey
+# gorunmedigi icin yapistirma olmamis gibi hissettiriyor. Token'i kopyalayip
+# betigi calistirmak yeterli - konsola hicbir sey yapistirmiyorsun.
 #
 # Neden gerekiyor: token'i Not Defteri ile elle girmek bes ayri yerde SESSIZCE
 # yanlis gidebiliyor ve besi de ayni sonucu veriyor - bot acilir, panel calisir,
@@ -27,11 +33,52 @@
 # config.env'deki diger satirlar (WEB_PORT vb.) oldugu gibi korunuyor.
 # ============================================================================
 
+param(
+    # Token'i dogrudan komut satirindan vermek icin:  .\token.ps1 -Token "OTMy..."
+    #
+    # DIKKAT: parametrenin adi $Token OLAMAZ. PowerShell'de degisken adlari
+    # buyuk/kucuk harf duyarsizdir, yani $Token ile asagida kullanilan $token
+    # AYNI degiskendir - "$token = ..." satiri parametreyi daha okunmadan
+    # silerdi. Bu yuzden degisken $VerilenToken, kullanicinin yazdigi -Token
+    # ise ona takma ad.
+    [Alias('Token')]
+    [string]$VerilenToken
+)
+
 $ErrorActionPreference = "Stop"
 $kok = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dosya = Join-Path $kok "config.env"
 
 function Yaz($m, $r = "Gray") { Write-Host $m -ForegroundColor $r }
+
+# Gorunmez karakterleri at: kontrol karakterleri, BOM (U+FEFF) ve sifir
+# genislikli bosluklar (U+200B..U+200D). Kopyala-yapistir bunlari sik sik
+# beraberinde getiriyor ve ekranda hicbir iz birakmadan token'i bozuyorlar.
+function Temizle($m) {
+    if ($null -eq $m) { return "" }
+    $t = [string]$m -replace '[\u0000-\u001F\u007F\uFEFF\u200B-\u200D]', ''
+    return $t.Trim().Trim('"').Trim("'").Trim()
+}
+
+# Panoya token'la birlikte baska seyler de kopyalanmis olabilir ("1. OTMy..."
+# gibi bir liste satiri). Bosluklara bolup token bicimine uyan parcayi aliyoruz.
+function TokenAyikla($m) {
+    $t = Temizle $m
+    if ($t.Split('.').Count -eq 3) { return $t }
+    foreach ($parca in ($t -split '\s+')) {
+        $p = Temizle $parca
+        if ($p.Split('.').Count -eq 3 -and $p.Length -ge 50) { return $p }
+    }
+    return $t
+}
+
+# Onizleme icin: ilk iki parca gizli degil (hesap ID'si ve zaman damgasi),
+# gizli olan ucuncu parca. Gateway logu da tam olarak boyle yaziyor.
+function Maskele($t) {
+    $p = $t.Split('.')
+    if ($p.Count -ne 3) { return "(bicim taninmadi)" }
+    return "$($p[0]).$($p[1])." + ('*' * $p[2].Length)
+}
 
 Yaz ""
 Yaz "=== Discord token ayari ===" "Cyan"
@@ -50,15 +97,41 @@ Yaz "Hedef dosya: $dosya" "DarkGray"
 Yaz ""
 
 # --- 2) Token'i al ---
-Yaz "Token'i yapistirip Enter'a bas (yazdigin ekranda GORUNMEZ):" "Yellow"
-$sec = Read-Host -AsSecureString
-$token = (New-Object System.Net.NetworkCredential('', $sec)).Password
+# Uc yol var. Pano ONCE deneniyor cunku Windows konsoluna yapistirmak basli
+# basina bir sorun: Ctrl+V cogu konsolda calismaz (yapistirma SAG TIK'tir) ve
+# -AsSecureString hicbir sey gostermedigi icin yapistirma olmamis gibi gelir.
+# Panodan okuyunca konsola hicbir sey yapistirmak gerekmiyor.
+$token = ""
 
-# Gorunmez karakterleri at: kontrol karakterleri, BOM (U+FEFF) ve
-# sifir genislikli bosluklar (U+200B..U+200D). Kopyala-yapistir bunlari
-# beraberinde getiriyor ve ekranda hicbir iz birakmadan token'i bozuyorlar.
-$token = $token -replace '[\u0000-\u001F\u007F\uFEFF\u200B-\u200D]', ''
-$token = $token.Trim().Trim('"').Trim("'").Trim()
+if ($VerilenToken) {
+    $token = TokenAyikla $VerilenToken
+    Yaz "Token parametreden alindi." "DarkGray"
+} else {
+    $pano = ""
+    try {
+        $pano = TokenAyikla (Get-Clipboard -Raw -ErrorAction SilentlyContinue)
+    } catch {
+        $pano = ""   # Get-Clipboard yoksa ya da pano bossa elle girise dusuyoruz
+    }
+
+    if ($pano -and $pano.Split('.').Count -eq 3) {
+        Yaz "Panoda bir token bulundu:" "Green"
+        Yaz "  $(Maskele $pano)" "Gray"
+        Yaz ""
+        $panoCevap = Read-Host "Bunu kullanayim mi? (E/h)"
+        if ($panoCevap -eq '' -or $panoCevap -match '^[eEyY]') { $token = $pano }
+    } else {
+        Yaz "Panoda token bulunamadi." "DarkGray"
+    }
+
+    if (-not $token) {
+        Yaz ""
+        Yaz "Token'i yapistirip Enter'a bas (yazdigin ekranda GORUNMEZ):" "Yellow"
+        Yaz "Yapistirma SAG TIK ile yapilir - Ctrl+V cogu konsolda calismaz." "DarkGray"
+        $sec = Read-Host -AsSecureString
+        $token = TokenAyikla (New-Object System.Net.NetworkCredential('', $sec)).Password
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($token)) {
     Yaz ""
