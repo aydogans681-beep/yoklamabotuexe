@@ -3,6 +3,9 @@ node_modules/
 
 # GİZLİ: Discord kullanıcı token'ı burada - asla commit edilmez
 config.env
+# token.ps1'in aldığı yedek - ESKİ token'ı içerir. "config.env" kalıbı bu adı
+# kapsamıyor, ayrıca yazılmazsa bir "git add -A" token'ı depoya sokardı.
+config.env.yedek
 
 # Panel hesapları (scrypt hash içerir) ve uyarı geçmişi - sunucuda oluşur
 panel-auth.json

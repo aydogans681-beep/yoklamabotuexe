@@ -22,6 +22,9 @@ USER_TOKEN="discord-kullanici-token"
 WEB_PORT=3000          # istege bagli, varsayilan 3000
 ```
 
+Windows'ta bunu elle yapmak yerine `.\token.ps1` kullan - token'ı yazmadan
+önce Discord'a sorup geçerli mi diye doğrular (aşağıya bak).
+
 Çalıştır:
 
 ```bash
@@ -40,6 +43,7 @@ token ve şifre hash'leri asla depoya girmez. Sunucuda elle oluşturulur.
 
 ```
 config.env            GİZLİ - Discord token'ı (depoda yok)
+config.env.yedek      GİZLİ - token.ps1'in aldığı önceki hal (depoda yok)
 panel-auth.json       GİZLİ - panel hesapları (depoda yok)
 warning-history.json  Uyarı geçmişi (depoda yok, masaüstü sürümüyle paylaşılır)
 panel-settings.json   Panel ayarları: otomatik yoklama, rol botu, ticket mesajı
@@ -60,9 +64,34 @@ sürümü aynı dosyaları okur.
 ## Sorun giderme
 
 ```powershell
+.\token.ps1     # Discord token'ini dogrulayip config.env'e yazar
 .\temizle.ps1   # bot tek kopya mi? hayaletleri temizler ve yeniden baslatir
 .\tani.ps1      # ne calisiyor, hangi kanallar okundu
 ```
+
+### token.ps1
+
+Token'ı Not Defteri ile elle girmek beş ayrı yerde **sessizce** yanlış
+gidebiliyor ve beşi de aynı sonucu veriyor: bot açılır, panel çalışır, ama
+Discord girişi olmaz ve bütün log kanalları `bekliyor` durumunda kalır.
+
+| Tuzak | Ne olur |
+|---|---|
+| `notepad config.env` komutu `server\` içinden çalıştırılır | Boş dosya açılır; gerçek dosya depo **kökündedir** |
+| Yapıştırırken başa/sona karakter kaçar | Gateway `4004 TOKEN_INVALID` döner |
+| Not Defteri UTF-8 **BOM** yazar | Dosyanın ilk anahtarı görünmez bir karakterle başlar, dotenv okuyamaz |
+| Token'ın süresi dolmuştur | Ancak bot yeniden başlatılınca anlaşılır |
+| Dosya düzeltilir ama bot yeniden başlatılmaz | `config.env` yalnızca açılışta okunur |
+
+Betik beşini de kapatır: kendi klasörünü kendisi bulur, girdiyi temizler
+(tırnak, boşluk, görünmez karakterler), ilk parçayı çözüp hesap ID'sine denk
+geliyor mu bakar, **diske yazmadan önce** token'ı Discord'a sorar, dosyayı
+BOM'suz yazar ve sonunda `temizle.ps1` ile botu yeniden başlatır.
+
+Discord token'ı kabul etmezse **hiçbir şey yazılmaz** - bozuk bir token dosyaya
+girip sorunu yeniden başlatmaya kadar saklamaz. `config.env`'deki diğer
+satırlar (`WEB_PORT` vb.) korunur, önceki hal `config.env.yedek`'e alınır.
+Token ekrana yazılmaz; yalnızca uzunluğu, parça boyları ve hesap adı görünür.
 
 ### temizle.ps1
 
