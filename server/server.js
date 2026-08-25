@@ -4132,9 +4132,17 @@ const PRIME_VARSAYILAN_KANAL = '1470230475485479097';
 const PRIME_VARSAYILAN_SAATLER = ['20:00', '21:00', '22:00'];
 const PRIME_VARSAYILAN_MESAJ = 'Aktif görünüyorsun ama seste değilsin. '
     + 'Prime saatlerdeyiz, sese geçebilir misin?';
-// DM'ler arasi bekleme: selfbot ile arka arkaya DM atmak hesabin
-// isaretlenmesine yol acabiliyor.
-const PRIME_DM_ARALIK_MS = 1500;
+// DM'ler arasi bekleme. Selfbot ile arka arkaya DM atmak hesabin
+// isaretlenmesine yol aciyor: 1.5 saniyelik eski aralik Discord'un spam
+// esigini tetikliyordu ve hesap ihlal aldikca oturum kapatiliyor, yani her
+// seferinde TOKEN de sifirlaniyordu. 10 saniye o esigin belirgin sekilde
+// altinda kaliyor.
+//
+// Bedeli: tavan dolu oldugunda tek bir prime turu
+// 39 x 10 sn = ~6.5 dakika suruyor. Duyuru kanalina yazilan toplu etiket
+// mesaji ANINDA gittigi icin kimse hatirlatmayi gec gormuyor - DM yalnizca
+// ikinci bir dokunus.
+const PRIME_DM_ARALIK_MS = 10000;
 const PRIME_DM_TAVANI = 40;
 
 let primeSonCalisma = null;
@@ -4214,7 +4222,12 @@ async function primeHatirlatmaCalistir(tetikleyen) {
                     // DM'i kapali olanlar burada dusuyor - normal, hata sayilmaz.
                     sonuc.dmHata += 1;
                 }
-                if (i < hedefler.length - 1) {
+                // Bekleme yalnizca ARKASINDAN baska bir DM gelecekse.
+                // Eski kosul (i < hedefler.length - 1) tavani gormezden
+                // geliyordu: 100 hedef varken 40. DM'den sonra da uyuyor,
+                // hicbir ise yaramayan bir bekleme ekliyordu.
+                const sonIndeks = Math.min(hedefler.length, PRIME_DM_TAVANI) - 1;
+                if (i < sonIndeks) {
                     // eslint-disable-next-line no-await-in-loop
                     await new Promise((r) => setTimeout(r, PRIME_DM_ARALIK_MS));
                 }

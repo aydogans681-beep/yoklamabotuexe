@@ -365,8 +365,20 @@ Başka bir kanala da işaretleme açmak için `LOG_CHANNELS`'daki satırına
   "sese geçer misin" hatırlatması gider: duyuru kanalından tek mesajla ve DM
   ile. Seste olanlara ve çevrimdışı olanlara yazılmaz. Discord presence
   bilgisi gelmemiş kişilere de **bilerek yazılmaz** - emin olmadan DM atmamak
-  için. DM'ler 1,5 sn aralıkla ve en fazla 40 kişiye gider (selfbot hesabının
-  işaretlenmemesi için); DM'i kapalı olanlar hata değil, sayılıp geçilir.
+  için. DM'ler **10 sn aralıkla** ve en fazla 40 kişiye gider; DM'i kapalı
+  olanlar hata değil, sayılıp geçilir.
+
+  > Aralık neden 10 saniye: eski 1,5 sn'lik değer Discord'un spam eşiğini
+  > tetikliyordu. Hesap ihlal aldıkça oturum kapatılıyor, oturum kapanınca
+  > **token da sıfırlanıyor** - "token yine sıfırlandı" sorununun kaynağı
+  > buydu. 10 saniye eşiğin belirgin şekilde altında kalıyor.
+  >
+  > Bedeli: tavan doluyken bir tur ~6,5 dakika sürüyor. Duyuru kanalına
+  > yazılan toplu etiket mesajı **anında** gittiği için kimse hatırlatmayı
+  > geç görmüyor; DM yalnızca ikinci bir dokunuş. Bekleme yalnızca arkasından
+  > başka bir DM gelecekse yapılıyor - son DM'den sonra boşuna beklenmiyor.
+  >
+  > Değer `server.js` içindeki `PRIME_DM_ARALIK_MS`, tavan `PRIME_DM_TAVANI`.
 - **Rol Botu Komutları** - rol verme/alma **komut ID'leri** (önerilen), ada göre
   yedek arama için komut adları, ve rol botunun ID'si. "Botun komutlarını
   listele" sunucudaki komutları ID'leriyle listeler; ID'ye tıklayınca panoya
