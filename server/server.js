@@ -2024,6 +2024,12 @@ function sahiplenmeYakala(message) {
             channelName: message.channel ? message.channel.name : null,
             authorId: message.author ? message.author.id : null,
             baslik: embed ? embed.title : null,
+            // Kategorideki HER mesaj buradan geciyor - ticket'taki siradan
+            // sohbet de "eslesmeyen" oluyor. Sayimin bozuldugunu gosteren asil
+            // isaret, EMBED'li (bot agzindan cikan) bir mesajin kaliba
+            // uymamasi. Teshis ekrani ikisini bu alanla ayiriyor; embed'in
+            // basligi olmayabilecegi icin baslik'a bakmak yeterli degil.
+            embedli: Boolean(embed),
             metin: (metinler.find(Boolean) || '').slice(0, 200),
         });
         sahiplenmeEslesmeyen.length = Math.min(sahiplenmeEslesmeyen.length, 10);

@@ -224,9 +224,33 @@ geri yükleniyor, sonrası canlı büyüyor.
 
 Yalnızca `ben <@ID>` kalıbı kabul edilir. Embed'deki ilk etiketi almak, bot
 metni değişirse sessizce yanlış kişiyi sayardı. Kalıba uymayan mesajlar
-sayılmaz ama `GET /api/sahiplenme/tani` ile son 10 tanesi görülebilir - sayım
+sayılmaz ama Etkinlik sekmesindeki **Teşhis** düğmesinden görülebilir - sayım
 durursa metin mi değişti, kategori mi yanlış, oradan anlaşılır. Aynı mesaj ID'si
 iki kez sayılmaz.
+
+#### Teşhis düğmesi
+
+Etkinlik sekmesinde **Ticket Sahiplenme** kaynağı seçiliyken çıkar (kanal
+geçmişi çekilebilen diğer kaynaklarda aynı soru zaten Biçim kontrolü'nden
+görülüyor, bu yüzden orada gizli). Panelde "kimse ticket almamış" görünüyorsa
+sebebini ayırt eder:
+
+| Ekranda | Anlamı |
+|---|---|
+| Kategoride hiç mesaj görülmedi | Kategori ID'si yanlış - ya da o kategoride hiç yazışma olmamış |
+| Mesaj var ama hiç sayım yok | Ticket botunun metni kalıba uymuyor |
+| Sayım var + embed'li mesaj kaçmış | Bot ikinci bir metin kullanıyor, o sahiplenmeler sayılmıyor |
+
+Ekran ayrıca kategori ID'sini, aranan kalıbı, toplam/bugünkü sayımı (kişi
+adlarıyla), son sayılan kayıtları ve kalıba uymayan son mesajları gösterir.
+
+> Kategorideki **her** mesaj kalıp denemesinden geçtiği için ticket'taki sıradan
+> sohbet de "kalıba uymayan" listesine düşer - bu normaldir, liste dolu diye
+> sayım bozuk değildir. Bozulmanın işareti **embed'li** (sarı) bir satırdır: bot
+> sahiplenme mesajı atmış ama kalıba uymamış demektir. Liste bellekte tutulur,
+> bot yeniden başlayınca sıfırlanır.
+
+Aynı veri `GET /api/sahiplenme/tani` ucundan da alınabilir.
 
 Kayıtlar log makinesinin anladığı biçimde tutulduğu için günlük indeks, tarih
 aralığı ve kişi başına liste hiçbir ek kod olmadan çalışır.

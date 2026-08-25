@@ -2166,12 +2166,28 @@ const activityMessages = document.getElementById('activityMessages');
 const activityPager = document.getElementById('activityPager');
 const actPageInfo = document.getElementById('actPageInfo');
 
+const activityDiagBtn = document.getElementById('activityDiagBtn');
+
 const ACT_PAGE = 50;
 let actChannelKey = null;
 let actReport = null;
 let actMemberId = null;
 let actOffset = 0;
 let actSearchTimer = null;
+
+// Teşhis ekranı olan Etkinlik kaynakları: kaynak anahtarı -> uç.
+// Yalnızca CANLI toplanan kaynakların buna ihtiyacı var. Kanal geçmişi
+// çekilebilen kaynaklarda "kim sayıldı" sorusu Biçim kontrolü'nden görülüyor;
+// sahiplenmede ise kanallar silindiği için geriye dönüp bakılacak bir şey yok,
+// sayım sessizce durursa panelde "kimse ticket almamış" gibi görünüyor.
+// Uç kaynağa özel olduğu için düğme de kaynağa özel: yeni bir canlı kaynak
+// eklenirse kendi ucuyla birlikte buraya bir satır eklenir - böylece yanlış
+// kaynağın teşhisi gösterilemez.
+const ACT_TANI_UCLARI = { sahiplenme: '/api/sahiplenme/tani' };
+
+function taniDugmesiniGuncelle() {
+    activityDiagBtn.style.display = ACT_TANI_UCLARI[actChannelKey] ? '' : 'none';
+}
 
 function renderActivityChannels(kanallar) {
     activityChannels.innerHTML = kanallar.map((c) => {
@@ -2182,9 +2198,11 @@ function renderActivityChannels(kanallar) {
         btn.addEventListener('click', () => {
             actChannelKey = btn.dataset.actch;
             actMemberId = null;
+            taniDugmesiniGuncelle();
             loadActivityReport();
         });
     });
+    taniDugmesiniGuncelle();
 }
 
 function renderActivityList() {
@@ -2610,6 +2628,136 @@ document.getElementById('activityFormatBtn').addEventListener('click', async () 
             kutu.appendChild(renderLogEntry(entry));
             activityMessages.appendChild(kutu);
         });
+    } catch (error) {
+        activityMessages.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+});
+
+// ============================================================================
+// --- TICKET SAHİPLENME TEŞHİSİ ---
+// Sahiplenme CANLI toplanıyor; ticket kanalları silindiği için geriye dönüp
+// bakılacak bir geçmiş yok. Yani sayım durursa panel bunu "kimse ticket
+// almamış" diye gösterir - veri kaybıyla bozuk kurulum aynı görünür.
+// Bu ekran ikisini ayırır:
+//   kategoride mesaj görülüyor + hiç sayım yok -> botun metni değişmiş
+//   kategoride hiç mesaj görülmedi            -> kategori ID'si yanlış
+// ============================================================================
+activityDiagBtn.addEventListener('click', async () => {
+    const uc = ACT_TANI_UCLARI[actChannelKey];
+    if (!uc) return;
+
+    activityWho.textContent = 'Sahiplenme teşhisi';
+    activityWhoInfo.textContent = '';
+    activityPager.style.display = 'none';
+    activityMessages.innerHTML = '<div class="empty-hint">Kontrol ediliyor...</div>';
+    try {
+        const res = await fetch(uc);
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) {
+            activityMessages.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(d.error)}</div>`;
+            return;
+        }
+
+        // Uç ham Discord ID'si döndürüyor. Yetkili listesi zaten yüklü olduğu
+        // için isme çevirebiliyoruz; listede olmayan (ticket açan sıradan
+        // üye, bot) için ID'nin kendisi kalıyor.
+        const isimler = new Map(((actReport && actReport.members) || []).map((m) => [m.id, m.displayName]));
+        const kisiAdi = (id) => (id ? (isimler.get(id) || id) : 'bilinmiyor');
+
+        const eslesmeyenler = d.eslesmeyenler || [];
+        const bugun = d.bugun || [];
+        const sonKayitlar = d.sonKayitlar || [];
+        // Sıradan ticket sohbeti de kalıba uymaz; "eşleşmeyen var" tek başına
+        // sorun DEĞİL. Bakılacak olan, embed'li bir mesajın uymaması.
+        const botUymayan = eslesmeyenler.filter((m) => m.embedli);
+
+        const sorunlar = [];
+        const bilgiler = [];
+        if (d.toplamKayit === 0 && eslesmeyenler.length === 0) {
+            sorunlar.push('Kategoride hiç mesaj görülmedi. Kategori ID\'si yanlış olabilir; '
+                + 'ya da bot açıldığından beri o kategoride hiç yazışma olmamıştır.');
+        } else if (d.toplamKayit === 0) {
+            sorunlar.push('Kategoride mesaj görülüyor ama hiç sahiplenme sayılmadı - '
+                + 'ticket botunun metni aranan kalıba uymuyor.');
+        } else if (botUymayan.length) {
+            bilgiler.push(`${botUymayan.length} embed'li mesaj kalıba uymadı. Bot ikinci bir metin `
+                + 'kullanıyorsa o sahiplenmeler sayılmıyor - aşağıdaki listeden bak.');
+        }
+        // Kayıt var ama uzun süredir yeni yok: sayım son zamanlarda durmuş
+        // olabilir. Sunucu sakin de olabileceği için sorun değil, bilgi.
+        const sonAt = sonKayitlar.length ? sonKayitlar[0].at : null;
+        if (sonAt && Date.now() - sonAt > 7 * 86400000) {
+            bilgiler.push(`En son sahiplenme ${Math.floor((Date.now() - sonAt) / 86400000)} gün önce sayıldı.`);
+        }
+        // Eşleşmeyen tamponu bellekte; yeniden başlatmada sıfırlanıyor.
+        if (d.toplamKayit > 0 && eslesmeyenler.length === 0) {
+            bilgiler.push('Yeniden başlatmadan bu yana kalıba uymayan mesaj görülmedi.');
+        }
+
+        const satir = (ad, deger) => `<div class="tani-satir"><span>${escapeHtml(ad)}</span><b>${escapeHtml(String(deger))}</b></div>`;
+        const bugunToplam = bugun.reduce((t, k) => t + k.adet, 0);
+
+        const bugunChips = bugun.length
+            ? bugun.slice().sort((a, b) => b.adet - a.adet)
+                .map((k) => `<span class="legend ok">${escapeHtml(kisiAdi(k.id))} · ${escapeHtml(String(k.adet))}</span>`).join('')
+            : '<span class="scanStatus">Bugün henüz sahiplenme sayılmadı.</span>';
+
+        const sonListe = sonKayitlar.length
+            ? sonKayitlar.map((k) => `<div class="tani-satir"><span>${escapeHtml(formatDate(k.at))}`
+                + `${k.kanal ? ` · ${escapeHtml(k.kanal)}` : ''}</span>`
+                + `<b>${escapeHtml(kisiAdi(k.kisi))}</b></div>`).join('')
+            : '<p class="card-desc" style="margin:0;">Henüz kayıt yok.</p>';
+
+        const uymayanListe = eslesmeyenler.length
+            ? eslesmeyenler.map((m) => {
+                const stil = 'margin:0 0 7px; padding:7px 9px; border-radius:var(--radius-s); '
+                    + `border:1px solid ${m.embedli ? 'var(--attn-line)' : 'var(--border)'};`
+                    + (m.embedli ? ' background:var(--attn-soft);' : '');
+                const metin = m.metin
+                    ? escapeHtml(m.metin)
+                    : '<span class="scanStatus">(metin yok)</span>';
+                return `<div style="${stil}">
+                    <div class="scanStatus" style="margin-bottom:3px;">
+                        ${escapeHtml(formatDate(m.at))}${m.channelName ? ` · ${escapeHtml(m.channelName)}` : ''}
+                        · yazan: ${escapeHtml(kisiAdi(m.authorId))}${m.embedli ? ' · <b>embed</b>' : ''}
+                    </div>
+                    ${m.baslik ? `<div style="margin-bottom:2px;"><b>${escapeHtml(m.baslik)}</b></div>` : ''}
+                    <div style="font-size:12px; word-break:break-word;">${metin}</div>
+                </div>`;
+            }).join('')
+            : '<p class="card-desc" style="margin:0;">Kalıba uymayan mesaj görülmedi.</p>';
+
+        activityMessages.innerHTML = `
+            <div class="card" style="margin:0 0 10px;">
+                <h2>Ticket sahiplenme teşhisi</h2>
+                <div class="${sorunlar.length ? 'legend bad' : 'legend ok'}" style="margin-bottom:12px;">
+                    ${sorunlar.length ? `⚠ ${escapeHtml(sorunlar[0])}` : '✓ Sayım çalışıyor'}
+                </div>
+                ${sorunlar.length > 1 ? `<p class="card-desc">${sorunlar.slice(1).map(escapeHtml).join('<br>')}</p>` : ''}
+                ${bilgiler.length ? `<p class="card-desc">${bilgiler.map(escapeHtml).join('<br>')}</p>` : ''}
+                ${satir('Kategori ID', d.kategori)}
+                ${satir('Aranan kalıp', d.kalip)}
+                ${satir('Toplam sayılan', d.toplamKayit)}
+                ${satir('Bugün sayılan', `${bugunToplam} kayıt · ${bugun.length} kişi`)}
+                ${satir('En son sahiplenme', sonAt ? formatDate(sonAt) : 'yok')}
+                ${satir('Kalıba uymayan (son)', `${eslesmeyenler.length} mesaj · ${botUymayan.length} embed'li`)}
+                <p class="card-desc" style="margin:12px 0 6px;">Bugün sahiplenenler:</p>
+                <div class="legend-row">${bugunChips}</div>
+                <p class="card-desc" style="margin:12px 0 2px;">Son sayılan kayıtlar:</p>
+                ${sonListe}
+            </div>
+            <div class="card" style="margin:0;">
+                <h2>Kalıba uymayan son mesajlar</h2>
+                <p class="card-desc" style="margin-bottom:9px;">
+                    Ticket kategorisindeki <b>her</b> mesaj kalıp denemesinden geçiyor, yani
+                    buradaki sıradan sohbet <b>normal</b> - liste dolu diye sayım bozuk değil.
+                    Asıl bakılacak olan <b>embed'li</b> (sarı) satırlar: bot bir sahiplenme
+                    mesajı atmış ama kalıba uymamışsa metin değişmiş demektir.
+                    Liste yalnızca en son mesajları tutar ve bot yeniden başlayınca sıfırlanır.
+                </p>
+                ${uymayanListe}
+            </div>`;
     } catch (error) {
         activityMessages.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
     }
