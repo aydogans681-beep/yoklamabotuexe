@@ -281,6 +281,9 @@ function connectWebSocket() {
                 onLogStatusUpdate(msg);
             } else if (msg.type === 'log-yeni') {
                 onLogNewMessage(msg);
+            } else if (msg.type === 'log-isaret') {
+                // DİKKAT: 'log-durum' DEĞİL - o kanalın yüklenme durumu.
+                logTabs.forEach((t) => t.onIsaret(msg));
             } else if (msg.type === 'yoklama-katilim') {
                 // Baska bir panel kullanicisi katildi - sayac anlik guncellensin.
                 loadKatilim();
@@ -841,6 +844,125 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
     let term = '';
     let searchTimer = null;
 
+    // --- İşaretleme (yalnızca isaretTakibi açık kanallarda) ---
+    // Bayrak kapalıyken bu satırların hiçbiri devreye girmiyor, yani TX Logs
+    // ve Mute Logları sekmeleri aynen eskisi gibi çalışıyor.
+    const ISARETLER = [
+        { key: 'ban',      etiket: 'Ban' },
+        { key: 'supheli',  etiket: 'Şüpheli' },
+        { key: 'temiz',    etiket: 'Temiz' },
+    ];
+    let isaretTakibi = false;
+    let isaretSuzgeci = '';      // '' = hepsi
+    let isaretSayilari = null;
+
+    // Süzgeç satırı HTML'de değil, burada üretiliyor: üç log sekmesi aynı
+    // işaretlemeyi kullanmıyor ve kullanmayanların DOM'una boş bir satır
+    // eklemek istemiyoruz.
+    const suzgecSatiri = document.createElement('div');
+    suzgecSatiri.className = 'toolbar isaret-suzgec';
+    suzgecSatiri.style.display = 'none';
+    list.parentNode.insertBefore(suzgecSatiri, list);
+
+    function renderSuzgec() {
+        if (!isaretTakibi) { suzgecSatiri.style.display = 'none'; return; }
+        const say = isaretSayilari || {};
+        const kutular = [{ key: '', etiket: 'Hepsi' }, { key: 'isaretsiz', etiket: 'İşaretsiz' }]
+            .concat(ISARETLER);
+        suzgecSatiri.innerHTML = '<div class="filter-chips">'
+            + kutular.map((k) => {
+                const adet = k.key === '' ? null : (say[k.key] ?? 0);
+                return `<button class="chip${k.key === isaretSuzgeci ? ' active' : ''}"`
+                    + ` data-suzgec="${k.key}">${escapeHtml(k.etiket)}`
+                    + (adet === null ? '' : ` <b>${adet}</b>`) + '</button>';
+            }).join('')
+            + '</div>';
+        suzgecSatiri.querySelectorAll('[data-suzgec]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                isaretSuzgeci = btn.dataset.suzgec;
+                offset = 0;
+                loadPage();
+            });
+        });
+        suzgecSatiri.style.display = 'flex';
+    }
+
+    // Bir log satırını, altında Ban/Şüpheli/Temiz düğmeleriyle sarar.
+    // Düğmeler Discord'a hiçbir şey göndermez - işaret yalnızca panelde durur.
+    function isaretliSatir(entry) {
+        const kutu = document.createElement('div');
+        kutu.className = 'isaret-kutu';
+        kutu.dataset.id = entry.id;
+        kutu.appendChild(renderLogEntry(entry));
+
+        const bar = document.createElement('div');
+        bar.className = 'isaret-bar';
+        ISARETLER.forEach((i) => {
+            const btn = document.createElement('button');
+            btn.className = `isaret-btn is-${i.key}`;
+            btn.dataset.isaret = i.key;
+            btn.textContent = i.etiket;
+            btn.addEventListener('click', () => isaretle(entry.id, i.key, kutu));
+            bar.appendChild(btn);
+        });
+        const bilgi = document.createElement('span');
+        bilgi.className = 'isaret-bilgi';
+        bar.appendChild(bilgi);
+        kutu.appendChild(bar);
+
+        isaretiUygula(kutu, entry.isaret);
+        return kutu;
+    }
+
+    // Kutunun görünümünü işarete göre günceller. Tek yerden yapılıyor ki
+    // tıklama, WebSocket ve ilk çizim aynı sonucu versin.
+    function isaretiUygula(kutu, isaret) {
+        ISARETLER.forEach((i) => {
+            const btn = kutu.querySelector(`[data-isaret="${i.key}"]`);
+            if (btn) btn.classList.toggle('secili', Boolean(isaret) && isaret.isaret === i.key);
+        });
+        kutu.className = 'isaret-kutu' + (isaret ? ` isaretli-${isaret.isaret}` : '');
+        const bilgi = kutu.querySelector('.isaret-bilgi');
+        if (bilgi) {
+            bilgi.textContent = isaret
+                ? `${isaret.kisi} · ${formatDate(isaret.at)}`
+                : '';
+        }
+    }
+
+    // Aynı düğmeye ikinci kez basmak işareti KALDIRIR - yanlış tıklamayı geri
+    // almanın en kısa yolu. Sunucu son sözü söylüyor: ekran, sunucunun
+    // döndürdüğü değere göre güncelleniyor.
+    async function isaretle(id, isaret, kutu) {
+        const suanki = kutu.className.match(/isaretli-(\w+)/);
+        const yeniIsaret = (suanki && suanki[1] === isaret) ? null : isaret;
+        try {
+            const res = await fetch(`/api/loglar/${activeKey}/isaret`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, isaret: yeniIsaret }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) { status.textContent = `İşaretlenemedi: ${d.error}`; return; }
+            isaretiUygula(kutu, d.isaret);
+            // Sayaçlar değişti; süzgeç açıksa satır listeden düşebilir.
+            if (isaretSuzgeci) loadPage(); else tazeleSayaclar();
+        } catch (error) {
+            status.textContent = `İşaretlenemedi: ${error.message}`;
+        }
+    }
+
+    // Yalnızca sayaçları tazelemek için hafif bir istek - listeyi yeniden
+    // çizmiyoruz ki kullanıcının kaydırma yeri kaybolmasın.
+    async function tazeleSayaclar() {
+        try {
+            const res = await fetch(`/api/loglar/${activeKey}?offset=0&limit=1`);
+            const d = await okuJson(res);
+            if (d.ok && d.isaretSayilari) { isaretSayilari = d.isaretSayilari; renderSuzgec(); }
+        } catch (error) { /* sayaç kozmetik - sessizce geç */ }
+    }
+
     function renderMenu() {
         menu.innerHTML = '';
         channels.forEach((channel) => {
@@ -878,6 +1000,12 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
         offset = 0;
         term = '';
         search.value = '';
+        // Süzgeç kanala ait: başka menüye geçince taşınmamalı, yoksa yeni
+        // menü boş görünür ve sebebi görünmez.
+        isaretSuzgeci = '';
+        isaretTakibi = false;
+        isaretSayilari = null;
+        renderSuzgec();
         const channel = channels.find((c) => c.key === key);
         // Etiket zaten "Log" ile bitiyorsa tekrar ekleme - "Ek Log Logu" oluyordu.
         title.textContent = channel
@@ -895,6 +1023,7 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
         try {
             const params = new URLSearchParams({ offset: String(offset), limit: String(LOG_PAGE_SIZE) });
             if (term) params.set('q', term);
+            if (isaretSuzgeci) params.set('isaret', isaretSuzgeci);
             const res = await fetch(`/api/loglar/${activeKey}?${params.toString()}`);
             if (res.status === 401) { showLogin(); return; }
             const data = await okuJson(res);
@@ -907,8 +1036,14 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
                 list.innerHTML = '<div class="empty-hint">Bu menü için kanal ID\'si girilmemiş.<br>server.js içindeki <b>LOG_CHANNELS</b> listesine ID\'yi ekle.</div>';
                 pager.style.display = 'none';
                 status.textContent = '';
+                isaretTakibi = false;
+                renderSuzgec();
                 return;
             }
+
+            isaretTakibi = Boolean(data.isaretTakibi);
+            isaretSayilari = data.isaretSayilari || null;
+            renderSuzgec();
             if (data.status === 'yukleniyor' || data.status === 'bekliyor') {
                 status.textContent = data.status === 'bekliyor'
                     ? 'Sıradaki kanal - geçmiş henüz çekilmedi.'
@@ -928,7 +1063,8 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
                 // Bos liste her zaman "mesaj yok" demek degil - kanalin gecmisi
                 // henuz cekilmemis de olabilir; ikisini ayirt ediyoruz.
                 let hint;
-                if (term) hint = 'Aramaya uyan mesaj yok.';
+                if (isaretSuzgeci) hint = 'Bu işarete uyan kayıt yok.';
+                else if (term) hint = 'Aramaya uyan mesaj yok.';
                 else if (data.status === 'bekliyor') hint = 'Bu kanalın geçmişi henüz çekilmedi - sırada bekliyor.';
                 else if (data.status === 'yukleniyor') hint = 'Geçmiş çekiliyor, birazdan burada görünecek...';
                 else if (data.status === 'hata') hint = `Çekilemedi: ${escapeHtml(data.error || 'bilinmeyen hata')}`;
@@ -937,7 +1073,8 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
                 pager.style.display = 'none';
                 return;
             }
-            data.messages.forEach((entry) => list.appendChild(renderLogEntry(entry)));
+            data.messages.forEach((entry) => list.appendChild(
+                isaretTakibi ? isaretliSatir(entry) : renderLogEntry(entry)));
             list.scrollTop = 0;
 
             const from = data.offset + 1;
@@ -972,6 +1109,15 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
         }
     }
 
+    // Başka bir panel kullanıcısı işaret koyduğunda/kaldırdığında ekrandaki
+    // satır anında güncellensin. Sayfayı yeniden çizmiyoruz - sadece o kutu.
+    function onIsaret(msg) {
+        if (msg.key !== activeKey || !isaretTakibi) return;
+        const kutu = list.querySelector(`.isaret-kutu[data-id="${msg.id}"]`);
+        if (kutu) isaretiUygula(kutu, msg.isaret);
+        tazeleSayaclar();
+    }
+
     // Yeni bir log mesajı geldiğinde: ilk sayfadaysak ve arama yoksa listeyi tazele.
     function onNewMessage(msg) {
         const channel = channels.find((c) => c.key === msg.key);
@@ -1002,7 +1148,7 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
         }
     });
 
-    return { refreshMenu, onStatus, onNewMessage };
+    return { refreshMenu, onStatus, onNewMessage, onIsaret };
 }
 
 const txLogTab = createLogTab({

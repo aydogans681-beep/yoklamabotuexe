@@ -51,6 +51,7 @@ panel-audit.json      Hesap Logları (kim ne yaptı)
 voice-activity.json   Aktiflik sekmesi - günlük ses süreleri
 yoklama-katilim.json  "Yoklamaya Katıl" kayıtları (gün gün)
 canli-sahiplenme.json Ticket sahiplenme kayıtları (canlı toplanır)
+log-isaretleri.json   Şüpheli Log işaretleri: Ban/Şüpheli/Temiz (depoda yok)
 log-cache/            Log geçmişi önbelleği (silinebilir, yeniden üretilir)
 server/
   server.js           Backend: Discord istemcisi + HTTP/WebSocket API
@@ -309,10 +310,40 @@ aralığı ve kişi başına liste hiçbir ek kod olmadan çalışır.
 ### Mute Logları ve Felox
 
 TX Logs ile **aynı makine**, ayrı sekmeler: Mute Logları (Mute + Unmute) ve
-Felox (tek kanal). Üç sekme de `createLogTab()` fabrikasından üretiliyor, yani
-sayfalama/arama/canlı güncelleme tek yerde duruyor ve her sekme kendi seçimini
-bağımsız koruyor. Yeni bir grup eklemek `LOG_GROUPS`'a bir satır, `LOG_CHANNELS`'a
-kanal(lar) ve arayüzde bir sekme + bir `createLogTab()` çağrısı demek.
+Felox (Felox + Şüpheli Log). Üç sekme de `createLogTab()` fabrikasından
+üretiliyor, yani sayfalama/arama/canlı güncelleme tek yerde duruyor ve her sekme
+kendi seçimini bağımsız koruyor. Yeni bir grup eklemek `LOG_GROUPS`'a bir satır,
+`LOG_CHANNELS`'a kanal(lar) ve arayüzde bir sekme + bir `createLogTab()` çağrısı
+demek; **var olan bir gruba** kanal eklemek yalnızca `LOG_CHANNELS`'a bir satır -
+menü kendiliğinden çıkıyor.
+
+#### Şüpheli Log (Felox sekmesinde)
+
+Kanal `1522577961558085742`. Geçmişin tamamı inmiyor, yalnızca **son 100 mesaj**
+(`ilkCekimSiniri: 100`, Ek Log ile aynı kalıp); sonrası canlı ekleniyor.
+
+Her kaydın altında **Ban / Şüpheli / Temiz** düğmeleri var. Bu işaretler
+**yalnızca panelde durur** - Discord'a hiçbir şey gönderilmez, kimse banlanmaz,
+kanala mesaj yazılmaz. Panelin "buna baktık, sonucu şu" defteri.
+
+- Aynı düğmeye ikinci kez basmak işareti **kaldırır**.
+- Kim işaretledi ve ne zaman, satırın sağında yazar; ayrıca **Hesap Logları**'na
+  `log-isaret` olarak düşer.
+- Üstteki süzgeç: Hepsi / İşaretsiz / Ban / Şüpheli / Temiz, her birinin sayacı
+  yanında. İnceleme kuyruğu gibi çalışır - işaretsizler bitince iş biter.
+- Temiz işaretlenen kayıtlar hafifçe soluklaşır ki göz işaretsizlere gitsin.
+- Aynı anda açık başka panellerde de anında güncellenir.
+
+İşaretler `log-isaretleri.json`'da, mesajların kendisinden ayrı durur: log
+önbelleği silinip yeniden çekilse bile işaretler kaybolmaz.
+
+> Adlandırma: bu koda "durum" demiyoruz. `log-durum` WebSocket türü **zaten**
+> kanalın yüklenme durumunu yayınlıyor (`broadcastLogStatus`); aynı adı
+> kullansaydık istemci işaret mesajını yüklenme durumu sanıp `channel.status`'ü
+> bozardı. İşaretlerin türü `log-isaret`, ucu `POST /api/loglar/:key/isaret`.
+
+Başka bir kanala da işaretleme açmak için `LOG_CHANNELS`'daki satırına
+`isaretTakibi: true` eklemek yeterli; arayüz gerisini kendi hallediyor.
 
 ### Ayarlar
 
@@ -519,5 +550,6 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `GET /api/aktiflik[?bas=&bit=]` | Aktiflik - seste geçirilen süre |
 | `GET /api/etkinlik/:key/gunluk[?bas=&bit=]` | Etkinlik - kişi başına mesaj sayısı |
 | `GET /api/sahiplenme/tani` | Ticket sahiplenme teşhisi (eşleşmeyen mesajlar) |
+| `POST /api/loglar/:key/isaret` | Log kaydını Ban/Şüpheli/Temiz işaretler (yalnızca panelde) |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
 | `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi |

@@ -469,6 +469,9 @@ const LOG_CHANNELS = [
     { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute' },
     { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute' },
     { key: 'feloxlog', label: 'Felox', channelId: '1513234220011749607', group: 'felox' },
+    // Supheli Log: bu kanalda gecmisin TAMAMI inmiyor, yalnizca en yeni 100
+    // mesaj. Sonrasi canli ekleniyor (messageCreate). Ek Log ile ayni kalip.
+    { key: 'supheli', label: 'Şüpheli Log', channelId: '1522577961558085742', group: 'felox', ilkCekimSiniri: 100, isaretTakibi: true },
 ];
 
 // Discord sayfa basina en fazla 100 mesaj veriyor. Sayfalar arasinda kisa bir
@@ -1482,6 +1485,11 @@ ALL_CHANNELS.forEach((channel) => {
         channelId: channel.channelId,
         ilkCekimSiniri: channel.ilkCekimSiniri || null,
         canliKaynak: Boolean(channel.canliKaynak),
+        // Bu kanaldaki kayitlar panelden Ban/Supheli/Temiz diye
+        // isaretlenebiliyor. Isaretleme YALNIZCA panelde durur -
+        // Discord'a hicbir sey gonderilmez.
+        // Ad 'durum' DEGIL: bu kod tabaninda durum = kanalin yuklenme durumu.
+        isaretTakibi: Boolean(channel.isaretTakibi),
         status: channel.channelId ? 'bekliyor' : 'yapilandirilmamis',
         messages: [],
         loaded: 0,
@@ -1751,6 +1759,47 @@ function logCacheHepsiniYaz() {
     logStore.forEach((store) => {
         if (store.cacheKirli && store.messages.length) logCacheYaz(store);
     });
+}
+
+// ============================================================================
+// --- LOG İŞARETLERİ (Şüpheli Log) ---
+// Bir log kaydı panelden "ban / şüpheli / temiz" diye işaretlenebiliyor.
+// İşaretler mesaj ID'sine bağlı, mesajların kendisinden AYRI bir dosyada
+// duruyor: log önbelleği silinip yeniden çekilse bile işaretler kaybolmuyor.
+//
+// Bu işaretler Discord'a HİÇBİR ŞEY göndermiyor - ne ban atıyor ne mesaj
+// yazıyor. Yalnızca panelde "buna baktık, sonucu şu" kaydı.
+// ============================================================================
+const LOG_ISARETLERI = ['ban', 'supheli', 'temiz'];
+const LOG_ISARET_PATH = path.join(ROOT_DIR, 'log-isaretleri.json');
+
+function logIsaretleriniYukle() {
+    try {
+        const ham = JSON.parse(fs.readFileSync(LOG_ISARET_PATH, 'utf8'));
+        return (ham && typeof ham === 'object' && !Array.isArray(ham)) ? ham : {};
+    } catch (error) {
+        return {};   // ilk calisma ya da bozuk dosya
+    }
+}
+
+const logIsaretleri = logIsaretleriniYukle();
+
+function logIsaretleriniYaz() {
+    try {
+        // Once gecici dosyaya, sonra rename: yazma sirasinda surec olurse
+        // dosya yarim kalmasin.
+        const gecici = `${LOG_ISARET_PATH}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(logIsaretleri));
+        fs.renameSync(gecici, LOG_ISARET_PATH);
+    } catch (error) {
+        console.log(`[LogIsaret] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+// Kayitlara isaretini ekleyerek dondurur. Isareti olmayan kayit "durum: null".
+function isaretEkle(entry) {
+    const i = logIsaretleri[entry.id];
+    return i ? { ...entry, isaret: i } : { ...entry, isaret: null };
 }
 
 function serializeLogMessage(message) {
@@ -3231,9 +3280,33 @@ app.get('/api/loglar/:key', requireAuth, (req, res) => {
     const offset = Math.max(0, Number(req.query.offset) || 0);
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
 
-    const source = term
+    // Durum suzgeci: 'ban' | 'supheli' | 'temiz' | 'isaretsiz'.
+    // Yalnizca durum takibi acik kanallarda anlamli; digerlerinde yoksayiliyor
+    // ki suzgec yanlislikla gonderilse bile liste bosalmasin.
+    const isaretSuzgeci = store.isaretTakibi ? String(req.query.isaret || '').trim() : '';
+
+    let source = term
         ? store.messages.filter((entry) => entry._s.includes(term))
         : store.messages;
+
+    if (isaretSuzgeci) {
+        source = source.filter((entry) => {
+            const i = logIsaretleri[entry.id];
+            return isaretSuzgeci === 'isaretsiz' ? !i : (i && i.isaret === isaretSuzgeci);
+        });
+    }
+
+    // Sayac: hangi durumda kac kayit var. Suzgec dugmelerinin yaninda
+    // gosteriliyor - "temizler bitti mi?" sorusu listeye bakmadan cevaplaniyor.
+    let sayilar = null;
+    if (store.isaretTakibi) {
+        sayilar = { ban: 0, supheli: 0, temiz: 0, isaretsiz: 0 };
+        store.messages.forEach((entry) => {
+            const i = logIsaretleri[entry.id];
+            if (i && sayilar[i.isaret] !== undefined) sayilar[i.isaret] += 1;
+            else if (!i) sayilar.isaretsiz += 1;
+        });
+    }
 
     res.json({
         ok: true,
@@ -3241,14 +3314,60 @@ app.get('/api/loglar/:key', requireAuth, (req, res) => {
         label: store.label,
         configured: Boolean(store.channelId),
         ilkCekimSiniri: store.ilkCekimSiniri || null,
+        isaretTakibi: Boolean(store.isaretTakibi),
+        isaretSayilari: sayilar,
         status: store.status,
         error: store.error,
         fetchedAt: store.fetchedAt,
         total: store.messages.length,
         matched: source.length,
         offset,
-        messages: source.slice(offset, offset + limit).map(stripInternal),
+        messages: source.slice(offset, offset + limit)
+            .map((entry) => (store.isaretTakibi ? isaretEkle(stripInternal(entry)) : stripInternal(entry))),
     });
+});
+
+// Bir log kaydini Ban / Supheli / Temiz diye isaretler, ya da isareti kaldirir.
+// Discord'a hicbir sey gonderilmez - bu yalnizca panel tarafinda bir not.
+app.post('/api/loglar/:key/isaret', requireAuth, (req, res) => {
+    const store = logStore.get(req.params.key);
+    if (!store) return res.status(404).json({ ok: false, error: 'Bilinmeyen log menüsü.' });
+    if (!logIzniVar(req.session.username, req.params.key)) {
+        return res.status(403).json({ ok: false, error: 'Bu log kanalı için yetkin yok.' });
+    }
+    if (!store.isaretTakibi) {
+        return res.status(400).json({ ok: false, error: 'Bu menüde işaretleme yok.' });
+    }
+
+    const { id, isaret } = req.body || {};
+    const mesajId = String(id || '').trim();
+    if (!mesajId) return res.json({ ok: false, error: 'Mesaj ID yok.' });
+
+    // Kayit gercekten bu kanalda mi? Olmayan bir ID'ye isaret birakmak,
+    // dosyayi hicbir zaman temizlenmeyen olu kayitlarla sisirirdi.
+    if (!store.messages.some((m) => m.id === mesajId)) {
+        return res.json({ ok: false, error: 'Kayıt bu menüde bulunamadı.' });
+    }
+
+    if (isaret === null || isaret === '' || isaret === undefined) {
+        delete logIsaretleri[mesajId];
+    } else if (LOG_ISARETLERI.includes(isaret)) {
+        logIsaretleri[mesajId] = { isaret, kisi: req.session.username, at: Date.now() };
+    } else {
+        return res.json({ ok: false, error: 'Geçersiz işaret.' });
+    }
+    logIsaretleriniYaz();
+
+    const yeni = logIsaretleri[mesajId] || null;
+    addAudit('log-isaret', req.session.username,
+        `${store.label}: ${mesajId} -> ${yeni ? yeni.isaret : 'işaret kaldırıldı'}`, req);
+    // DIKKAT: tur adi 'log-isaret'. 'log-durum' ZATEN KULLANILIYOR -
+    // broadcastLogStatus onunla kanalin YUKLENME durumunu yayinliyor ve
+    // istemci onu gorunce menuyu tazeliyor. Ayni adi kullansaydik istemci bu
+    // mesaji yuklenme durumu sanip channel.status'u undefined yapardi.
+    wsBroadcast({ type: 'log-isaret', key: store.key, id: mesajId, isaret: yeni });
+
+    res.json({ ok: true, id: mesajId, isaret: yeni });
 });
 
 app.post('/api/loglar/:key/yenile', requireAuth, async (req, res) => {
