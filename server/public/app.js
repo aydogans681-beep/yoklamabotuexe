@@ -891,7 +891,7 @@ function createLogTab({ grup, menuId, listId, titleId, statusId, searchId, refre
 
     async function loadPage() {
         if (!activeKey) return;
-        list.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+        list.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(6) + '</div>';
         try {
             const params = new URLSearchParams({ offset: String(offset), limit: String(LOG_PAGE_SIZE) });
             if (term) params.set('q', term);
@@ -1753,7 +1753,7 @@ function renderStaffList() {
 }
 
 async function loadStaff(roleId) {
-    staffList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    staffList.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(6) + '</div>';
     staffStatus.textContent = '';
     try {
         const url = roleId ? `/api/yetkililer?roleId=${encodeURIComponent(roleId)}` : '/api/yetkililer';
@@ -2249,7 +2249,7 @@ function renderActivityList() {
 async function loadActivityReport() {
     if (!actChannelKey) return;
     if (actMode === 'gunluk') return loadDailyReport();
-    activityList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    activityList.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(6) + '</div>';
     activityStatus.textContent = '';
     try {
         const res = await fetch(`/api/etkinlik/${actChannelKey}`);
@@ -2466,7 +2466,7 @@ actPresets.addEventListener('click', (evt) => {
 // kullanmaya devam ediyor - ikisi aynı listeyi besliyor.
 async function loadDailyReport() {
     if (!actChannelKey) return;
-    activityList.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    activityList.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(6) + '</div>';
     try {
         const params = actDay
             ? `?bas=${encodeURIComponent(actDay)}&bit=${encodeURIComponent(actDayBit || actDay)}`
@@ -3252,6 +3252,12 @@ document.getElementById('rolKomutKaydetBtn').addEventListener('click', async () 
 // Panel hesabına Discord ID'si bağlı yetkililer kendilerini o günkü yoklamada
 // katıldı olarak işaretleyebiliyor; katılana uyarı yazılmıyor.
 // ============================================================================
+// Butonun etiketi durumla birlikte degisiyor. Ikon SVG oldugu icin
+// textContent tasiyamaz - sabit olarak burada duruyor ki uc ayri yerde
+// tekrar yazilmasin.
+const KATIL_ETIKET = '<svg class="btn-ico"><use href="#i-katil"/></svg>Yoklamaya Katıl';
+const KATILDIN_ETIKET = '<svg class="btn-ico"><use href="#i-katildi"/></svg>Katıldın';
+
 const katilBtn = document.getElementById('katilBtn');
 const katilMsg = document.getElementById('katilMsg');
 
@@ -3266,7 +3272,7 @@ async function loadKatilim() {
             // kullanicilar ne yapacagini anlamiyordu. Acik birakip basinca
             // dogru yere goturuyoruz.
             katilBtn.disabled = false;
-            katilBtn.textContent = '✋ Yoklamaya Katıl';
+            katilBtn.innerHTML = KATIL_ETIKET;
             katilBtn.title = 'Önce Ayarlar > Kendi Hesabım bölümünden Discord ID ekle';
             katilMsg.innerHTML = '<a href="#" id="katilAyarlaraGit">Discord ID ekle →</a>';
             const bag = document.getElementById('katilAyarlaraGit');
@@ -3275,12 +3281,12 @@ async function loadKatilim() {
             }
         } else if (d.katildim) {
             katilBtn.disabled = true;
-            katilBtn.textContent = '✓ Katıldın';
+            katilBtn.innerHTML = KATILDIN_ETIKET;
             katilBtn.title = `Bugün (${d.gun}) katıldı olarak işaretlendin`;
             katilMsg.textContent = `Bugün ${d.toplam} kişi katıldı`;
         } else {
             katilBtn.disabled = false;
-            katilBtn.textContent = '✋ Yoklamaya Katıl';
+            katilBtn.innerHTML = KATIL_ETIKET;
             katilBtn.title = 'Kendini bugünkü yoklamada katıldı olarak işaretle';
             katilMsg.textContent = d.toplam ? `Bugün ${d.toplam} kişi katıldı` : '';
         }

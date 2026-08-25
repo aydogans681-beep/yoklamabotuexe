@@ -149,8 +149,19 @@ Sekmeler dört gruba ayrılmıştır: **Yoklama** (Yoklama, Yetkililer, Rol Ver/
 gizlenirse başlığı da gizlenir.
 
 Aktif sekme, solda ince bir aksan çubuğu ve yumuşak bir dolguyla belirtilir.
-İkonlar eşit boyutlu kare kutulardadır - emojiler farklı genişlikte olduğu için
-kutusuz hâlde etiketler hizasız duruyordu.
+İkonlar eşit boyutlu kare kutulardadır.
+
+İkonlar **emoji değil, tek renkli SVG**'dir (`index.html` başındaki `.ikon-seti`
+sprite'ı). Emojiler her işletim sisteminde farklı çiziliyor, farklı genişlikte
+oluyor ve kendi renklerini dayatıyordu - koyu temada Windows'un renkli emoji
+fontu tasarımın dışında duruyordu. SVG'ler `currentColor` ile çizildiği için
+bulundukları yerin rengini alır: pasif sekmede gri, üzerine gelince açık,
+aktif sekmede kırmızı. Yeni ikon eklemek sprite'a bir `<symbol>`, kullandığın
+yere `<svg><use href="#i-ad"/></svg>` demektir.
+
+> İstisna: `✅` ve `❌` legend'larda emoji olarak kalır. Bunlar Discord'daki
+> gerçek tepki emojilerini gösteriyor - yetkili mazeret mesajına o emojiyle
+> tepki veriyor, ikona çevirmek bağı koparırdı.
 
 Altta **canlı özet** kartı: şu an kaç yetkilinin seste olduğunu ve bugünkü
 toplam süreyi gösterir, tıklayınca Aktiflik sekmesine gider. 45 saniyede bir

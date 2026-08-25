@@ -1027,3 +1027,148 @@ input[type="date"].text-search { color-scheme: dark; padding: 8px 11px; }
 .izin-grup { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
 .izin-grup.pasif { opacity: .5; }
 .acc-badge.ok { color: var(--ok); border-color: var(--ok-line); }
+
+/* ==========================================================================
+   İKONLAR VE CİLA
+   Emoji ikonlar tek renkli SVG'lerle değiştirildi. Emojiler her işletim
+   sisteminde farklı çiziliyor, farklı genişlikte oluyor ve kendi renklerini
+   dayatıyorlardı - koyu temada Windows'un renkli emoji fontu tasarımın
+   dışında duruyordu. SVG'ler currentColor ile çiziliyor, yani bulundukları
+   yerin rengini alıyor: pasif sekmede gri, aktif sekmede kırmızı.
+   ========================================================================== */
+
+/* Sprite yalnızca tanım - ekranda yer kaplamamalı */
+.ikon-seti { display: none; }
+
+/* Bütün ikonlar tek kalemden çıkmış görünsün: aynı çizgi kalınlığı, aynı
+   yuvarlatma. Boyut bulunduğu yere göre değişiyor, geri kalanı ortak. */
+.ico svg, .bi svg, .input-ico svg, .btn-ico {
+    fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round;
+    display: block;
+}
+.side-nav .tab-btn .ico svg { width: 15px; height: 15px; }
+.brand-list .bi svg        { width: 14px; height: 14px; }
+.input-ico svg             { width: 15px; height: 15px; }
+.btn-ico {
+    width: 14px; height: 14px;
+    display: inline-block; vertical-align: -3px; margin-right: 6px;
+}
+
+/* Renk artık ikonun kendisinde: kutu rengiyle birlikte yumuşakça geçiyor */
+.side-nav .tab-btn .ico { color: var(--ink-3); transition: background .16s, border-color .16s, color .16s; }
+.side-nav .tab-btn:hover:not(:disabled) .ico { color: var(--ink-2); }
+.side-nav .tab-btn.active .ico { color: var(--accent); }
+.brand-list .bi { color: var(--accent); }
+
+/* Giriş formundaki ikon: mutlak konumda olduğu için dikey ortalama açıkça
+   veriliyor - metin yerine blok bir SVG geldiğinde satır yüksekliğine
+   güvenmek kaymaya yol açıyordu. */
+.input-ico { top: 50%; transform: translateY(-50%); opacity: .5; }
+
+/* --------------------------------------------------------------------------
+   Klavyeyle gezinme: odak halkası
+   :focus yerine :focus-visible - fareyle tıklayanda halka çıkmıyor, yalnızca
+   Tab ile gezenler görüyor.
+   -------------------------------------------------------------------------- */
+button:focus-visible,
+.chip:focus-visible,
+.tab-btn:focus-visible,
+.act-row:focus-visible,
+.text-search:focus-visible,
+.field input:focus-visible,
+input[type="date"]:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Yükleniyor iskeletleri
+   "Yükleniyor..." yazısı, gelecek içeriğin ne kadar olduğunu göstermiyor ve
+   liste birden belirince ekran zıplıyordu. İskelet, gelecek satırların yerini
+   şimdiden tutuyor.
+   -------------------------------------------------------------------------- */
+.iskelet { display: flex; flex-direction: column; gap: 7px; padding: 3px 0; }
+.iskelet-satir {
+    height: 44px; border-radius: var(--radius-s);
+    border: 1px solid var(--border); background: var(--surface-2);
+    position: relative; overflow: hidden;
+}
+.iskelet-satir::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.045), transparent);
+    transform: translateX(-100%);
+    animation: iskelet-parla 1.25s ease-in-out infinite;
+}
+/* Satırlar sırayla parlasın - hepsi aynı anda yanıp sönerse titreme gibi duruyor */
+.iskelet-satir:nth-child(2)::after { animation-delay: .09s; }
+.iskelet-satir:nth-child(3)::after { animation-delay: .18s; }
+.iskelet-satir:nth-child(4)::after { animation-delay: .27s; }
+.iskelet-satir:nth-child(5)::after { animation-delay: .36s; }
+.iskelet-satir:nth-child(6)::after { animation-delay: .45s; }
+@keyframes iskelet-parla { to { transform: translateX(100%); } }
+
+/* --------------------------------------------------------------------------
+   Boş ekranlar
+   Tek satır gri yazı yerine ortalanmış, nefes alan bir alan.
+   -------------------------------------------------------------------------- */
+.empty-hint {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 34px 20px; text-align: center;
+    color: var(--ink-3); font-size: 12.5px; line-height: 1.6;
+}
+
+/* --------------------------------------------------------------------------
+   Mikro etkileşimler
+   Hiçbiri yerleşimi değiştirmiyor - yalnızca renk, gölge ve 1px kayma.
+   Yerleşimi oynatan efektler uzun listelerde takılmaya yol açıyor.
+   -------------------------------------------------------------------------- */
+.card { transition: border-color .16s, box-shadow .16s; }
+.card:hover { border-color: var(--border-strong); }
+
+.chip { transition: background .14s, border-color .14s, color .14s; }
+.act-row { transition: background .14s, border-color .14s, transform .1s; }
+.act-row:hover { transform: translateX(1px); }
+
+.kpi { transition: border-color .16s, background .16s; }
+.kpi:hover { border-color: var(--border-strong); }
+
+/* Sayılar değişince kısa bir vurgu - canlı sayaçlarda hangi kutunun
+   değiştiği gözden kaçıyordu. */
+.kpi-value { transition: color .2s; }
+
+/* --------------------------------------------------------------------------
+   Kaydırma çubuğu
+   Varsayılan Windows çubuğu koyu temanın içinde açık gri bir şerit olarak
+   duruyordu.
+   -------------------------------------------------------------------------- */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong); border-radius: 99px;
+    border: 3px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--ink-4, #6b6a6d); background-clip: content-box; }
+
+/* Seçim rengi markaya uysun */
+::selection { background: var(--accent-line); color: var(--ink); }
+
+/* Hareketi azaltma tercihi: iskelet parıltısı ve geçişler dursun */
+@media (prefers-reduced-motion: reduce) {
+    .iskelet-satir::after { animation: none; }
+    .card, .chip, .act-row, .kpi, .side-nav .tab-btn .ico { transition: none; }
+    .act-row:hover { transform: none; }
+}
+
+/* --------------------------------------------------------------------------
+   Kişi satırı düzeltmesi
+   .act-body'ye yön verilmemişti: isim ve "son: ..." zamanı iki inline span
+   olarak YAN YANA akıyor, uzun isimlerde satır sarıyordu. Adın kırpılması
+   (text-overflow) da inline span'de çalışmaz - blok olması gerekiyor.
+   -------------------------------------------------------------------------- */
+.act-body { display: flex; flex-direction: column; gap: 1px; }
+.act-name, .act-last { display: block; }
+.act-last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

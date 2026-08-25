@@ -7,6 +7,85 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- --- IKON SETI ---
+         Emoji yerine tek renkli SVG: emojiler her isletim sisteminde farkli
+         cizilir, farkli genislikte olur ve renkleri temaya uymaz. Bunlar
+         currentColor ile ciziliyor, yani bulunduklari yerin rengini aliyor -
+         aktif sekmede kirmiziya, pasifte grive donuyorlar.
+         Sadece tanim; ekranda gorunmuyor. -->
+    <svg class="ikon-seti" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="i-yoklama" viewBox="0 0 24 24">
+          <path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1Z"/>
+          <path d="M16 5h2a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h2"/>
+          <path d="m9 13 2 2 4-4"/>
+        </symbol>
+        <symbol id="i-yetkililer" viewBox="0 0 24 24">
+          <circle cx="9" cy="8" r="3"/>
+          <path d="M3 20a6 6 0 0 1 12 0"/>
+          <path d="M16 5.5a3 3 0 0 1 0 5.6"/>
+          <path d="M17.5 14.3A6 6 0 0 1 21 20"/>
+        </symbol>
+        <symbol id="i-roller" viewBox="0 0 24 24">
+          <path d="M12.6 3H5a2 2 0 0 0-2 2v7.6a2 2 0 0 0 .6 1.4l6.4 6.4a2 2 0 0 0 2.8 0l6.6-6.6a2 2 0 0 0 0-2.8L14 3.6A2 2 0 0 0 12.6 3Z"/>
+          <circle cx="7.5" cy="7.5" r="1.3"/>
+        </symbol>
+        <symbol id="i-aktiflik" viewBox="0 0 24 24">
+          <path d="M3 12h3.5l2.5-7 4 14 2.5-7H21"/>
+        </symbol>
+        <symbol id="i-etkinlik" viewBox="0 0 24 24">
+          <path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/>
+        </symbol>
+        <symbol id="i-loglar" viewBox="0 0 24 24">
+          <path d="M5 4h11a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V4Z"/>
+          <path d="M9 8h5"/><path d="M9 12h5"/><path d="M9 16h3"/>
+        </symbol>
+        <symbol id="i-mutelog" viewBox="0 0 24 24">
+          <path d="M9.5 5a2.5 2.5 0 0 1 5 0v5"/>
+          <path d="M14.5 14.2A2.5 2.5 0 0 1 9.5 13V9"/>
+          <path d="M6 11a6 6 0 0 0 9.5 4.9"/><path d="M18 11v-.5"/>
+          <path d="M12 18v3"/><path d="m3 3 18 18"/>
+        </symbol>
+        <symbol id="i-felox" viewBox="0 0 24 24">
+          <path d="M12 3 5 6v6c0 4 3 7.5 7 9 4-1.5 7-5 7-9V6l-7-3Z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </symbol>
+        <symbol id="i-hesaploglari" viewBox="0 0 24 24">
+          <circle cx="7" cy="12" r="3.5"/>
+          <path d="M10.5 12H21"/><path d="M17.5 12v3.5"/><path d="M20.5 12v2.5"/>
+        </symbol>
+        <symbol id="i-ayarlar" viewBox="0 0 24 24">
+          <path d="M4 7h6"/><path d="M14 7h6"/>
+          <path d="M4 12h10"/><path d="M18 12h2"/>
+          <path d="M4 17h3"/><path d="M11 17h9"/>
+          <circle cx="12" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="17" r="2"/>
+        </symbol>
+        <symbol id="i-katil" viewBox="0 0 24 24">
+          <path d="M9 11V4.5a1.5 1.5 0 0 1 3 0V10"/>
+          <path d="M12 10V3.5a1.5 1.5 0 0 1 3 0V10"/>
+          <path d="M15 10.5V6a1.5 1.5 0 0 1 3 0v7a8 8 0 0 1-8 8 7 7 0 0 1-5-2l-3-4a1.6 1.6 0 0 1 2.4-2L9 15"/>
+        </symbol>
+        <symbol id="i-katildi" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>
+        </symbol>
+        <symbol id="i-acil" viewBox="0 0 24 24">
+          <path d="M7 18v-5a5 5 0 0 1 10 0v5"/>
+          <path d="M5 18h14a1 1 0 0 1 1 1v2H4v-2a1 1 0 0 1 1-1Z"/>
+          <path d="M12 3v2"/><path d="m4.5 7.5 1.5 1"/><path d="m19.5 7.5-1.5 1"/>
+        </symbol>
+        <symbol id="i-kullanici" viewBox="0 0 24 24">
+          <circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>
+        </symbol>
+        <symbol id="i-kilit" viewBox="0 0 24 24">
+          <rect x="4.5" y="10" width="15" height="10" rx="2"/>
+          <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+        </symbol>
+        <symbol id="i-saat" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>
+        </symbol>
+      </defs>
+    </svg>
+
     <!-- --- GİRİŞ EKRANI --- -->
     <div class="login-wrap" id="loginWrap">
         <!-- Arka plan atmosferi: iki kirmizi isik lekesi + ince izgara.
@@ -30,10 +109,10 @@
                     Yetkili yoklaması, ses aktifliği ve sunucu logları tek yerden.
                 </p>
                 <ul class="brand-list">
-                    <li><span class="bi">📋</span> Yoklama al, uyarıları tek tuşla uygula</li>
-                    <li><span class="bi">🟢</span> Kim ne kadar seste, gün gün gör</li>
-                    <li><span class="bi">📜</span> Ban, mute, para ve tüm log kanalları</li>
-                    <li><span class="bi">🕗</span> Otomatik günlük yoklama ve prime hatırlatması</li>
+                    <li><span class="bi"><svg><use href="#i-yoklama"/></svg></span> Yoklama al, uyarıları tek tuşla uygula</li>
+                    <li><span class="bi"><svg><use href="#i-aktiflik"/></svg></span> Kim ne kadar seste, gün gün gör</li>
+                    <li><span class="bi"><svg><use href="#i-loglar"/></svg></span> Ban, mute, para ve tüm log kanalları</li>
+                    <li><span class="bi"><svg><use href="#i-saat"/></svg></span> Otomatik günlük yoklama ve prime hatırlatması</li>
                 </ul>
             </aside>
 
@@ -49,7 +128,7 @@
                 <div class="field">
                     <label for="loginUsername">Kullanıcı Adı</label>
                     <div class="input-wrap">
-                        <span class="input-ico" aria-hidden="true">👤</span>
+                        <span class="input-ico" aria-hidden="true"><svg><use href="#i-kullanici"/></svg></span>
                         <input type="text" id="loginUsername" autocomplete="username"
                                placeholder="kullanıcı adın" spellcheck="false">
                     </div>
@@ -58,7 +137,7 @@
                 <div class="field">
                     <label for="loginPassword">Şifre</label>
                     <div class="input-wrap">
-                        <span class="input-ico" aria-hidden="true">🔒</span>
+                        <span class="input-ico" aria-hidden="true"><svg><use href="#i-kilit"/></svg></span>
                         <input type="password" id="loginPassword" autocomplete="current-password"
                                placeholder="••••••••">
                         <button type="button" class="input-btn" id="sifreGoster"
@@ -112,28 +191,28 @@
                      gizleniyor (bkz. applyAdminVisibility). -->
                 <div class="nav-grup">
                     <span class="nav-baslik">Yoklama</span>
-                    <button class="tab-btn active" data-tab="yoklama"><span class="ico">📋</span><span class="etiket">Yoklama</span></button>
-                    <button class="tab-btn" data-tab="yetkililer"><span class="ico">👥</span><span class="etiket">Yetkililer</span></button>
-                    <button class="tab-btn" data-tab="roller"><span class="ico">🏷️</span><span class="etiket">Rol Ver/Al</span></button>
+                    <button class="tab-btn active" data-tab="yoklama"><span class="ico"><svg><use href="#i-yoklama"/></svg></span><span class="etiket">Yoklama</span></button>
+                    <button class="tab-btn" data-tab="yetkililer"><span class="ico"><svg><use href="#i-yetkililer"/></svg></span><span class="etiket">Yetkililer</span></button>
+                    <button class="tab-btn" data-tab="roller"><span class="ico"><svg><use href="#i-roller"/></svg></span><span class="etiket">Rol Ver/Al</span></button>
                 </div>
 
                 <div class="nav-grup">
                     <span class="nav-baslik">Raporlar</span>
-                    <button class="tab-btn" data-tab="aktiflik"><span class="ico">🟢</span><span class="etiket">Aktiflik</span></button>
-                    <button class="tab-btn" data-tab="etkinlik"><span class="ico">📊</span><span class="etiket">Etkinlik</span></button>
+                    <button class="tab-btn" data-tab="aktiflik"><span class="ico"><svg><use href="#i-aktiflik"/></svg></span><span class="etiket">Aktiflik</span></button>
+                    <button class="tab-btn" data-tab="etkinlik"><span class="ico"><svg><use href="#i-etkinlik"/></svg></span><span class="etiket">Etkinlik</span></button>
                 </div>
 
                 <div class="nav-grup">
                     <span class="nav-baslik">Loglar</span>
-                    <button class="tab-btn" data-tab="loglar"><span class="ico">📜</span><span class="etiket">TX Logs</span></button>
-                    <button class="tab-btn" data-tab="mutelog"><span class="ico">🔇</span><span class="etiket">Mute Logları</span></button>
-                    <button class="tab-btn" data-tab="felox"><span class="ico">🛡️</span><span class="etiket">Felox</span></button>
+                    <button class="tab-btn" data-tab="loglar"><span class="ico"><svg><use href="#i-loglar"/></svg></span><span class="etiket">TX Logs</span></button>
+                    <button class="tab-btn" data-tab="mutelog"><span class="ico"><svg><use href="#i-mutelog"/></svg></span><span class="etiket">Mute Logları</span></button>
+                    <button class="tab-btn" data-tab="felox"><span class="ico"><svg><use href="#i-felox"/></svg></span><span class="etiket">Felox</span></button>
                 </div>
 
                 <div class="nav-grup">
                     <span class="nav-baslik">Sistem</span>
-                    <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico">🔑</span><span class="etiket">Hesap Logları</span></button>
-                    <button class="tab-btn" data-tab="ayarlar"><span class="ico">⚙️</span><span class="etiket">Ayarlar</span></button>
+                    <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico"><svg><use href="#i-hesaploglari"/></svg></span><span class="etiket">Hesap Logları</span></button>
+                    <button class="tab-btn" data-tab="ayarlar"><span class="ico"><svg><use href="#i-ayarlar"/></svg></span><span class="etiket">Ayarlar</span></button>
                 </div>
             </nav>
 
@@ -191,10 +270,10 @@
                     </div>
                 </div>
                 <span class="sep"></span>
-                <button class="secondary small" id="katilBtn" title="Kendini bugünkü yoklamada katıldı olarak işaretle">✋ Yoklamaya Katıl</button>
+                <button class="secondary small" id="katilBtn" title="Kendini bugünkü yoklamada katıldı olarak işaretle"><svg class="btn-ico"><use href="#i-katil"/></svg>Yoklamaya Katıl</button>
                 <span class="scanStatus" id="katilMsg"></span>
                 <span class="sep"></span>
-                <button class="secondary small" id="emergencyBtn" title="Sesteki tüm yetkilileri bulunduğun ses kanalına çeker">🚨 Acil Toplantı</button>
+                <button class="secondary small" id="emergencyBtn" title="Sesteki tüm yetkilileri bulunduğun ses kanalına çeker"><svg class="btn-ico"><use href="#i-acil"/></svg>Acil Toplantı</button>
                 <span class="scanStatus" id="emergencyStatus"></span>
             </div>
 
