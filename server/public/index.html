@@ -245,6 +245,18 @@
         <main class="main-area">
         <div id="errorBox"></div>
 
+        <!-- Sayfa basligi. Icerigi app.js'ten sekmeye gore doluyor - 10 sekmeye
+             ayri ayri baslik yazmak yerine tek yerden surulüyor.
+             Oncesinde sekmeler dogrudan bir arac cubuguyla basliyordu; ekranin
+             neye baktigini soyleyen bir seviye yoktu. -->
+        <header class="sayfa-basligi" id="sayfaBasligi">
+            <span class="sb-ikon" id="sayfaIkon" aria-hidden="true"></span>
+            <div class="sb-metin">
+                <h1 id="sayfaAd">Yoklama</h1>
+                <p id="sayfaAciklama">Yetkili taraması, uyarı merdiveni ve acil toplantı.</p>
+            </div>
+        </header>
+
         <!-- ================= YOKLAMA ================= -->
         <div class="tab-panel active" id="tab-yoklama">
             <!-- Eylem cubugu: tarama + ozet sayilar + acil toplanti tek satirda.

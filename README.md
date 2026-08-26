@@ -142,6 +142,15 @@ ID'leri ve komut ayarları yalnızca yerel isteklere (`tani.ps1`, `guncelle.ps1`
 ve giriş yapmış kullanıcılara döner. Panel dışarıya açıksa bu bilgiler
 sızmasın diye.
 
+## Sayfa başlığı
+
+Her sekmenin en üstünde ikon + başlık + bir cümlelik açıklama duruyor. Başlık
+HTML'de on kez tekrarlanmıyor; `app.js` içindeki `SEKME_BASLIKLARI` haritasından
+sürülüyor, yani yeni sekme eklemek oraya bir satır demek.
+
+Öncesinde sekmeler doğrudan bir araç çubuğuyla başlıyordu ve "neye bakıyorum"
+sorusunu cevaplayan bir seviye yoktu.
+
 ## Kenar çubuğu
 
 Sekmeler dört gruba ayrılmıştır: **Yoklama** (Yoklama, Yetkililer, Rol Ver/Al),
@@ -151,6 +160,14 @@ gizlenirse başlığı da gizlenir.
 
 Aktif sekme, solda ince bir aksan çubuğu ve yumuşak bir dolguyla belirtilir.
 İkonlar eşit boyutlu kare kutulardadır.
+
+> Kenar çubuğundaki satırların altında bulanık kırmızı lekeler vardı. Tasarım
+> değil kazaydı: genel `button` kuralı **her** düğmeye dış parıltı gölgesi
+> veriyor (`0 6px 18px -8px var(--accent-glow)`); `.chip` ve `.selBtn` bunu
+> kendi `box-shadow`'uyla eziyor ama gezinme düğmeleri, log menüsü ve logo
+> düğmesi ezmiyordu. Üçü de sıfırlandı. Parıltı artık yalnızca birincil eylem
+> düğmelerinde (`Taramayı Başlat`, `Yoklamayı Al!`, `Toplu Uyarı Ver`) ve aktif
+> süzgeç `chip`'inde - yani kasıtlı olduğu yerlerde.
 
 İkonlar **emoji değil, tek renkli SVG**'dir (`index.html` başındaki `.ikon-seti`
 sprite'ı). Emojiler her işletim sisteminde farklı çiziliyor, farklı genişlikte

@@ -448,13 +448,16 @@ function applyFilters() {
     listEl.innerHTML = '';
     if (lastResults.length === 0) {
         emptyState.textContent = 'Kontrol edilecek rollerde kimse bulunamadı.';
-        emptyState.style.display = 'block';
+        // 'block' DEGIL: satir ici stil, .empty-hint'in flex ortalamasini
+        // ezip metni kutunun tepesine yapistiriyordu. Bos birakinca CSS'teki
+        // kural gecerli oluyor.
+        emptyState.style.display = '';
         return;
     }
     const filtered = getFilteredMembers();
     if (filtered.length === 0) {
         emptyState.textContent = 'Aramaya/filtreye uyan kimse yok.';
-        emptyState.style.display = 'block';
+        emptyState.style.display = '';
         return;
     }
     emptyState.style.display = 'none';
@@ -727,6 +730,34 @@ if (sideCanli) {
 // ============================================================================
 // --- SEKMELER ---
 // ============================================================================
+// Her sekmenin basligi ve bir cumlelik ne ise yaradigi. Baslik HTML'de 10 kez
+// tekrarlanmiyor, buradan suruluyor - yeni sekme eklemek bir satir.
+const SEKME_BASLIKLARI = {
+    yoklama:      ['i-yoklama',      'Yoklama',        'Yetkili taraması, uyarı merdiveni ve acil toplantı.'],
+    yetkililer:   ['i-yetkililer',   'Yetkililer',     'Rol bazlı yetkili listesi ve satır içi rol işlemleri.'],
+    roller:       ['i-roller',       'Rol Ver / Al',   'Seçtiğin kişiye rol ver ya da geri al.'],
+    aktiflik:     ['i-aktiflik',     'Aktiflik',       'Kim ne kadar süre seste kaldı, gün gün.'],
+    etkinlik:     ['i-etkinlik',     'Etkinlik',       'Kanal bazlı mesaj sayıları ve ticket sahiplenme.'],
+    loglar:       ['i-loglar',       'TX Logs',        'Ban, unban, kick, warn, DM ve diğer log kanalları.'],
+    mutelog:      ['i-mutelog',      'Mute Logları',   'Mute ve unmute kayıtları.'],
+    felox:        ['i-felox',        'Felox',          'Felox kayıtları ve şüpheli log incelemesi.'],
+    hesaploglari: ['i-hesaploglari', 'Hesap Logları',  'Panelde kim ne yaptı.'],
+    ayarlar:      ['i-ayarlar',      'Ayarlar',        'Otomatik yoklama, rol botu, ticket mesajı ve panel hesapları.'],
+};
+
+const sayfaIkon = document.getElementById('sayfaIkon');
+const sayfaAd = document.getElementById('sayfaAd');
+const sayfaAciklama = document.getElementById('sayfaAciklama');
+
+function sayfaBasliginiAyarla(sekme) {
+    const b = SEKME_BASLIKLARI[sekme];
+    if (!b) return;
+    sayfaIkon.innerHTML = `<svg><use href="#${b[0]}"/></svg>`;
+    sayfaAd.textContent = b[1];
+    sayfaAciklama.textContent = b[2];
+}
+sayfaBasliginiAyarla('yoklama');
+
 const tabButtons = document.querySelectorAll('.tab-btn');
 tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -734,6 +765,7 @@ tabButtons.forEach((btn) => {
         btn.classList.add('active');
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+        sayfaBasliginiAyarla(btn.dataset.tab);
         if (btn.dataset.tab === 'yoklama') loadKatilim();
         if (btn.dataset.tab === 'loglar') txLogTab.refreshMenu();
         if (btn.dataset.tab === 'mutelog') muteLogTab.refreshMenu();

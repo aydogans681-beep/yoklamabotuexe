@@ -1227,3 +1227,150 @@ textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
     .isaret-kutu, .isaret-btn { transition: none; }
 }
+
+/* ==========================================================================
+   PROFESYONEL GEÇİŞ
+   Buradaki kurallar önceki bölümleri bilerek eziyor - tek tek düzenlemek
+   yerine sonda geçersiz kılmak hem daha az riskli hem geri alması kolay.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1) Kazara gelen kırmızı parıltı
+   Genel `button` kuralı HER düğmeye dış parıltı gölgesi veriyor
+   (0 6px 18px -8px var(--accent-glow)). .chip ve .selBtn bunu kendi
+   box-shadow'uyla eziyor ama kenar çubuğu ve log menüsü düğmeleri ezmiyordu -
+   bu yüzden her gezinme satırının altında bulanık kırmızı bir leke duruyordu.
+   Tasarım değil, kaza. Sıfırlanıyor.
+   -------------------------------------------------------------------------- */
+.side-nav .tab-btn,
+.log-menu-item,
+.act-row { box-shadow: none; }
+.side-nav .tab-btn:hover:not(:disabled),
+.log-menu-item:hover:not(:disabled) { box-shadow: none; }
+/* Aktif satırda derinlik SOL ŞERİTTEN gelsin (::before zaten çiziyor).
+   Dört kenarı saran bir iç çerçeve denenmişti ama satırın sağ kenarında,
+   arka plan gradyanı şeffaflaştığı yerde parlak bir çizgi bırakıyordu. */
+.side-nav .tab-btn.active { box-shadow: none; }
+
+/* --------------------------------------------------------------------------
+   2) Sayfa başlığı
+   Sekmeler doğrudan bir araç çubuğuyla başlıyordu; "neye bakıyorum" sorusunu
+   cevaplayan bir seviye yoktu. Panelin en üstünde tek bir başlık bandı.
+   -------------------------------------------------------------------------- */
+.sayfa-basligi {
+    display: flex; align-items: center; gap: 13px;
+    padding: 2px 2px 15px; margin-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+}
+.sb-ikon {
+    flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
+    color: var(--accent);
+}
+.sb-ikon svg {
+    width: 19px; height: 19px; fill: none; stroke: currentColor;
+    stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.sb-metin { min-width: 0; }
+.sayfa-basligi h1 {
+    margin: 0; font-size: 19px; font-weight: 750;
+    letter-spacing: -.025em; color: var(--ink); line-height: 1.2;
+}
+.sayfa-basligi p {
+    margin: 3px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.4;
+}
+
+/* --------------------------------------------------------------------------
+   3) KPI kutucukları -> gerçek istatistik kartları
+   Eskiden küçük etiket + sayı, araç çubuğunun içinde kaybolan kutucuklardı.
+   Sayı asıl bilgi; ona alan veriliyor.
+   -------------------------------------------------------------------------- */
+.kpi {
+    padding: 11px 16px; min-width: 116px; gap: 4px;
+    background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+    border-radius: var(--radius);
+}
+.kpi .kpi-value { font-size: 26px; letter-spacing: -.035em; }
+.kpi .kpi-label { font-size: 9px; letter-spacing: .09em; opacity: .85; }
+
+/* --------------------------------------------------------------------------
+   4) Kart hiyerarşisi
+   Başlık ve gövde arasındaki fark çok azdı, kartlar düz bir yüzey gibi
+   okunuyordu.
+   -------------------------------------------------------------------------- */
+.card { padding: 19px 21px; }
+.card h2 {
+    font-size: 14.5px; font-weight: 750; letter-spacing: -.02em;
+    margin: 0 0 7px;
+    /* Başlığın önünde ince bir aksan çubuğu: kartın nerede başladığı belli. */
+    display: flex; align-items: center; gap: 9px;
+}
+.card h2::before {
+    content: ''; flex: 0 0 auto; width: 3px; height: 14px;
+    border-radius: 2px; background: var(--accent);
+}
+.card-desc { font-size: 12px; }
+
+/* --------------------------------------------------------------------------
+   5) Araç çubukları
+   Kartlarla aynı yüzeyi paylaştıkları için sayfada nerede bittikleri
+   belirsizdi.
+   -------------------------------------------------------------------------- */
+.action-bar, .logs-toolbar {
+    border-radius: var(--radius);
+    padding: 13px 15px;
+}
+
+/* --------------------------------------------------------------------------
+   6) Boş ekranlar
+   Tek satır gri yazı yerine, ortada duran ve ne yapılacağını söyleyen bir alan.
+   -------------------------------------------------------------------------- */
+.empty-hint {
+    padding: 46px 24px; font-size: 13px;
+    border-radius: var(--radius);
+}
+.empty-hint b { color: var(--ink-2); }
+
+/* --------------------------------------------------------------------------
+   7) Kenar çubuğu
+   Satırlar birbirine çok yakındı ve grup başlıkları listeye karışıyordu.
+   -------------------------------------------------------------------------- */
+.side-nav { gap: 18px; }
+.nav-grup { gap: 3px; }
+.nav-baslik { font-size: 9px; opacity: .45; padding-bottom: 7px; }
+.side-nav .tab-btn { padding: 9px 11px 9px 10px; }
+
+/* Dar ekranda başlık bandı yer kaplamasın */
+@media (max-width: 860px) {
+    .sayfa-basligi { padding-bottom: 11px; margin-bottom: 11px; }
+    .sayfa-basligi h1 { font-size: 16px; }
+    .sayfa-basligi p { display: none; }
+    .sb-ikon { width: 32px; height: 32px; }
+}
+
+/* --------------------------------------------------------------------------
+   8) Boş alanın kendisi
+   Sonuç listesi boşken ekranın altı tamamen ölüydü: kısa bir kutu, altında
+   yarım ekran hiçlik. Boş durum artık kabını dolduruyor, yani düzen kesilmiş
+   değil bilerek boş görünüyor.
+   -------------------------------------------------------------------------- */
+#listWrap { display: flex; flex-direction: column; }
+#listWrap > #list { flex: 0 0 auto; }
+.empty-hint {
+    min-height: 240px;
+    background: rgba(0,0,0,.14);
+    border: 1px dashed var(--border-strong);
+}
+/* Liste kabının içindeki boş durumlar zaten kutu içinde - ikinci bir çerçeve
+   çizmesinler. */
+.logs-list .empty-hint,
+.activity-list .empty-hint,
+.isaret-suzgec ~ .logs-list .empty-hint {
+    background: none; border: none; min-height: 180px;
+}
+
+/* Logo düğmesi de genel `button` kuralının kırmızı parıltısını taşıyordu:
+   logonun etrafında sebepsiz bir hale duruyordu. Parıltı yalnızca üzerine
+   gelince, o da drop-shadow olarak (yukarıdaki .brand-btn:hover kuralı). */
+button.brand-btn { box-shadow: none; }
