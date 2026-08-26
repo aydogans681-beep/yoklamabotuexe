@@ -1526,8 +1526,12 @@ button.brand-btn { box-shadow: none; }
 /* --- Sağ: halkalarla çevrili logo --- */
 .hero-sag {
     position: relative; min-width: 0;
-    aspect-ratio: 1; max-height: 560px;
+    aspect-ratio: 1; max-height: 680px;
     display: flex; align-items: center; justify-content: center;
+    /* --fx / --fy: farenin ekrandaki konumu (-0.5 .. 0.5), app.js dolduruyor.
+       Her parça bu değeri kendi katsayısıyla kullanıyor. */
+    --fx: 0; --fy: 0;
+    cursor: pointer;
 }
 /* Halka rengi DOGRUDAN alfayla veriliyor. Once var(--accent-line) (kendisi
    zaten %28 saydam) ustune bir de opacity uygulaniyordu; ikisi carpilinca
@@ -1536,17 +1540,54 @@ button.brand-btn { box-shadow: none; }
     position: absolute; border-radius: 50%;
     top: 50%; left: 50%; transform: translate(-50%, -50%);
 }
-.halka-1 { width: 98%; height: 98%; border: 1px solid rgba(255,59,71,.13); }
-.halka-2 { width: 76%; height: 76%; border: 1px solid rgba(255,59,71,.22); }
-.halka-3 { width: 54%; height: 54%; border: 1px solid rgba(255,59,71,.34); }
+/* Halkalar fareyle TERS yönde kayıyor: dışarıdakiler daha çok, içeridekiler
+   daha az. Logo ileri, halkalar geri - beynin derinlik olarak okuduğu şey bu
+   fark (parallaks). */
+.halka-1 { width: 98%; height: 98%; border: 1px solid rgba(255,59,71,.13);
+    transform: translate(calc(-50% - var(--fx) * 26px), calc(-50% - var(--fy) * 26px)); }
+.halka-2 { width: 76%; height: 76%; border: 1px solid rgba(255,59,71,.22);
+    transform: translate(calc(-50% - var(--fx) * 16px), calc(-50% - var(--fy) * 16px)); }
+.halka-3 { width: 54%; height: 54%; border: 1px solid rgba(255,59,71,.34);
+    transform: translate(calc(-50% - var(--fx) * 8px), calc(-50% - var(--fy) * 8px)); }
+
+/* Parıltı imlecin olduğu tarafa doğru kayıyor - ışık oradan geliyormuş gibi. */
 .hero-parilti {
-    position: absolute; width: 82%; height: 82%; border-radius: 50%;
+    position: absolute; width: 86%; height: 86%; border-radius: 50%;
     background: radial-gradient(circle, rgba(255,59,71,.30), transparent 65%);
     filter: blur(58px);
+    transform: translate(calc(var(--fx) * 44px), calc(var(--fy) * 44px));
+    /* Taban %82: hover'da 1'e cikinca gercek bir fark oluyor. Once taban 1'di
+       ve hover'a 1.25 yaziliyordu - opacity 1'e kirpildigi icin hicbir sey
+       degismiyordu. */
+    opacity: .82;
+    transition: opacity .3s;
 }
+.hero-sag:hover .hero-parilti { opacity: 1; }
+
+/* Logo: eskisinden belirgin büyük (%52 -> %64) ve fareyi izleyerek eğiliyor. */
 .hero-logo {
-    position: relative; width: 52%; padding: 0;
-    filter: drop-shadow(0 14px 44px rgba(0,0,0,.55));
+    position: relative; width: 64%; padding: 0;
+    transform:
+        perspective(900px)
+        rotateY(calc(var(--fx) * 17deg))
+        rotateX(calc(var(--fy) * -17deg))
+        translateZ(34px);
+    filter: drop-shadow(calc(var(--fx) * -22px) calc(var(--fy) * -16px + 16px) 40px rgba(0,0,0,.6));
+    transition: filter .25s;
+}
+.hero-sag:hover .hero-logo {
+    filter: drop-shadow(calc(var(--fx) * -22px) calc(var(--fy) * -16px + 16px) 46px rgba(255,59,71,.34));
+}
+.hero-sag:active .hero-logo { transform: perspective(900px) translateZ(10px) scale(.985); }
+
+/* Tıklanınca halkalardan dışa doğru bir nabız - dokunmatik ekranda fare
+   hareketi olmadığı için oradaki tek karşılık bu. */
+.hero-sag.nabiz .halka-3 { animation: halka-nabiz .62s ease-out; }
+.hero-sag.nabiz .halka-2 { animation: halka-nabiz .62s ease-out .07s; }
+.hero-sag.nabiz .halka-1 { animation: halka-nabiz .62s ease-out .14s; }
+@keyframes halka-nabiz {
+    0%   { border-color: rgba(255,59,71,.75); }
+    100% { border-color: rgba(255,59,71,.13); }
 }
 .hero-logo .brand-img { width: 100%; max-width: none; }
 .hero-logo .brand-fallback span  { font-size: 68px; }
@@ -1568,4 +1609,15 @@ button.brand-btn { box-shadow: none; }
     .hero-baslik { font-size: 40px; }
     .hero-alt { font-size: 13.5px; margin-bottom: 24px; }
     .hero-form { max-width: none; }
+}
+
+/* Hareketi azaltma tercihi: logo eğilmiyor, halkalar kaymıyor, nabız yok.
+   app.js zaten dinleyicileri hiç bağlamıyor; bu blok CSS tarafını da
+   nötrleyerek --fx/--fy bir şekilde ayarlansa bile hareket olmamasını
+   garantiliyor. */
+@media (prefers-reduced-motion: reduce) {
+    .hero-logo, .hero-parilti { transform: none; transition: none; }
+    .halka-1, .halka-2, .halka-3 {
+        transform: translate(-50%, -50%); animation: none;
+    }
 }

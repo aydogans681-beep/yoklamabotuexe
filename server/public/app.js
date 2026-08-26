@@ -2350,20 +2350,67 @@ document.getElementById('sideBrand').addEventListener('click', () => {
 // Kap olarak logonun KENDI bolumunu aliyoruz; ".login-card" yaziliyordu ve
 // duzen degisince logo baska bir kapsayiciya tasindigi icin null donup
 // sayfanin geri kalan betigini de dusuruyordu.
-const loginBrand = document.getElementById('loginBrand');
-const loginCard = loginBrand && (loginBrand.closest('.login-brand') || loginBrand.closest('.login-shell'));
-if (loginBrand && loginCard) {
-    loginCard.addEventListener('mousemove', (evt) => {
-        const k = loginCard.getBoundingClientRect();
-        const x = (evt.clientX - k.left) / k.width - 0.5;
-        const y = (evt.clientY - k.top) / k.height - 0.5;
-        loginBrand.style.transform =
-            `perspective(600px) rotateY(${x * 14}deg) rotateX(${-y * 14}deg) translateZ(12px)`;
-        loginBrand.style.filter = `drop-shadow(${-x * 16}px ${-y * 12 + 8}px 20px rgba(255,59,71,.4))`;
+// ============================================================================
+// --- GİRİŞ EKRANI: CANLI LOGO ---
+// Logo fareyi izliyor: kendisi eğiliyor, halkalar ters yönde kayıyor
+// (parallaks), parıltı imlecin olduğu tarafa doğru kayıyor. Üçü birlikte
+// derinlik hissi veriyor - logo halkaların ÖNÜNDE duruyormuş gibi.
+//
+// Değerler doğrudan stille değil CSS değişkeniyle (--fx / --fy) veriliyor:
+// her parçanın o değeri ne kadar kullanacağına CSS karar veriyor, JS yalnızca
+// "fare şu kadar sağda/aşağıda" diyor.
+//
+// Hedefe yumuşatarak yaklaşıyoruz (lerp): imleci ani hareket ettirince logo
+// zıplamıyor, arkasından süzülüyor. Güncelleme requestAnimationFrame ile,
+// yani mousemove kaç kez tetiklenirse tetiklensin kare başına bir kez.
+//
+// NOT: eskiden buradaki kod .login-brand / .login-shell kaplarını arıyordu.
+// Giriş ekranı hero yerleşimine geçince o iki sınıf kalktı ve efekt sessizce
+// devre dışı kaldı - hata vermediği için fark edilmiyordu.
+// ============================================================================
+const heroSag = document.querySelector('.hero-sag');
+const heroAlan = document.getElementById('loginWrap');
+const hareketAzalt = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+if (heroSag && heroAlan && !hareketAzalt) {
+    let hedefX = 0;
+    let hedefY = 0;
+    let suanX = 0;
+    let suanY = 0;
+    let kare = null;
+
+    function adim() {
+        // Yumuşatma katsayısı: 1'e yaklaştıkça daha ani.
+        suanX += (hedefX - suanX) * 0.09;
+        suanY += (hedefY - suanY) * 0.09;
+        heroSag.style.setProperty('--fx', suanX.toFixed(4));
+        heroSag.style.setProperty('--fy', suanY.toFixed(4));
+        // Hedefe yeterince yaklaştıysak döngüyü durduruyoruz - imleç
+        // durduğunda boşuna kare harcamasın.
+        if (Math.abs(hedefX - suanX) > 0.0008 || Math.abs(hedefY - suanY) > 0.0008) {
+            kare = requestAnimationFrame(adim);
+        } else {
+            kare = null;
+        }
+    }
+    function tetikle() { if (!kare) kare = requestAnimationFrame(adim); }
+
+    heroAlan.addEventListener('mousemove', (evt) => {
+        const k = heroAlan.getBoundingClientRect();
+        hedefX = (evt.clientX - k.left) / k.width - 0.5;
+        hedefY = (evt.clientY - k.top) / k.height - 0.5;
+        tetikle();
     });
-    loginCard.addEventListener('mouseleave', () => {
-        loginBrand.style.transform = '';
-        loginBrand.style.filter = '';
+    heroAlan.addEventListener('mouseleave', () => { hedefX = 0; hedefY = 0; tetikle(); });
+
+    // Logoya tıklayınca kısa bir nabız - dokunmatik ekranda da bir karşılık
+    // olsun diye (orada fare hareketi yok).
+    heroSag.addEventListener('click', () => {
+        heroSag.classList.remove('nabiz');
+        // Sınıfı hemen geri eklemek animasyonu yeniden başlatmıyor; tarayıcının
+        // yerleşimi yeniden hesaplaması gerekiyor.
+        void heroSag.offsetWidth;
+        heroSag.classList.add('nabiz');
     });
 }
 

@@ -149,8 +149,34 @@ kullanıcının gözünde aynı görüntüyü veriyordu, artık şifreyi denemed
 botun ayakta olup olmadığı görülüyor; ve **commit yazdığı için "güncelleme
 geldi mi?" sorusu giriş ekranından cevaplanıyor**.
 
-Sağdaki halkalar ve parıltı tamamen dekoratif (`aria-hidden`). Logo
-`/logo` ucundan geliyor; sunucuya logo konmamışsa **MD/PvP** yazısına düşüyor.
+### Canlı logo
+
+Sağdaki logo fareyi izliyor ve üç şey aynı anda oluyor:
+
+- **Logo eğiliyor** (3B, ±17°) ve öne geliyor.
+- **Halkalar ters yönde kayıyor** - dıştaki 26px, ortadaki 16px, içteki 8px.
+  Beynin derinlik olarak okuduğu şey bu fark (parallaks): logo ileride,
+  halkalar geride.
+- **Parıltı imlece doğru kayıyor**, ışık oradan geliyormuş gibi.
+
+Değerler doğrudan stille değil `--fx` / `--fy` CSS değişkenleriyle veriliyor:
+JS yalnızca "fare şu kadar sağda/aşağıda" diyor, o değeri her parçanın ne kadar
+kullanacağına CSS karar veriyor. Hedefe yumuşatarak yaklaşılıyor, yani imleç ani
+hareket edince logo zıplamıyor arkasından süzülüyor; güncelleme
+`requestAnimationFrame` ile, yani `mousemove` kaç kez tetiklenirse tetiklensin
+kare başına bir kez. İmleç durunca döngü kendini durduruyor.
+
+Logoya **tıklayınca** halkalardan dışa doğru bir nabız geçiyor - dokunmatik
+ekranda fare hareketi olmadığı için oradaki tek karşılık bu.
+
+`prefers-reduced-motion: reduce` altında hiçbiri çalışmıyor: JS dinleyicileri
+hiç bağlamıyor, CSS de dönüşümleri nötrlüyor.
+
+Halkalar ve parıltı tamamen dekoratif (`aria-hidden`). Logo `/logo` ucundan
+geliyor; sunucuya logo konmamışsa **MD/PvP** yazısına düşüyor.
+
+> Logonun **şeffaf arka planlı** (PNG/SVG) olması gerekiyor. Kare ve dolu
+> zeminli bir görsel halkaların üstünü örtüyor ve etki kayboluyor.
 
 > Halka renkleri doğrudan alfayla veriliyor (`rgba(255,59,71,.13)` gibi), ayrı
 > bir `opacity` ile değil. İlk denemede `var(--accent-line)` (kendisi zaten %28
