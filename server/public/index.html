@@ -96,78 +96,84 @@
             <span class="grid"></span>
         </div>
 
-        <div class="login-shell">
-            <!-- SOL: marka tarafi. Dar ekranda gizleniyor. -->
-            <aside class="login-brand">
-                <div class="brand-mark brand-mark-lg" id="loginBrand">
-                    <img src="/logo" alt="MD PvP" class="brand-img"
+        <!-- Hero yerlesimi: solda icerik + form, sagda halkalarla cevrili
+             logo. Cerceveli bir kart yok - icerik dogrudan koyu zeminde
+             duruyor. Butun kimlikler (loginUsername, mdDurum vb.) korundu,
+             app.js aynen calisiyor. -->
+        <div class="giris-hero">
+            <div class="hero-sol">
+                <!-- Surum pili: nokta + durum + calisma suresi + commit.
+                     Veri /api/surum'dan, giris gerektirmiyor. -->
+                <div class="hero-pil">
+                    <span class="md-nokta" id="mdNokta" aria-hidden="true"></span>
+                    <b id="mdSurum">—</b>
+                    <span class="hero-pil-ayrac">—</span>
+                    <span id="mdDurum">kontrol ediliyor…</span>
+                    <span class="hero-pil-sure" id="mdSure"></span>
+                </div>
+
+                <div class="hero-rozet">
+                    YOKLAMA · SES AKTİFLİĞİ · OTOMATİK UYARI
+                </div>
+
+                <h1 class="hero-baslik">
+                    MD PvP —<br><span>Yoklama Paneli</span>
+                </h1>
+
+                <p class="hero-alt">
+                    Yetkili yoklaması, ses aktifliği ve sunucu logları tek yerden.
+                    Mazerete göre kademeli uyarı, otomatik günlük yoklama ve
+                    prime saat hatırlatması.
+                </p>
+
+                <div class="hero-form">
+                    <div id="loginError" style="display:none;"></div>
+
+                    <div class="field">
+                        <label for="loginUsername">Kullanıcı Adı</label>
+                        <div class="input-wrap">
+                            <span class="input-ico" aria-hidden="true"><svg><use href="#i-kullanici"/></svg></span>
+                            <input type="text" id="loginUsername" autocomplete="username"
+                                   placeholder="kullanıcı adın" spellcheck="false">
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="loginPassword">Şifre</label>
+                        <div class="input-wrap">
+                            <span class="input-ico" aria-hidden="true"><svg><use href="#i-kilit"/></svg></span>
+                            <input type="password" id="loginPassword" autocomplete="current-password"
+                                   placeholder="••••••••">
+                            <button type="button" class="input-btn" id="sifreGoster"
+                                    aria-label="Şifreyi göster">Göster</button>
+                        </div>
+                        <span class="field-hint" id="capsUyari" style="display:none;">
+                            ⚠ Caps Lock açık
+                        </span>
+                    </div>
+
+                    <button class="primary login-btn" id="loginBtn">
+                        <svg class="btn-ico"><use href="#i-kilit"/></svg>Giriş Yap
+                    </button>
+
+                    <p class="login-not">
+                        Hesabın yoksa panel yöneticisinden isteyebilirsin.
+                    </p>
+                </div>
+            </div>
+
+            <!-- SAG: halkalarla cevrili logo. Tamami dekoratif. Logo yuklenemezse
+                 (sunucuya logo konmamissa) MD/PvP yazisina dusuyor. -->
+            <div class="hero-sag" aria-hidden="true">
+                <span class="halka halka-1"></span>
+                <span class="halka halka-2"></span>
+                <span class="halka halka-3"></span>
+                <span class="hero-parilti"></span>
+                <div class="brand-mark hero-logo" id="loginBrand">
+                    <img src="/logo" alt="" class="brand-img"
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                     <div class="brand-fallback" style="display:none;"><span>MD</span><small>PvP</small></div>
                 </div>
-                <h2 class="brand-title">MD PvP<br><span>Yoklama Paneli</span></h2>
-                <p class="brand-sub">
-                    Yetkili yoklaması, ses aktifliği ve sunucu logları tek yerden.
-                </p>
-                <!-- Eskiden burada "neler yapabilir" madde listesi vardı. Bu panel
-                     iç kullanıma açık: giren herkes ne işe yaradığını zaten
-                     biliyor, o liste süstü. Giriş ekranında sorulan asıl soru
-                     "bot ayakta mı?" - artık ona cevap veriyor.
-                     Veri /api/surum'dan geliyor, giriş gerektirmiyor ve zaten
-                     eskiden de küçük bir rozette gösteriliyordu. -->
-                <div class="marka-durum">
-                    <div class="md-satir">
-                        <span class="md-nokta" id="mdNokta" aria-hidden="true"></span>
-                        <span class="md-ad">Bot</span>
-                        <b class="md-deger" id="mdDurum">kontrol ediliyor…</b>
-                    </div>
-                    <div class="md-satir">
-                        <span class="md-ad">Çalışma süresi</span>
-                        <b class="md-deger" id="mdSure">—</b>
-                    </div>
-                    <div class="md-satir">
-                        <span class="md-ad">Sürüm</span>
-                        <b class="md-deger md-tek" id="mdSurum">—</b>
-                    </div>
-                </div>
-            </aside>
-
-            <!-- SAG: giris formu -->
-            <div class="login-card">
-                <div class="login-head">
-                    <h1>Giriş Yap</h1>
-                    <p class="desc">Devam etmek için panel hesabınla giriş yap.</p>
-                </div>
-
-                <div id="loginError" style="display:none;"></div>
-
-                <div class="field">
-                    <label for="loginUsername">Kullanıcı Adı</label>
-                    <div class="input-wrap">
-                        <span class="input-ico" aria-hidden="true"><svg><use href="#i-kullanici"/></svg></span>
-                        <input type="text" id="loginUsername" autocomplete="username"
-                               placeholder="kullanıcı adın" spellcheck="false">
-                    </div>
-                </div>
-
-                <div class="field">
-                    <label for="loginPassword">Şifre</label>
-                    <div class="input-wrap">
-                        <span class="input-ico" aria-hidden="true"><svg><use href="#i-kilit"/></svg></span>
-                        <input type="password" id="loginPassword" autocomplete="current-password"
-                               placeholder="••••••••">
-                        <button type="button" class="input-btn" id="sifreGoster"
-                                aria-label="Şifreyi göster">Göster</button>
-                    </div>
-                    <span class="field-hint" id="capsUyari" style="display:none;">
-                        ⚠ Caps Lock açık
-                    </span>
-                </div>
-
-                <button class="primary login-btn" id="loginBtn">Giriş Yap</button>
-
-                <p class="login-not">
-                    Hesabın yoksa panel yöneticisinden isteyebilirsin.
-                </p>
             </div>
         </div>
     </div>

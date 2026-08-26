@@ -1464,40 +1464,95 @@ button.brand-btn { box-shadow: none; }
    iyice belli oldu. Orantılı rakama dönüyor. */
 .kpi .kpi-value { font-variant-numeric: proportional-nums; }
 
+
 /* ==========================================================================
-   GİRİŞ EKRANI - YENİDEN
-   Kabuk daha geniş ve daha dik duruyor; sol taraf artık tanıtım maddeleri
-   değil canlı sistem durumu gösteriyor.
+   GİRİŞ EKRANI - HERO
+   Yerleşim FeloxAC'nin açılış sayfasından alındı: sürüm pili, rozet şeridi,
+   dev başlık, sağda halkalarla çevrili logo. Renk MD PvP'nin kendi kırmızısı;
+   kopyalanan düzen, kimlik bizim.
+   Çerçeveli kart yok - içerik doğrudan koyu zeminde duruyor.
    ========================================================================== */
-.login-shell {
-    grid-template-columns: 1.1fr .9fr;
-    max-width: 1010px; min-height: 530px;
-    border-radius: 26px;
+.giris-hero {
+    position: relative; z-index: 1;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .92fr);
+    align-items: center; gap: 40px;
+    width: 100%; max-width: 1180px;
 }
-.login-brand { padding: 54px 46px; }
-.login-card  { padding: 54px 46px; }
+.hero-sol { min-width: 0; max-width: 560px; }
 
-.login-brand .brand-mark-lg { margin: 0 0 30px; max-width: 168px; }
-.brand-title { font-size: 33px; letter-spacing: -.035em; margin-bottom: 14px; }
-.brand-sub { font-size: 13.5px; margin-bottom: 0; max-width: 33ch; }
-
-/* --- Canlı sistem durumu --- */
-.marka-durum {
-    margin-top: 28px; padding-top: 22px;
-    border-top: 1px solid var(--border);
-    display: flex; flex-direction: column; gap: 2px;
+/* --- Sürüm pili --- */
+.hero-pil {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 15px; border-radius: 999px;
+    background: rgba(255,255,255,.028);
+    border: 1px solid var(--border-strong);
+    font-size: 12px; color: var(--ink-2); margin-bottom: 20px;
 }
-.md-satir {
-    display: flex; align-items: center; gap: 9px;
-    padding: 8px 0; font-size: 12.5px;
-    border-bottom: 1px solid rgba(255,255,255,.035);
-}
-.md-satir:last-child { border-bottom: none; }
-.md-ad { color: var(--ink-3); }
-.md-deger { margin-left: auto; color: var(--ink); font-weight: 650; }
-/* Sürüm bir commit kısaltması - eşit genişlikli rakam burada DOĞRU. */
-.md-tek { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.hero-pil b { color: var(--ink); font-weight: 650; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.hero-pil-ayrac { color: var(--ink-3); }
+.hero-pil-sure { color: var(--ink-3); }
 
+/* --- Rozet şeridi --- */
+.hero-rozet {
+    display: inline-block; padding: 7px 14px; margin-bottom: 22px;
+    border: 1px solid var(--accent-line); border-radius: 9px;
+    background: var(--accent-soft);
+    color: var(--accent); font-size: 11px; font-weight: 750;
+    letter-spacing: .14em; text-transform: uppercase;
+}
+
+/* --- Dev başlık --- */
+.hero-baslik {
+    margin: 0 0 20px; font-size: 58px; line-height: 1.04;
+    font-weight: 800; letter-spacing: -.045em; color: var(--ink);
+}
+.hero-baslik span { color: var(--accent); }
+.hero-alt {
+    margin: 0 0 30px; font-size: 14.5px; line-height: 1.7;
+    color: var(--ink-3); max-width: 46ch;
+}
+
+/* --- Form --- */
+.hero-form { max-width: 400px; }
+.hero-form .field { margin-bottom: 14px; }
+.hero-form .field input { padding: 12px 13px 12px 38px; font-size: 13px; }
+.hero-form .login-btn {
+    width: 100%; padding: 14px 18px; font-size: 14px; margin-top: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.hero-form .login-btn .btn-ico { width: 15px; height: 15px; vertical-align: 0; }
+.login-not { margin: 16px 0 0; font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+
+/* --- Sağ: halkalarla çevrili logo --- */
+.hero-sag {
+    position: relative; min-width: 0;
+    aspect-ratio: 1; max-height: 560px;
+    display: flex; align-items: center; justify-content: center;
+}
+/* Halka rengi DOGRUDAN alfayla veriliyor. Once var(--accent-line) (kendisi
+   zaten %28 saydam) ustune bir de opacity uygulaniyordu; ikisi carpilinca
+   halkalar %8'e dusuyor ve neredeyse gorunmuyordu. */
+.halka {
+    position: absolute; border-radius: 50%;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+}
+.halka-1 { width: 98%; height: 98%; border: 1px solid rgba(255,59,71,.13); }
+.halka-2 { width: 76%; height: 76%; border: 1px solid rgba(255,59,71,.22); }
+.halka-3 { width: 54%; height: 54%; border: 1px solid rgba(255,59,71,.34); }
+.hero-parilti {
+    position: absolute; width: 82%; height: 82%; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,59,71,.30), transparent 65%);
+    filter: blur(58px);
+}
+.hero-logo {
+    position: relative; width: 52%; padding: 0;
+    filter: drop-shadow(0 14px 44px rgba(0,0,0,.55));
+}
+.hero-logo .brand-img { width: 100%; max-width: none; }
+.hero-logo .brand-fallback span  { font-size: 68px; }
+.hero-logo .brand-fallback small { font-size: 27px; }
+
+/* Durum noktası */
 .md-nokta {
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--ink-3); flex: 0 0 auto;
@@ -1505,23 +1560,12 @@ button.brand-btn { box-shadow: none; }
 }
 .md-nokta.ok  { background: var(--ok);     box-shadow: 0 0 0 3px var(--ok-soft); }
 .md-nokta.bad { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-/* "Bot" satırında nokta soldaki hizayı bozmasın diye ad ondan sonra geliyor;
-   diğer satırlarda nokta yok, o yüzden aynı hizada başlamaları için girinti. */
-.md-satir:not(:first-child) .md-ad { padding-left: 16px; }
 
-/* --- Form tarafı --- */
-.login-head h1 { font-size: 27px; letter-spacing: -.03em; }
-.login-card .field { margin-bottom: 15px; }
-.login-card .field input { padding: 12px 13px 12px 38px; font-size: 13px; }
-.login-btn { padding: 13px 18px; font-size: 13.5px; margin-top: 6px; }
-
-.login-not {
-    margin: 18px 0 0; text-align: center;
-    font-size: 11.5px; color: var(--ink-3); line-height: 1.5;
-}
-
-@media (max-width: 860px) {
-    .login-shell { min-height: 0; }
-    .login-brand, .login-card { padding: 34px 26px; }
-    .brand-title { font-size: 26px; }
+@media (max-width: 980px) {
+    /* Dar ekranda logo yer kaplamasin - form asil is. */
+    .giris-hero { grid-template-columns: 1fr; gap: 0; max-width: 520px; }
+    .hero-sag { display: none; }
+    .hero-baslik { font-size: 40px; }
+    .hero-alt { font-size: 13.5px; margin-bottom: 24px; }
+    .hero-form { max-width: none; }
 }

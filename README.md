@@ -129,29 +129,39 @@ Panele hiç ulaşılamıyorsa hangi komutlarla bakılacağını da yazar.
 
 ## Giriş ekranı
 
-İki sütun: solda marka ve **canlı sistem durumu**, sağda form. Dar ekranda tek
-sütuna düşer.
+Çerçeveli bir kart değil, tam sayfa **hero** yerleşimi: solda içerik ve form,
+sağda halkalarla çevrili logo. Yerleşim ve tarz bir referans açılış sayfasından
+alındı; **renk MD PvP'nin kendi kırmızısı**, isim ve logo bizim.
 
-Sol tarafta eskiden "neler yapabilir" madde listesi vardı. Bu panel iç kullanıma
-açık - giren herkes ne işe yaradığını zaten biliyor, o liste süstü. Yerine giriş
-ekranında sorulan asıl soruya cevap veren üç satır kondu:
+Yukarıdan aşağı:
 
-| Satır | Ne söyler |
+| Parça | Ne var |
 |---|---|
-| **Bot** | çalışıyor / ulaşılamıyor (nokta yeşil ya da kırmızı) |
-| **Çalışma süresi** | bot en son ne zaman başlatıldı |
-| **Sürüm** | çalışan commit - "güncelleme geldi mi?" buradan anlaşılır |
+| **Sürüm pili** | ● commit — Bot çalışıyor · çalışma süresi |
+| **Rozet şeridi** | YOKLAMA · SES AKTİFLİĞİ · OTOMATİK UYARI |
+| **Dev başlık** | MD PvP — / **Yoklama Paneli** (ikinci satır aksan renginde) |
+| **Alt metin** | panelin ne yaptığı, iki cümle |
+| **Form** | kullanıcı adı, şifre, tam genişlik Giriş Yap |
 
-Veri `/api/surum`'dan geliyor, **giriş gerektirmiyor** ve gizli bilgi içermiyor;
-zaten eskiden de küçük bir rozette gösteriliyordu. 30 saniyede bir tazeleniyor
-(yalnızca giriş ekranı açıkken).
+Sürüm pilindeki veri `/api/surum`'dan geliyor, **giriş gerektirmiyor** ve gizli
+bilgi içermiyor. İki işi var: panelin açılmaması ile şifrenin yanlış olması
+kullanıcının gözünde aynı görüntüyü veriyordu, artık şifreyi denemeden önce
+botun ayakta olup olmadığı görülüyor; ve **commit yazdığı için "güncelleme
+geldi mi?" sorusu giriş ekranından cevaplanıyor**.
 
-Bunun pratik faydası: panelin açılmaması ile şifrenin yanlış olması kullanıcının
-gözünde aynı görüntüyü veriyordu. Artık şifreyi denemeden önce botun ayakta olup
-olmadığı görülüyor.
+Sağdaki halkalar ve parıltı tamamen dekoratif (`aria-hidden`). Logo
+`/logo` ucundan geliyor; sunucuya logo konmamışsa **MD/PvP** yazısına düşüyor.
 
-Arka plandaki ışık lekeleri ve ızgara tamamen dekoratif, `aria-hidden`;
-`prefers-reduced-motion` altında animasyon duruyor.
+> Halka renkleri doğrudan alfayla veriliyor (`rgba(255,59,71,.13)` gibi), ayrı
+> bir `opacity` ile değil. İlk denemede `var(--accent-line)` (kendisi zaten %28
+> saydam) üstüne bir de `opacity` uygulanıyordu; ikisi çarpılınca halkalar %8'e
+> düşüyor ve neredeyse görünmüyordu.
+
+Dar ekranda (< 980px) sağdaki logo gizleniyor ve başlık küçülüyor - orada asıl
+iş form.
+
+Arka plandaki ışık lekeleri ve ızgara da dekoratif; `prefers-reduced-motion`
+altında animasyon duruyor.
 
 ## Sayfa başlığı
 

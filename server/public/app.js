@@ -229,15 +229,15 @@ async function loginDurumGoster() {
         const saat = Math.floor(sn / 3600);
         const dk = Math.floor((sn % 3600) / 60);
         nokta.className = 'md-nokta ok';
-        durum.textContent = 'çalışıyor';
-        sureEl.textContent = saat ? `${saat} sa ${dk} dk` : `${dk} dk`;
+        durum.textContent = 'Bot çalışıyor';
+        sureEl.textContent = `· ${saat ? `${saat} sa ${dk} dk` : `${dk} dk`}`;
         surumEl.textContent = d.commit || '—';
     } catch (error) {
         // Panelin acilmamasi ile sifrenin yanlis olmasi kullanicinin gozunde
         // ayni goruntuyu veriyordu; bu satir ikisini ayiriyor.
         nokta.className = 'md-nokta bad';
-        durum.textContent = 'ulaşılamıyor';
-        sureEl.textContent = '—';
+        durum.textContent = 'Bota ulaşılamıyor';
+        sureEl.textContent = '';
         surumEl.textContent = '—';
     }
 }
