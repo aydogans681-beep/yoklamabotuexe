@@ -10,12 +10,43 @@
 # Bu script config.env, panel-auth.json ve warning-history.json dosyalarina
 # DOKUNMAZ - onlar .gitignore'da oldugu icin guncelleme sirasinda oldugu gibi
 # kalir. Yani token'in ve panel hesaplarin silinmez.
+#
+# Hangi dali ceker: BULUNDUGUN dali. Dal adi burada sabit yazili DEGIL, git'e
+# soruluyor. Yani hangi dala gecmis olursan ol, bu betik dogru olani ceker.
 # ============================================================================
 
 $ErrorActionPreference = "Stop"
-$dal = "claude/bunu-botu-anla-dpliwm"
 $kok = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $kok
+
+# Dal SABIT YAZILMIYOR - checkout edilmis dal ne ise o cekiliyor.
+#
+# Eskiden burada tek bir dal adi yaziliydi. Baska bir dala gecildiginde bu
+# betik hala eski dali cekiyor, yani calisan kodu SESSIZCE geri aliyordu:
+# "guncelledim ama degisiklikler gitti" durumunun sebebi buydu ve hicbir
+# yerde hata gorunmuyordu.
+#
+# Simdi git'e bulundugumuz dali soruyoruz. Ayrik HEAD (detached) gibi bir
+# durumda dal adi cikmaz; o zaman durup ne yapilacagini soyluyoruz - yanlis
+# bir dali cekmektense hic cekmemek daha guvenli.
+$eskiEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$dal = (& git rev-parse --abbrev-ref HEAD 2>$null | Select-Object -First 1)
+$ErrorActionPreference = $eskiEAP
+$global:LASTEXITCODE = 0
+if ($dal) { $dal = $dal.Trim() }
+
+if (-not $dal -or $dal -eq 'HEAD') {
+    Write-Host ""
+    Write-Host "Bulundugun dal belirlenemedi (ayrik HEAD olabilir)." -ForegroundColor Red
+    Write-Host "Once bir dala gec, sonra tekrar dene:" -ForegroundColor Yellow
+    Write-Host "    git checkout <dal-adi>"
+    Write-Host ""
+    Write-Host "Hangi dallar var:" -ForegroundColor Yellow
+    Write-Host "    git branch -a"
+    Write-Host ""
+    exit 1
+}
 
 Write-Host ""
 Write-Host "=== MD PvP Yoklama Botu - guncelleme ===" -ForegroundColor Cyan

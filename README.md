@@ -65,10 +65,27 @@ sürümü aynı dosyaları okur.
 ## Sorun giderme
 
 ```powershell
+.\guncelle.ps1  # yeni surumu ceker, bagimliliklari kurar, botu yeniden baslatir
 .\token.ps1     # Discord token'ini dogrulayip config.env'e yazar
 .\temizle.ps1   # bot tek kopya mi? hayaletleri temizler ve yeniden baslatir
 .\tani.ps1      # ne calisiyor, hangi kanallar okundu
 ```
+
+### guncelle.ps1
+
+Güncellemenin tek komutu. **Hangi dalı çeker: bulunduğun dalı.** Dal adı betikte
+sabit yazılı değil, `git rev-parse --abbrev-ref HEAD` ile git'e soruluyor.
+
+> Eskiden burada tek bir dal adı yazılıydı. Başka bir dala geçildiğinde betik
+> hâlâ eski dalı çekiyor, yani çalışan kodu **sessizce geri alıyordu** -
+> "güncelledim ama değişiklikler gitti" durumunun sebebi buydu ve hiçbir yerde
+> hata görünmüyordu.
+
+Ayrık HEAD (detached) durumunda dal adı çıkmaz; betik o zaman **durur** ve ne
+yapılacağını yazar - yanlış bir dalı çekmektense hiç çekmemek daha güvenli.
+
+`config.env`, `panel-auth.json` ve `warning-history.json` dosyalarına dokunmaz;
+onlar `.gitignore`'da olduğu için token ve panel hesapları silinmez.
 
 ### token.ps1
 
