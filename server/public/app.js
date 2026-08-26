@@ -728,6 +728,103 @@ if (sideCanli) {
 }
 
 // ============================================================================
+// --- GÜNLÜK SÜTUN GRAFİĞİ ---
+// Aktiflik ve Etkinlik sekmelerinin ikisi de aynı biçimde veri döndürüyor
+// (availableDays: [{day, total}]), farkları yalnızca birim: biri mesaj sayısı,
+// biri saniye. O yüzden tek bir çizici ikisine de hizmet ediyor; birimi
+// çağıran veriyor.
+//
+// TEK SERİ olduğu için gösterge kutusu yok - başlık zaten neyin çizildiğini
+// söylüyor. Renk sekans işi: tek renk (marka aksanı), "daha çok = daha koyu"
+// değil "daha çok = daha uzun" ile okunuyor.
+//
+// Ölçüler bilerek sabit: sütun en fazla 24px, üstü 4px yuvarlak, tabanı düz,
+// sütunlar arasında 2px yüzey boşluğu, ızgara çizgisi 1px ve geride. Değer
+// SADECE en yüksek sütunun üstünde yazıyor - her sütuna sayı yazmak okunmaz
+// bir kalabalık yaratıyor, gerisini ipucu balonu taşıyor.
+// ============================================================================
+const GRAFIK_YUKSEKLIK = 132;   // çizim alanı (eksen yazısı hariç)
+const GRAFIK_SUTUN_MAKS = 24;
+const GRAFIK_BOSLUK = 2;
+
+function gunEtiketi(gun) {
+    // 2026-08-26 -> 26.08
+    const p = String(gun).split('-');
+    return p.length === 3 ? `${p[2]}.${p[1]}` : gun;
+}
+
+function gunlukGrafikCiz(kap, gunler, bicimle) {
+    if (!kap) return false;
+    // Uç son 14 günü YENİDEN ESKİYE döndürüyor; grafikte zaman soldan sağa
+    // aktığı için ters çeviriyoruz.
+    const veri = (gunler || []).slice().reverse();
+    if (veri.length === 0) { kap.innerHTML = ''; return false; }
+
+    const enYuksek = Math.max(...veri.map((g) => g.total), 0);
+    if (enYuksek === 0) {
+        kap.innerHTML = '<div class="grafik-bos">Bu aralıkta kayıt yok.</div>';
+        return true;
+    }
+    const enYuksekIndeks = veri.findIndex((g) => g.total === enYuksek);
+    const cizimYuksekligi = GRAFIK_YUKSEKLIK - 20;   // tepe etiketine yer
+
+    // Yerleşim FLEX. Önceki hâli sütunları yüzdeyle konumlandırıp piksel
+    // boşluk ekliyordu; iki birim karışınca sütunlar kıl gibi inceliyordu.
+    // Flex'te her günün kendi eşit hücresi var, sütun hücrenin ortasında ve
+    // 24px'de kapanıyor - artan yer bilerek boşluk kalıyor.
+    const sutunlar = veri.map((g, i) => {
+        const yukseklik = g.total > 0
+            ? Math.max((g.total / enYuksek) * cizimYuksekligi, 3)
+            : 0;
+        const tepe = i === enYuksekIndeks
+            ? `<span class="grafik-tepe">${escapeHtml(bicimle(g.total))}</span>`
+            : '';
+        return `<div class="grafik-sutun${i === enYuksekIndeks ? ' en-yuksek' : ''}"
+            data-gun="${escapeHtml(g.day)}" data-deger="${escapeHtml(bicimle(g.total))}"
+            tabindex="0" role="img"
+            aria-label="${escapeHtml(gunEtiketi(g.day))}: ${escapeHtml(bicimle(g.total))}">
+            ${tepe}<span class="gs-dolgu" style="height:${yukseklik.toFixed(1)}px;"></span>
+        </div>`;
+    }).join('');
+
+    // 14 gün için her etiketi yazmak sıkışıyor - birer atlanıyor.
+    const eksen = veri.map((g, i) => {
+        const goster = veri.length <= 8 || i % 2 === 1 || i === veri.length - 1;
+        return `<span class="grafik-eksen-gun">${goster ? escapeHtml(gunEtiketi(g.day)) : ''}</span>`;
+    }).join('');
+
+    kap.innerHTML = `
+        <div class="grafik-alan" style="height:${GRAFIK_YUKSEKLIK}px;">
+            <span class="grafik-izgara" style="bottom:${cizimYuksekligi}px;"></span>
+            <span class="grafik-izgara" style="bottom:${cizimYuksekligi / 2}px;"></span>
+            <span class="grafik-taban"></span>
+            <div class="grafik-sutunlar">${sutunlar}</div>
+        </div>
+        <div class="grafik-eksen">${eksen}</div>
+        <div class="grafik-ipucu" hidden></div>`;
+
+    // İpucu: sütun ince olduğu için isabet alanı sütunun kendisi değil, onu
+    // saran tam yükseklikteki hücre - 3px'lik bir çubuğu yakalamaya çalışmak
+    // sinir bozucu olurdu.
+    const ipucu = kap.querySelector('.grafik-ipucu');
+    kap.querySelectorAll('.grafik-sutun').forEach((sutun) => {
+        const goster = () => {
+            ipucu.textContent = `${gunEtiketi(sutun.dataset.gun)} · ${sutun.dataset.deger}`;
+            ipucu.hidden = false;
+            const kapGen = kap.getBoundingClientRect().width;
+            const x = sutun.offsetLeft + sutun.offsetWidth / 2;
+            ipucu.style.left = `${Math.min(Math.max(x, 52), kapGen - 52)}px`;
+        };
+        const gizle = () => { ipucu.hidden = true; };
+        sutun.addEventListener('mouseenter', goster);
+        sutun.addEventListener('focus', goster);
+        sutun.addEventListener('mouseleave', gizle);
+        sutun.addEventListener('blur', gizle);
+    });
+    return true;
+}
+
+// ============================================================================
 // --- SEKMELER ---
 // ============================================================================
 // Her sekmenin basligi ve bir cumlelik ne ise yaradigi. Baslik HTML'de 10 kez
@@ -2346,6 +2443,22 @@ const actPageInfo = document.getElementById('actPageInfo');
 
 const activityDiagBtn = document.getElementById('activityDiagBtn');
 
+let actChannels = [];   // /api/etkinlik'ten gelen kaynak listesi
+
+const actGrafikKart = document.getElementById('actGrafikKart');
+const actGrafik = document.getElementById('actGrafik');
+const actGrafikAlt = document.getElementById('actGrafikAlt');
+const presGrafikKart = document.getElementById('presGrafikKart');
+const presGrafik = document.getElementById('presGrafik');
+const presGrafikAlt = document.getElementById('presGrafikAlt');
+
+// Grafiğin altına hangi kaynağın çizildiği yazılıyor - Etkinlik'te üç ayrı
+// kaynak var, grafik hangisine ait başka türlü anlaşılmıyor.
+function aktifKanalEtiketi() {
+    const k = actChannels.find((c) => c.key === actChannelKey);
+    return k ? k.label : (actChannelKey || '');
+}
+
 const ACT_PAGE = 50;
 let actChannelKey = null;
 let actReport = null;
@@ -2368,6 +2481,9 @@ function taniDugmesiniGuncelle() {
 }
 
 function renderActivityChannels(kanallar) {
+    // Grafik altyazisi hangi kaynagin cizildigini yaziyor; liste burada
+    // saklanmazsa o bilgiye ulasilamiyor.
+    actChannels = kanallar;
     activityChannels.innerHTML = kanallar.map((c) => {
         const etiket = c.configured ? escapeHtml(c.label) : `${escapeHtml(c.label)} (ID yok)`;
         return `<button class="chip${c.key === actChannelKey ? ' active' : ''}" data-actch="${c.key}">${etiket}</button>`;
@@ -2427,6 +2543,8 @@ function renderActivityList() {
 async function loadActivityReport() {
     if (!actChannelKey) return;
     if (actMode === 'gunluk') return loadDailyReport();
+    // Tüm zamanlar modunda günlük döküm gelmiyor - grafik kartı kapalı.
+    actGrafikKart.style.display = 'none';
     activityList.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(6) + '</div>';
     activityStatus.textContent = '';
     try {
@@ -2677,6 +2795,13 @@ async function loadDailyReport() {
         document.getElementById('actActive').textContent = yazan;
         document.getElementById('actSilent').textContent = data.members.length - yazan;
         activityKpis.style.display = 'flex';
+
+        // Son 14 gün grafiği. Yalnızca uç availableDays döndürdüğünde çiziliyor;
+        // "Tüm zamanlar" modunda o alan gelmiyor ve kart gizleniyor - boş bir
+        // grafik iskeleti göstermektense hiç göstermemek daha dürüst.
+        actGrafikKart.style.display =
+            gunlukGrafikCiz(actGrafik, data.availableDays, (n) => `${n} mesaj`) ? '' : 'none';
+        actGrafikAlt.textContent = `${aktifKanalEtiketi()} · günlük toplam mesaj`;
 
         const gunAdi = aralikMetni(actDay, actDayBit, actToday);
         activityStatus.textContent = `${gunAdi}: ${data.dayTotal} kayıt`
@@ -3166,6 +3291,10 @@ async function loadPresence(vurgula) {
         document.getElementById('presInVoice').textContent = d.inVoiceCount;
         document.getElementById('presTotalTime').textContent = sureBicimle(d.totalSeconds);
         document.getElementById('presZero').textContent = hicGirmeyen;
+
+        presGrafikKart.style.display =
+            gunlukGrafikCiz(presGrafik, d.availableDays, sureBicimle) ? '' : 'none';
+        presGrafikAlt.textContent = 'günlük toplam ses süresi';
 
         const gunAdi = aralikMetni(presDay, presDayBit, presToday);
         // Veri ne zamandan beri toplanıyor - geçmiş yok, bu özellik

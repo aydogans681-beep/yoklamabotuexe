@@ -429,6 +429,14 @@
                 </div>
             </div>
 
+            <div class="grafik-kart" id="presGrafikKart" style="display:none;">
+                <div class="grafik-baslik">
+                    <h3>Son 14 gün</h3>
+                    <span class="grafik-alt" id="presGrafikAlt"></span>
+                </div>
+                <div class="grafik-govde" id="presGrafik"></div>
+            </div>
+
             <div class="toolbar" style="margin-bottom:10px;">
                 <input type="text" class="text-search" id="presenceSearch" placeholder="Yetkili ara...">
                 <span class="scanStatus" id="presenceStatus"></span>
@@ -493,6 +501,16 @@
                     <span class="kpi-label">Hiç yazmayan</span>
                     <span class="kpi-value" id="actSilent">0</span>
                 </div>
+            </div>
+
+            <!-- Son 14 günün toplamı. Veri /api/etkinlik/:key/gunluk'un zaten
+                 döndürdüğü availableDays'ten geliyor - yeni uç yok. -->
+            <div class="grafik-kart" id="actGrafikKart" style="display:none;">
+                <div class="grafik-baslik">
+                    <h3>Son 14 gün</h3>
+                    <span class="grafik-alt" id="actGrafikAlt"></span>
+                </div>
+                <div class="grafik-govde" id="actGrafik"></div>
             </div>
 
             <div class="logs-layout">

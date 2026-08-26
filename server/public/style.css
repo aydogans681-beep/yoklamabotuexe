@@ -1374,3 +1374,92 @@ textarea:focus-visible {
    logonun etrafında sebepsiz bir hale duruyordu. Parıltı yalnızca üzerine
    gelince, o da drop-shadow olarak (yukarıdaki .brand-btn:hover kuralı). */
 button.brand-btn { box-shadow: none; }
+
+/* ==========================================================================
+   GÜNLÜK SÜTUN GRAFİĞİ
+   Tek seri olduğu için gösterge kutusu yok - kartın başlığı neyin çizildiğini
+   zaten söylüyor. Renk tek: marka aksanı. Ölçüler sabit ve bilerek ince;
+   yüksek olan tek sütun vurgulanıyor, gerisi geride duruyor.
+   ========================================================================== */
+.grafik-kart {
+    background: linear-gradient(180deg, var(--surface-2), var(--surface) 55%);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 15px 18px 12px; margin-bottom: 12px;
+    box-shadow: var(--edge), var(--shadow-s);
+}
+.grafik-baslik { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.grafik-baslik h3 {
+    margin: 0; font-size: 12.5px; font-weight: 700; color: var(--ink);
+    letter-spacing: -.01em;
+}
+.grafik-alt { font-size: 11px; color: var(--ink-3); }
+
+.grafik-govde { position: relative; }
+.grafik-alan { position: relative; }
+
+/* Izgara: bir adım açık gri, 1px, DÜZ (kesikli değil), geride. */
+.grafik-izgara {
+    position: absolute; left: 0; right: 0; height: 1px;
+    background: var(--border); pointer-events: none;
+}
+.grafik-taban {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--border-strong);
+}
+
+/* Her günün eşit bir hücresi var; sütun hücrenin ORTASINDA ve 24px'de
+   kapanıyor. Artan yer bilerek boşluk kalıyor - sütunun slotu doldurması
+   grafiği tıka basa gösteriyor. */
+.grafik-sutunlar {
+    position: absolute; inset: 0;
+    display: flex; align-items: flex-end; gap: 2px;
+}
+.grafik-sutun {
+    position: relative; flex: 1 1 0; min-width: 0; height: 100%;
+    display: flex; align-items: flex-end; justify-content: center;
+    background: none; border: none; padding: 0; cursor: default;
+}
+.grafik-sutun:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gs-dolgu {
+    display: block; width: 100%; max-width: 24px;
+    background: var(--accent); opacity: .55;
+    /* Veri ucu yuvarlak, taban düz: sütun tabandan büyüyor. */
+    border-radius: 4px 4px 0 0;
+    transition: opacity .14s;
+}
+.grafik-sutun:hover .gs-dolgu,
+.grafik-sutun:focus-visible .gs-dolgu { opacity: 1; }
+/* En yüksek gün vurgulu - "tepe hangi gündü" grafiğe bakınca cevaplanıyor. */
+.grafik-sutun.en-yuksek .gs-dolgu { opacity: 1; }
+
+/* Değer YALNIZCA tepe sütunun üstünde. Metin veri rengini giymiyor. */
+.grafik-tepe {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    font-size: 11px; font-weight: 700; color: var(--ink-2);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* Eksen, sütunlarla AYNI flex düzeni - etiketler hücrelerin altına denk gelsin. */
+.grafik-eksen { display: flex; gap: 2px; margin-top: 7px; }
+.grafik-eksen-gun {
+    flex: 1 1 0; min-width: 0; text-align: center;
+    font-size: 9.5px; color: var(--ink-3); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.grafik-ipucu {
+    position: absolute; bottom: 100%; transform: translateX(-50%);
+    margin-bottom: 8px; padding: 5px 10px; border-radius: 8px;
+    background: var(--surface-3); border: 1px solid var(--border-strong);
+    color: var(--ink); font-size: 11px; font-weight: 600; white-space: nowrap;
+    pointer-events: none; box-shadow: var(--shadow-s); z-index: 5;
+}
+.grafik-bos { padding: 34px 0; text-align: center; color: var(--ink-3); font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .gs-dolgu { transition: none; } }
+
+/* Eşit genişlikli rakamlar (tabular-nums) yalnızca sayıların dikey hizalandığı
+   yerlerde doğru: tablo satırları, eksen etiketleri. Yan yana duran ve büyük
+   yazılan KPI değerlerinde "121" gevşek görünüyor - 26px'e çıkarıldıktan sonra
+   iyice belli oldu. Orantılı rakama dönüyor. */
+.kpi .kpi-value { font-variant-numeric: proportional-nums; }

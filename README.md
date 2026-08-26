@@ -151,6 +151,35 @@ sürülüyor, yani yeni sekme eklemek oraya bir satır demek.
 Öncesinde sekmeler doğrudan bir araç çubuğuyla başlıyordu ve "neye bakıyorum"
 sorusunu cevaplayan bir seviye yoktu.
 
+## Günlük sütun grafiği
+
+Aktiflik ve Etkinlik sekmelerinin üstünde **son 14 günün** toplamını gösteren bir
+sütun grafiği var. Veri iki ucun **zaten döndürdüğü** `availableDays`
+(`[{day, total}]`) alanından geliyor - yeni uç yazılmadı. İki sekme aynı biçimi
+paylaştığı için tek bir çizici (`gunlukGrafikCiz`) ikisine de hizmet ediyor;
+birimi çağıran veriyor (mesaj sayısı / süre).
+
+Tasarım kararları ve sebepleri:
+
+- **Tek seri, gösterge kutusu yok.** Tek renk çizildiği için kartın başlığı neyin
+  gösterildiğini zaten söylüyor; tek damgalı bir gösterge kutusu başlığı tekrar
+  eder ve yer kaplar.
+- **Değer yalnızca en yüksek sütunun üstünde.** Her sütuna sayı yazmak okunmayan
+  bir kalabalık üretiyor; gerisini eksen ve ipucu balonu taşıyor.
+- **Sütun en fazla 24px**, üstü 4px yuvarlak, tabanı düz. Hücrenin artanı bilerek
+  boşluk kalıyor - sütunun hücreyi doldurması grafiği tıka basa gösteriyor.
+- **Izgara düz ve geride** (kesikli değil): kesik çizgi "eşik/tahmin" gibi okunuyor.
+- **İsabet alanı sütun değil, onu saran tam yükseklikteki hücre.** 3px'lik bir
+  çubuğu fareyle yakalamaya çalışmak sinir bozucu olurdu.
+- Her sütun klavyeyle odaklanabiliyor ve `aria-label`'ında gün + değer yazıyor,
+  yani değerlere ulaşmak için fareyle üzerine gelmek şart değil.
+- Renk marka aksanı; koyu yüzeye karşı açıklık/kroma/kontrast denetimlerinden
+  geçirildi (kontrast ≥ 3:1).
+
+> Bilinen eksik: grafiğin ayrı bir **tablo görünümü** yok. Değerler ipucu,
+> tepe etiketi ve `aria-label` üzerinden ulaşılabiliyor ama kopyalanabilir bir
+> tablo ikizi bulunmuyor.
+
 ## Kenar çubuğu
 
 Sekmeler dört gruba ayrılmıştır: **Yoklama** (Yoklama, Yetkililer, Rol Ver/Al),
