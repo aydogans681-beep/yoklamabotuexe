@@ -1463,3 +1463,65 @@ button.brand-btn { box-shadow: none; }
    yazılan KPI değerlerinde "121" gevşek görünüyor - 26px'e çıkarıldıktan sonra
    iyice belli oldu. Orantılı rakama dönüyor. */
 .kpi .kpi-value { font-variant-numeric: proportional-nums; }
+
+/* ==========================================================================
+   GİRİŞ EKRANI - YENİDEN
+   Kabuk daha geniş ve daha dik duruyor; sol taraf artık tanıtım maddeleri
+   değil canlı sistem durumu gösteriyor.
+   ========================================================================== */
+.login-shell {
+    grid-template-columns: 1.1fr .9fr;
+    max-width: 1010px; min-height: 530px;
+    border-radius: 26px;
+}
+.login-brand { padding: 54px 46px; }
+.login-card  { padding: 54px 46px; }
+
+.login-brand .brand-mark-lg { margin: 0 0 30px; max-width: 168px; }
+.brand-title { font-size: 33px; letter-spacing: -.035em; margin-bottom: 14px; }
+.brand-sub { font-size: 13.5px; margin-bottom: 0; max-width: 33ch; }
+
+/* --- Canlı sistem durumu --- */
+.marka-durum {
+    margin-top: 28px; padding-top: 22px;
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 2px;
+}
+.md-satir {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 0; font-size: 12.5px;
+    border-bottom: 1px solid rgba(255,255,255,.035);
+}
+.md-satir:last-child { border-bottom: none; }
+.md-ad { color: var(--ink-3); }
+.md-deger { margin-left: auto; color: var(--ink); font-weight: 650; }
+/* Sürüm bir commit kısaltması - eşit genişlikli rakam burada DOĞRU. */
+.md-tek { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+
+.md-nokta {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-3); flex: 0 0 auto;
+    transition: background .2s, box-shadow .2s;
+}
+.md-nokta.ok  { background: var(--ok);     box-shadow: 0 0 0 3px var(--ok-soft); }
+.md-nokta.bad { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* "Bot" satırında nokta soldaki hizayı bozmasın diye ad ondan sonra geliyor;
+   diğer satırlarda nokta yok, o yüzden aynı hizada başlamaları için girinti. */
+.md-satir:not(:first-child) .md-ad { padding-left: 16px; }
+
+/* --- Form tarafı --- */
+.login-head h1 { font-size: 27px; letter-spacing: -.03em; }
+.login-card .field { margin-bottom: 15px; }
+.login-card .field input { padding: 12px 13px 12px 38px; font-size: 13px; }
+.login-btn { padding: 13px 18px; font-size: 13.5px; margin-top: 6px; }
+
+.login-not {
+    margin: 18px 0 0; text-align: center;
+    font-size: 11.5px; color: var(--ink-3); line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+    .login-shell { min-height: 0; }
+    .login-brand, .login-card { padding: 34px 26px; }
+    .brand-title { font-size: 26px; }
+}

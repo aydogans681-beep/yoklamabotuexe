@@ -129,18 +129,29 @@ Panele hiç ulaşılamıyorsa hangi komutlarla bakılacağını da yazar.
 
 ## Giriş ekranı
 
-İki sütun: solda marka ve panelin ne yaptığı, sağda form. Dar ekranda tek
-sütuna düşer. Logo fareyi izleyerek hafifçe eğilir; dosya yoksa yazı logosuna
-düşer, panel logosuz da çalışır.
+İki sütun: solda marka ve **canlı sistem durumu**, sağda form. Dar ekranda tek
+sütuna düşer.
 
-Formda şifre göster/gizle ve Caps Lock uyarısı var. Altta **bot durumu** çipi:
-`/api/surum`'dan çalışma süresi ve commit okunur, 30 saniyede bir tazelenir -
-"bot kapalı" ile "şifre yanlış" kullanıcının gözünde aynı görünüyordu.
+Sol tarafta eskiden "neler yapabilir" madde listesi vardı. Bu panel iç kullanıma
+açık - giren herkes ne işe yaradığını zaten biliyor, o liste süstü. Yerine giriş
+ekranında sorulan asıl soruya cevap veren üç satır kondu:
 
-`/api/surum` giriş gerektirmez ama **ayrıntıyı herkese vermez**: kanal/bot
-ID'leri ve komut ayarları yalnızca yerel isteklere (`tani.ps1`, `guncelle.ps1`)
-ve giriş yapmış kullanıcılara döner. Panel dışarıya açıksa bu bilgiler
-sızmasın diye.
+| Satır | Ne söyler |
+|---|---|
+| **Bot** | çalışıyor / ulaşılamıyor (nokta yeşil ya da kırmızı) |
+| **Çalışma süresi** | bot en son ne zaman başlatıldı |
+| **Sürüm** | çalışan commit - "güncelleme geldi mi?" buradan anlaşılır |
+
+Veri `/api/surum`'dan geliyor, **giriş gerektirmiyor** ve gizli bilgi içermiyor;
+zaten eskiden de küçük bir rozette gösteriliyordu. 30 saniyede bir tazeleniyor
+(yalnızca giriş ekranı açıkken).
+
+Bunun pratik faydası: panelin açılmaması ile şifrenin yanlış olması kullanıcının
+gözünde aynı görüntüyü veriyordu. Artık şifreyi denemeden önce botun ayakta olup
+olmadığı görülüyor.
+
+Arka plandaki ışık lekeleri ve ızgara tamamen dekoratif, `aria-hidden`;
+`prefers-reduced-motion` altında animasyon duruyor.
 
 ## Sayfa başlığı
 

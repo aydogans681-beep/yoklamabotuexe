@@ -108,12 +108,27 @@
                 <p class="brand-sub">
                     Yetkili yoklaması, ses aktifliği ve sunucu logları tek yerden.
                 </p>
-                <ul class="brand-list">
-                    <li><span class="bi"><svg><use href="#i-yoklama"/></svg></span> Yoklama al, uyarıları tek tuşla uygula</li>
-                    <li><span class="bi"><svg><use href="#i-aktiflik"/></svg></span> Kim ne kadar seste, gün gün gör</li>
-                    <li><span class="bi"><svg><use href="#i-loglar"/></svg></span> Ban, mute, para ve tüm log kanalları</li>
-                    <li><span class="bi"><svg><use href="#i-saat"/></svg></span> Otomatik günlük yoklama ve prime hatırlatması</li>
-                </ul>
+                <!-- Eskiden burada "neler yapabilir" madde listesi vardı. Bu panel
+                     iç kullanıma açık: giren herkes ne işe yaradığını zaten
+                     biliyor, o liste süstü. Giriş ekranında sorulan asıl soru
+                     "bot ayakta mı?" - artık ona cevap veriyor.
+                     Veri /api/surum'dan geliyor, giriş gerektirmiyor ve zaten
+                     eskiden de küçük bir rozette gösteriliyordu. -->
+                <div class="marka-durum">
+                    <div class="md-satir">
+                        <span class="md-nokta" id="mdNokta" aria-hidden="true"></span>
+                        <span class="md-ad">Bot</span>
+                        <b class="md-deger" id="mdDurum">kontrol ediliyor…</b>
+                    </div>
+                    <div class="md-satir">
+                        <span class="md-ad">Çalışma süresi</span>
+                        <b class="md-deger" id="mdSure">—</b>
+                    </div>
+                    <div class="md-satir">
+                        <span class="md-ad">Sürüm</span>
+                        <b class="md-deger md-tek" id="mdSurum">—</b>
+                    </div>
+                </div>
             </aside>
 
             <!-- SAG: giris formu -->
@@ -150,11 +165,9 @@
 
                 <button class="primary login-btn" id="loginBtn">Giriş Yap</button>
 
-                <div class="login-foot">
-                    <span class="conn-chip" id="loginDurum">
-                        <span class="dot"></span><span class="txt">Bot durumu kontrol ediliyor...</span>
-                    </span>
-                </div>
+                <p class="login-not">
+                    Hesabın yoksa panel yöneticisinden isteyebilirsin.
+                </p>
             </div>
         </div>
     </div>

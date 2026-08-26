@@ -216,9 +216,11 @@ if (capsUyari) {
 // Bot ayakta mi? /api/surum giris gerektirmiyor. Panelin acilmamasi ile
 // sifrenin yanlis olmasi kullanicinin gozunde ayni goruntuyu veriyordu.
 async function loginDurumGoster() {
-    const chip = document.getElementById('loginDurum');
-    if (!chip) return;
-    const txt = chip.querySelector('.txt');
+    const nokta = document.getElementById('mdNokta');
+    const durum = document.getElementById('mdDurum');
+    const sureEl = document.getElementById('mdSure');
+    const surumEl = document.getElementById('mdSurum');
+    if (!durum) return;
     try {
         const res = await fetch('/api/surum');
         const d = await res.json();
@@ -226,14 +228,17 @@ async function loginDurumGoster() {
         const sn = Number(d.calismaSuresiSn) || 0;
         const saat = Math.floor(sn / 3600);
         const dk = Math.floor((sn % 3600) / 60);
-        const sure = saat ? `${saat} sa ${dk} dk` : `${dk} dk`;
-        chip.classList.add('ok');
-        chip.classList.remove('bad');
-        txt.textContent = `Bot çalışıyor · ${sure}` + (d.commit ? ` · ${d.commit}` : '');
+        nokta.className = 'md-nokta ok';
+        durum.textContent = 'çalışıyor';
+        sureEl.textContent = saat ? `${saat} sa ${dk} dk` : `${dk} dk`;
+        surumEl.textContent = d.commit || '—';
     } catch (error) {
-        chip.classList.add('bad');
-        chip.classList.remove('ok');
-        txt.textContent = 'Bota ulaşılamıyor';
+        // Panelin acilmamasi ile sifrenin yanlis olmasi kullanicinin gozunde
+        // ayni goruntuyu veriyordu; bu satir ikisini ayiriyor.
+        nokta.className = 'md-nokta bad';
+        durum.textContent = 'ulaşılamıyor';
+        sureEl.textContent = '—';
+        surumEl.textContent = '—';
     }
 }
 loginDurumGoster();
