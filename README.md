@@ -470,6 +470,28 @@ Başka bir kanala da işaretleme açmak için `LOG_CHANNELS`'daki satırına
   o günün zamanlanmış çalışmasını iptal etmez. Her çalışma Hesap Logları'na
   yazılır. Aynı saatin iki kez girilmesi engellenir (ikisi de aynı dakikada
   tetiklenip biri hiç çalışmamış gibi görünürdü).
+- **Yeni Ticket'a Otomatik Mesaj** - belirtilen kategorilerde yeni bir ticket
+  açıldığında hazır metin yazılır ve ticket'ı açan kişi etiketlenir.
+
+  İki kategori var, **her birinin kendi metni**:
+
+  | Sekme | Kategori | Kime |
+  |---|---|---|
+  | Yayıncı (YT) | `1476223556806512660` | yayıncı başvuruları |
+  | AC | `1470230380572573706` | AC başvuru/destek |
+
+  Ayarlar'da üstteki sekmelerden kategori seçilir, altındaki kutuya o
+  kategorinin metni yazılır. Kaydet ikisini birden gönderir. Metinlerden biri
+  geçersizse (boş ya da 1800 karakterden uzun) **hiçbiri** kaydedilmez -
+  yarım kaydetmek ayarları tutarsız bırakırdı.
+
+  Eşleşme yalnızca **kategori ID'sine** bakar, sunucuya değil: Discord ID'leri
+  evrensel benzersiz ve iki kategori ayrı sunucularda. Eski sürümdeki sabit
+  sunucu kontrolü AC kategorisini engellerdi.
+
+  Yeni kategori eklemek: `server.js`'teki `TICKET_AUTO_KATEGORILER` listesine
+  bir satır ve `panelSettings`'e bir varsayılan; arayüz kendiliğinden büyür.
+
 - **Prime Saat Hatırlatması** - belirtilen saatlerde (varsayılan `20:00`,
   `21:00`, `22:00`) Discord'da **aktif olup seste olmayan** yetkililere
   "sese geçer misin" hatırlatması gider: duyuru kanalından tek mesajla ve DM

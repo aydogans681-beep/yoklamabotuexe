@@ -1621,3 +1621,7 @@ button.brand-btn { box-shadow: none; }
         transform: translate(-50%, -50%); animation: none;
     }
 }
+
+/* Ticket otomatik mesajı: kategori sekmeleri. Her kategorinin kendi metni var,
+   aynı anda biri görünüyor. */
+.tk-sekmeler { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; }

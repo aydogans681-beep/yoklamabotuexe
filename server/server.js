@@ -2307,7 +2307,25 @@ async function buildAttendancePreview() {
 // ve her gonderim hesap loglarina yaziliyor.
 // ============================================================================
 const TICKET_AUTO_GUILD = '1476217696331890818';
-const TICKET_AUTO_CATEGORY = '1476223556806512660';
+
+// Otomatik mesaj yazilan kategoriler. Her birinin KENDI metni var; metin
+// panelSettings'te hangi anahtarda durdugu burada yaziyor.
+//
+// Eslesme yalnizca KATEGORI ID'sine bakiyor, sunucuya degil. Discord ID'leri
+// evrensel olarak benzersiz oldugu icin bu yeterli; ustelik AC kategorisi
+// YT'ninkinden BASKA bir sunucuda ve eski sabit sunucu kontrolu onu
+// engellerdi.
+//
+// Yeni bir kategori eklemek: buraya bir satir, panelSettings'e bir varsayilan,
+// arayuze bir metin kutusu.
+const TICKET_AUTO_KATEGORILER = [
+    { key: 'yt', label: 'Yayıncı (YT)', kategori: '1476223556806512660', ayar: 'ticketAutoMessage' },
+    { key: 'ac', label: 'AC',           kategori: '1470230380572573706', ayar: 'ticketAutoMessageAc' },
+];
+
+function ticketAutoKategoriBul(parentId) {
+    return TICKET_AUTO_KATEGORILER.find((k) => k.kategori === parentId) || null;
+}
 
 const VARSAYILAN_TICKET_MESAJI = [
     '📢 **Yayıncı Sistemi Güncellendi**',
@@ -2319,6 +2337,19 @@ const VARSAYILAN_TICKET_MESAJI = [
     '• Yayıncı avantajlarından yararlanabilmek için belirtilen yayın sürelerinin eksiksiz tamamlanması gerekmektedir.',
     '',
     'Herkese bol şans ve iyi yayınlar! 🎥',
+].join('\n');
+
+// AC kategorisi icin varsayilan metin. Panelden degistirilebiliyor; burasi
+// yalnizca ayar dosyasinda hic deger yokken kullanilan ilk hal.
+const VARSAYILAN_AC_MESAJI = [
+    '🛡️ **AC Başvuru / Destek**',
+    '',
+    'Merhaba! Talebini aldık, en kısa sürede bir yetkili seninle ilgilenecek.',
+    '',
+    'Beklerken aşağıdakileri yazarsan işlem hızlanır:',
+    '• Sunucu adı ve IP',
+    '• Kullandığın anticheat sürümü',
+    '• Yaşadığın sorunun kısa açıklaması',
 ].join('\n');
 
 const PANEL_SETTINGS_PATH = path.join(ROOT_DIR, 'panel-settings.json');
@@ -2334,6 +2365,9 @@ function loadPanelSettings() {
 const panelSettings = loadPanelSettings();
 if (typeof panelSettings.ticketAutoEnabled !== 'boolean') panelSettings.ticketAutoEnabled = true;
 if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAutoMessage = VARSAYILAN_TICKET_MESAJI;
+if (typeof panelSettings.ticketAutoMessageAc !== 'string') {
+    panelSettings.ticketAutoMessageAc = VARSAYILAN_AC_MESAJI;
+}
 // Ticket acildiktan sonra kac saniye beklenip yazilacak.
 // DIKKAT: bu sabit, asagida panelSettings varsayilaninda kullanildigi icin
 // ORADAN ONCE tanimli olmali - sonra tanimlaninca "Cannot access before
@@ -2479,8 +2513,10 @@ client.on('channelCreate', async (channel) => {
     try {
         if (!panelSettings.ticketAutoEnabled) return;
         if (!channel || !channel.guild) return;
-        if (channel.guild.id !== TICKET_AUTO_GUILD) return;
-        if (channel.parentId !== TICKET_AUTO_CATEGORY) return;
+        // Sunucu kontrolu YOK: kategori ID'si zaten evrensel benzersiz ve iki
+        // kategori ayri sunucularda.
+        const kat = ticketAutoKategoriBul(channel.parentId);
+        if (!kat) return;
         if (ticketAutoYazilan.has(channel.id)) return;
         ticketAutoYazilan.add(channel.id);
 
@@ -2506,8 +2542,16 @@ client.on('channelCreate', async (channel) => {
             return;
         }
 
+        // Metin kategoriye ait: YT kategorisine YT metni, AC kategorisine AC
+        // metni gidiyor.
+        const kategoriMetni = panelSettings[kat.ayar];
+        if (!kategoriMetni || !String(kategoriMetni).trim()) {
+            console.log(`[TicketOtomatik] ${kat.label} metni boş, atlandı: #${channel.name}`);
+            return;
+        }
+
         const acan = await findTicketOpener(channel);
-        const metin = (acan ? `<@${acan}>\n\n` : '') + panelSettings.ticketAutoMessage;
+        const metin = (acan ? `<@${acan}>\n\n` : '') + kategoriMetni;
         await channel.send(metin);
 
         const kayit = {
@@ -2515,14 +2559,17 @@ client.on('channelCreate', async (channel) => {
             channelId: channel.id,
             channelName: channel.name,
             openerId: acan,
+            kategori: kat.key,
+            kategoriAd: kat.label,
         };
         ticketAutoSonGonderimler.unshift(kayit);
         while (ticketAutoSonGonderimler.length > 25) ticketAutoSonGonderimler.pop();
 
-        console.log(`[TicketOtomatik] #${channel.name} kanalina mesaj yazildi`
-            + ` (acan: ${acan || 'bulunamadi'}).`);
+        console.log(`[TicketOtomatik] ${kat.label}: #${channel.name} kanalina mesaj`
+            + ` yazildi (acan: ${acan || 'bulunamadi'}).`);
         addAudit('ticket-otomatik', 'sistem',
-            `#${channel.name} kanalına otomatik mesaj yazıldı${acan ? ` (açan: ${acan})` : ' (açan bulunamadı)'}`, null);
+            `${kat.label} · #${channel.name} kanalına otomatik mesaj yazıldı`
+            + `${acan ? ` (açan: ${acan})` : ' (açan bulunamadı)'}`, null);
         wsBroadcast({ type: 'ticket-otomatik', entry: kayit });
     } catch (error) {
         console.log(`[TicketOtomatik] Hata: ${error.message}`);
@@ -4608,13 +4655,21 @@ app.get('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
     res.json({
         ok: true,
         enabled: panelSettings.ticketAutoEnabled,
-        message: panelSettings.ticketAutoMessage,
         gecikmeSn: Math.round(ticketAutoGecikmeMs() / 1000),
+        // Her kategori kendi metniyle donuyor; arayuz bunlari doner ve her
+        // biri icin bir kutu cizer - kategori eklendiginde arayuz kendiliginden
+        // buyusun diye.
+        kategoriler: TICKET_AUTO_KATEGORILER.map((k) => ({
+            key: k.key,
+            label: k.label,
+            categoryId: k.kategori,
+            message: panelSettings[k.ayar] || '',
+        })),
         guildId: TICKET_AUTO_GUILD,
-        categoryId: TICKET_AUTO_CATEGORY,
-        // Bot o sunucuda mi? Degilse olay hic gelmez, kullanici bunu bilsin.
         inGuild: client.guilds.cache.has(TICKET_AUTO_GUILD),
         recent: ticketAutoSonGonderimler,
+        // Eski istemciler bozulmasin diye tek metin de donuyor.
+        message: panelSettings.ticketAutoMessage,
     });
 });
 
@@ -4667,7 +4722,7 @@ app.post('/api/rol-komutlari', requireIzin('ayarlar'), (req, res) => {
 });
 
 app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
-    const { enabled, message, gecikmeSn } = req.body || {};
+    const { enabled, message, gecikmeSn, mesajlar } = req.body || {};
     if (typeof enabled === 'boolean') panelSettings.ticketAutoEnabled = enabled;
     if (gecikmeSn !== undefined && gecikmeSn !== null && gecikmeSn !== '') {
         const sn = Number(gecikmeSn);
@@ -4676,7 +4731,29 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
         }
         panelSettings.ticketAutoGecikmeSn = Math.round(sn);
     }
-    if (typeof message === 'string') {
+    // Metinler kategori bazli geliyor: { yt: "...", ac: "..." }
+    // Once HEPSI dogrulaniyor, sonra hicbiri ya da hepsi yaziliyor - biri
+    // gecerli digeri gecersizken yarim kaydetmek ayarlari tutarsiz birakirdi.
+    const yazilacak = [];
+    if (mesajlar && typeof mesajlar === 'object') {
+        for (const kat of TICKET_AUTO_KATEGORILER) {
+            const gelen = mesajlar[kat.key];
+            if (typeof gelen !== 'string') continue;
+            const kirpik = gelen.trim();
+            if (!kirpik) {
+                return res.json({ ok: false, error: `${kat.label} mesajı boş bırakılamaz.` });
+            }
+            if (kirpik.length > 1800) {
+                return res.json({
+                    ok: false,
+                    error: `${kat.label} mesajı 1800 karakterden uzun olamaz (Discord sınırı).`,
+                });
+            }
+            yazilacak.push([kat, kirpik]);
+        }
+    }
+    // Eski istemci tek "message" gonderiyorsa o YT metnine yaziliyor.
+    if (typeof message === 'string' && !mesajlar) {
         const kirpik = message.trim();
         if (!kirpik) return res.json({ ok: false, error: 'Mesaj boş bırakılamaz.' });
         if (kirpik.length > 1800) {
@@ -4684,13 +4761,24 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
         }
         panelSettings.ticketAutoMessage = kirpik;
     }
+    yazilacak.forEach(([kat, metin]) => { panelSettings[kat.ayar] = metin; });
+
     savePanelSettings();
+    const degisenler = yazilacak.map(([kat]) => kat.label).join(', ');
     addAudit('ticket-otomatik-ayar', req.session.username,
         `Otomatik ticket mesajı ${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`
-        + (typeof message === 'string' ? ' · metin güncellendi' : ''), req);
+        + (degisenler ? ` · metin güncellendi: ${degisenler}` : ''), req);
     console.log(`[TicketOtomatik] Ayar değişti (${req.session.username}): `
-        + `${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`);
-    return res.json({ ok: true, enabled: panelSettings.ticketAutoEnabled, message: panelSettings.ticketAutoMessage });
+        + `${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`
+        + (degisenler ? ` · ${degisenler}` : ''));
+    return res.json({
+        ok: true,
+        enabled: panelSettings.ticketAutoEnabled,
+        kategoriler: TICKET_AUTO_KATEGORILER.map((k) => ({
+            key: k.key, label: k.label, categoryId: k.kategori, message: panelSettings[k.ayar] || '',
+        })),
+        message: panelSettings.ticketAutoMessage,
+    });
 });
 
 // --- HESAP LOGLARI ---

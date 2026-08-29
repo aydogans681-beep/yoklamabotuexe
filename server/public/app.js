@@ -3122,10 +3122,45 @@ activityDiagBtn.addEventListener('click', async () => {
 // --- YENİ TICKET'A OTOMATİK MESAJ (Ayarlar) ---
 // ============================================================================
 const ticketAutoEnabled = document.getElementById('ticketAutoEnabled');
-const ticketAutoMessage = document.getElementById('ticketAutoMessage');
 const ticketAutoMsg = document.getElementById('ticketAutoMsg');
 const ticketAutoTarget = document.getElementById('ticketAutoTarget');
 const ticketAutoRecent = document.getElementById('ticketAutoRecent');
+const ticketAutoSekmeler = document.getElementById('ticketAutoSekmeler');
+const ticketAutoKutular = document.getElementById('ticketAutoKutular');
+
+// Kategori bazlı metin kutuları. Her kategori için bir <textarea>, ama aynı
+// anda yalnızca biri görünür - üstteki sekmelerden seçiliyor. Metinler burada
+// tutuluyor ki sekme değiştirince yazılan kaybolmasın.
+let ticketAutoKategoriler = [];
+let ticketAutoAktifKat = null;
+
+function ticketAutoSekmeCiz() {
+    ticketAutoSekmeler.innerHTML = ticketAutoKategoriler.map((k) => `
+        <button type="button" class="chip${k.key === ticketAutoAktifKat ? ' active' : ''}"
+            data-tkkat="${escapeHtml(k.key)}">${escapeHtml(k.label)}</button>`).join('');
+    ticketAutoSekmeler.querySelectorAll('[data-tkkat]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            ticketAutoAktifKat = btn.dataset.tkkat;
+            ticketAutoSekmeCiz();
+            ticketAutoKutuGoster();
+        });
+    });
+}
+
+function ticketAutoKutuGoster() {
+    ticketAutoKutular.querySelectorAll('textarea').forEach((t) => {
+        t.hidden = t.dataset.tkkat !== ticketAutoAktifKat;
+    });
+    const kat = ticketAutoKategoriler.find((k) => k.key === ticketAutoAktifKat);
+    ticketAutoTarget.innerHTML = kat
+        ? `Kategori <b>${escapeHtml(kat.categoryId)}</b>`
+            + (ticketAutoInGuild
+                ? ' · sunucuya bağlı ✓'
+                : ' · <span style="color:var(--attn)">⚠ hesap sunucuda görünmüyor, olay gelmez</span>')
+        : '';
+}
+
+let ticketAutoInGuild = false;
 
 async function loadTicketAuto() {
     try {
@@ -3134,12 +3169,31 @@ async function loadTicketAuto() {
         const d = await okuJson(res);
         if (!d.ok) return;
         ticketAutoEnabled.checked = d.enabled;
-        ticketAutoMessage.value = d.message;
         document.getElementById('ticketAutoGecikme').value = d.gecikmeSn;
-        ticketAutoTarget.innerHTML = `Kategori <b>${escapeHtml(d.categoryId)}</b>`
-            + (d.inGuild
-                ? ' · sunucuya bağlı ✓'
-                : ' · <span style="color:var(--attn)">⚠ hesap bu sunucuda görünmüyor, olay gelmez</span>');
+        ticketAutoInGuild = Boolean(d.inGuild);
+        ticketAutoKategoriler = d.kategoriler || [];
+
+        // Metin kutularını yalnızca ilk yüklemede (ya da kategori sayısı
+        // değişince) yeniden kuruyoruz - her yüklemede sıfırdan yazsaydık
+        // kullanıcının o an yazdığı metnin üstüne binerdi.
+        const mevcut = [...ticketAutoKutular.querySelectorAll('textarea')].map((t) => t.dataset.tkkat);
+        const gelenAnahtar = ticketAutoKategoriler.map((k) => k.key);
+        if (mevcut.join(',') !== gelenAnahtar.join(',')) {
+            ticketAutoKutular.innerHTML = ticketAutoKategoriler.map((k) => `
+                <textarea class="text-search" data-tkkat="${escapeHtml(k.key)}" rows="11"
+                    style="width:100%; resize:vertical; line-height:1.6;"></textarea>`).join('');
+        }
+        // Metinleri doldur. Kullanıcı bu kutuda değişiklik yapmadıysa
+        // sunucudakiyle eşitliyoruz (başka biri kaydetmiş olabilir).
+        ticketAutoKategoriler.forEach((k) => {
+            const t = ticketAutoKutular.querySelector(`textarea[data-tkkat="${k.key}"]`);
+            if (t && document.activeElement !== t) t.value = k.message;
+        });
+        if (!ticketAutoAktifKat || !gelenAnahtar.includes(ticketAutoAktifKat)) {
+            ticketAutoAktifKat = gelenAnahtar[0] || null;
+        }
+        ticketAutoSekmeCiz();
+        ticketAutoKutuGoster();
         renderTicketAutoRecent(d.recent);
     } catch (error) {
         ticketAutoMsg.textContent = `Hata: ${error.message}`;
@@ -3152,7 +3206,9 @@ function renderTicketAutoRecent(kayitlar) {
         return;
     }
     ticketAutoRecent.innerHTML = 'Son yazılanlar: '
-        + kayitlar.slice(0, 5).map((k) => `<span class="legend">#${escapeHtml(k.channelName)} · ${formatDate(k.at)}</span>`).join(' ');
+        + kayitlar.slice(0, 5).map((k) => `<span class="legend">`
+            + (k.kategoriAd ? `${escapeHtml(k.kategoriAd)} · ` : '')
+            + `#${escapeHtml(k.channelName)} · ${formatDate(k.at)}</span>`).join(' ');
 }
 
 document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () => {
@@ -3163,7 +3219,9 @@ document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 enabled: ticketAutoEnabled.checked,
-                message: ticketAutoMessage.value,
+                mesajlar: Object.fromEntries(
+                    [...ticketAutoKutular.querySelectorAll('textarea')]
+                        .map((t) => [t.dataset.tkkat, t.value])),
                 gecikmeSn: document.getElementById('ticketAutoGecikme').value,
             }),
         });

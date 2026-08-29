@@ -763,15 +763,18 @@
                     ticket'ı açan kişi etiketlenir. <b>Discord'a kendiliğinden mesaj atar</b> —
                     kapatmak istersen aşağıdaki anahtarı kapat.
                 </p>
-                <div class="toolbar" style="margin-bottom:10px;">
+                <div class="toolbar" style="margin-bottom:12px;">
                     <label class="check-inline">
                         <input type="checkbox" id="ticketAutoEnabled">
                         Açık
                     </label>
                     <span class="scanStatus" id="ticketAutoTarget"></span>
                 </div>
-                <textarea id="ticketAutoMessage" class="text-search" rows="10"
-                          style="width:100%; resize:vertical; line-height:1.6;"></textarea>
+                <!-- Her kategori için bir sekme + bir metin kutusu. İçerik
+                     app.js'te /api/ticket-otomatik'ten gelen kategori listesinden
+                     üretiliyor - kategori eklendiğinde burası kendiliğinden büyür. -->
+                <div class="tk-sekmeler" id="ticketAutoSekmeler"></div>
+                <div id="ticketAutoKutular"></div>
                 <div class="toolbar" style="margin-top:10px;">
                     <label class="muted" for="ticketAutoGecikme">Ticket açıldıktan kaç saniye sonra yazılsın</label>
                     <input type="number" class="text-search" id="ticketAutoGecikme" min="0" max="120"
