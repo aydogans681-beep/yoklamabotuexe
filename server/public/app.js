@@ -3163,12 +3163,18 @@ const ticketAutoTarget = document.getElementById('ticketAutoTarget');
 const ticketAutoRecent = document.getElementById('ticketAutoRecent');
 const ticketAutoSekmeler = document.getElementById('ticketAutoSekmeler');
 const ticketAutoKutular = document.getElementById('ticketAutoKutular');
+const ticketAutoKatAcikSatiri = document.getElementById('ticketAutoKatAcikSatiri');
+const ticketAutoKatAcik = document.getElementById('ticketAutoKatAcik');
+const ticketAutoKatAcikEtiket = document.getElementById('ticketAutoKatAcikEtiket');
 
 // Kategori bazlı metin kutuları. Her kategori için bir <textarea>, ama aynı
 // anda yalnızca biri görünür - üstteki sekmelerden seçiliyor. Metinler burada
 // tutuluyor ki sekme değiştirince yazılan kaybolmasın.
 let ticketAutoKategoriler = [];
 let ticketAutoAktifKat = null;
+// Kategori bazlı aç/kapa durumları (yalnızca kendi anahtarı olanlar için).
+// key -> bool. Sekme değişince kaybolmasın diye burada tutuluyor.
+const ticketAutoAcikDurum = {};
 
 function ticketAutoSekmeCiz() {
     ticketAutoSekmeler.innerHTML = ticketAutoKategoriler.map((k) => `
@@ -3194,7 +3200,23 @@ function ticketAutoKutuGoster() {
                 ? ' · sunucuya bağlı ✓'
                 : ' · <span style="color:var(--attn)">⚠ hesap sunucuda görünmüyor, olay gelmez</span>')
         : '';
+
+    // Kategorinin kendi aç/kapa anahtarı varsa göster; yoksa gizle (genel
+    // şaltere uyar). Örn. AC'nin kendi anahtarı var, YT'nin yok.
+    if (kat && kat.acikDuzenlenir) {
+        ticketAutoKatAcikSatiri.hidden = false;
+        ticketAutoKatAcik.checked = Boolean(ticketAutoAcikDurum[kat.key]);
+        ticketAutoKatAcikEtiket.textContent = `"${kat.label}" kategorisinde otomatik mesaj açık`;
+    } else {
+        ticketAutoKatAcikSatiri.hidden = true;
+    }
 }
+
+// Kullanıcı kategori anahtarını değiştirince canlı durumu sakla (kaydedene
+// kadar yalnızca bellekte; Kaydet'e basınca sunucuya gider).
+ticketAutoKatAcik.addEventListener('change', () => {
+    if (ticketAutoAktifKat) ticketAutoAcikDurum[ticketAutoAktifKat] = ticketAutoKatAcik.checked;
+});
 
 let ticketAutoInGuild = false;
 
@@ -3224,6 +3246,13 @@ async function loadTicketAuto() {
         ticketAutoKategoriler.forEach((k) => {
             const t = ticketAutoKutular.querySelector(`textarea[data-tkkat="${k.key}"]`);
             if (t && document.activeElement !== t) t.value = k.message;
+            // Kategori anahtar durumunu sunucudan al - ama kullanıcı o an bu
+            // kategorinin anahtarıyla oynuyorsa (odaktaysa) üstüne yazma.
+            if (k.acikDuzenlenir) {
+                const oynuyor = document.activeElement === ticketAutoKatAcik
+                    && ticketAutoAktifKat === k.key;
+                if (!oynuyor) ticketAutoAcikDurum[k.key] = Boolean(k.acik);
+            }
         });
         if (!ticketAutoAktifKat || !gelenAnahtar.includes(ticketAutoAktifKat)) {
             ticketAutoAktifKat = gelenAnahtar[0] || null;
@@ -3258,6 +3287,11 @@ document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () 
                 mesajlar: Object.fromEntries(
                     [...ticketAutoKutular.querySelectorAll('textarea')]
                         .map((t) => [t.dataset.tkkat, t.value])),
+                // Yalnızca kendi anahtarı olan kategorilerin aç/kapa durumu.
+                acikDurumlar: Object.fromEntries(
+                    ticketAutoKategoriler
+                        .filter((k) => k.acikDuzenlenir)
+                        .map((k) => [k.key, Boolean(ticketAutoAcikDurum[k.key])])),
                 gecikmeSn: document.getElementById('ticketAutoGecikme').value,
             }),
         });

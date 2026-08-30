@@ -532,10 +532,18 @@ Başka bir kanala da işaretleme açmak için `LOG_CHANNELS`'daki satırına
 
   İki kategori var, **her birinin kendi metni**:
 
-  | Sekme | Kategori | Kime |
-  |---|---|---|
-  | Yayıncı (YT) | `1476223556806512660` | yayıncı başvuruları |
-  | AC | `1470230380572573706` | AC başvuru/destek |
+  | Sekme | Kategori | Kime | Otomatik mesaj |
+  |---|---|---|---|
+  | Yayıncı (YT) | `1476223556806512660` | yayıncı başvuruları | ana şaltere uyar |
+  | AC | `1470230380572573706` | AC başvuru/destek | **varsayılan KAPALI** |
+
+  **İki kademeli şalter:** üstteki "Açık (ana şalter)" hepsini birden açıp
+  kapatır. Bunun altında **her kategorinin kendi aç/kapa anahtarı** olabilir.
+  AC kategorisi artık karşılamayı **Nexora Panel'den** (AC kendi hesabından)
+  yaptığı için otomatik mesajı **varsayılan olarak kapalıdır** - bot ayrıca
+  karşılamaz. YT'nin ayrı anahtarı yoktur, doğrudan ana şaltere uyar. AC
+  otomatik mesajını yine de istersen AC sekmesindeki anahtardan açabilirsin
+  (`panelSettings.ticketAutoAcEnabled`).
 
   Ayarlar'da üstteki sekmelerden kategori seçilir, altındaki kutuya o
   kategorinin metni yazılır. Kaydet ikisini birden gönderir. Metinlerden biri
@@ -547,7 +555,9 @@ Başka bir kanala da işaretleme açmak için `LOG_CHANNELS`'daki satırına
   sunucu kontrolü AC kategorisini engellerdi.
 
   Yeni kategori eklemek: `server.js`'teki `TICKET_AUTO_KATEGORILER` listesine
-  bir satır ve `panelSettings`'e bir varsayılan; arayüz kendiliğinden büyür.
+  bir satır (`acikAyar: null` ana şaltere uyar, bir anahtar adı yazılırsa o
+  kategori kendi aç/kapa anahtarını alır) ve `panelSettings`'e bir varsayılan;
+  arayüz kendiliğinden büyür.
 
 - **Prime Saat Hatırlatması** - belirtilen saatlerde (varsayılan `20:00`,
   `21:00`, `22:00`) Discord'da **aktif olup seste olmayan** yetkililere

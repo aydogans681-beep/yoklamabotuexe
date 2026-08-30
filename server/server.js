@@ -2670,9 +2670,14 @@ const TICKET_AUTO_GUILD = '1476217696331890818';
 //
 // Yeni bir kategori eklemek: buraya bir satir, panelSettings'e bir varsayilan,
 // arayuze bir metin kutusu.
+// acikAyar: kategorinin KENDI ac/kapa anahtari. null ise kategori yalnizca
+// genel ticketAutoEnabled'a uyar (YT'nin eski davranisi bozulmaz). Bir anahtar
+// yaziliysa, genel ayar acik olsa bile bu kategori ayrica o anahtara bakar.
+// AC kategorisi artik kendi karsilamasini Nexora Panel'den yaptigi icin onun
+// otomatik mesaji varsayilan olarak KAPALI (asagida false'a set ediliyor).
 const TICKET_AUTO_KATEGORILER = [
-    { key: 'yt', label: 'Yayıncı (YT)', kategori: '1476223556806512660', ayar: 'ticketAutoMessage' },
-    { key: 'ac', label: 'AC',           kategori: '1470230380572573706', ayar: 'ticketAutoMessageAc' },
+    { key: 'yt', label: 'Yayıncı (YT)', kategori: '1476223556806512660', ayar: 'ticketAutoMessage',   acikAyar: null },
+    { key: 'ac', label: 'AC',           kategori: '1470230380572573706', ayar: 'ticketAutoMessageAc', acikAyar: 'ticketAutoAcEnabled' },
 ];
 
 function ticketAutoKategoriBul(parentId) {
@@ -2719,6 +2724,12 @@ if (typeof panelSettings.ticketAutoEnabled !== 'boolean') panelSettings.ticketAu
 if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAutoMessage = VARSAYILAN_TICKET_MESAJI;
 if (typeof panelSettings.ticketAutoMessageAc !== 'string') {
     panelSettings.ticketAutoMessageAc = VARSAYILAN_AC_MESAJI;
+}
+// AC kategorisinde otomatik karsilama VARSAYILAN OLARAK KAPALI. AC'ler ticket'a
+// kendileri Nexora Panel'den mesaj/pin attigi icin bot ayrica karsilamasin.
+// Elle acmak istenirse Ayarlar'dan acilir (panelSettings'e true yazilir).
+if (typeof panelSettings.ticketAutoAcEnabled !== 'boolean') {
+    panelSettings.ticketAutoAcEnabled = false;
 }
 // Ticket acildiktan sonra kac saniye beklenip yazilacak.
 // DIKKAT: bu sabit, asagida panelSettings varsayilaninda kullanildigi icin
@@ -2887,6 +2898,8 @@ client.on('channelCreate', async (channel) => {
         // kategori ayri sunucularda.
         const kat = ticketAutoKategoriBul(channel.parentId);
         if (!kat) return;
+        // Kategorinin kendi ac/kapa anahtari varsa ona da bak (AC varsayilan kapali).
+        if (kat.acikAyar && !panelSettings[kat.acikAyar]) return;
         if (ticketAutoYazilan.has(channel.id)) return;
         ticketAutoYazilan.add(channel.id);
 
@@ -2907,7 +2920,7 @@ client.on('channelCreate', async (channel) => {
         if (bekleme > 0) await new Promise((r) => setTimeout(r, bekleme));
 
         // Bekleme sirasinda ayar kapatilmis ya da kanal silinmis olabilir.
-        if (!panelSettings.ticketAutoEnabled) {
+        if (!panelSettings.ticketAutoEnabled || (kat.acikAyar && !panelSettings[kat.acikAyar])) {
             console.log(`[TicketOtomatik] Bekleme sirasinda kapatildi, atlandi: #${channel.name}`);
             return;
         }
@@ -5241,6 +5254,10 @@ app.get('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
             label: k.label,
             categoryId: k.kategori,
             message: panelSettings[k.ayar] || '',
+            // Kategorinin kendi ac/kapa durumu. acikDuzenlenir=false ise arayuz
+            // ayri bir anahtar gostermez, kategori genel ayara uyar (YT).
+            acik: k.acikAyar ? Boolean(panelSettings[k.acikAyar]) : true,
+            acikDuzenlenir: Boolean(k.acikAyar),
         })),
         guildId: TICKET_AUTO_GUILD,
         inGuild: client.guilds.cache.has(TICKET_AUTO_GUILD),
@@ -5299,8 +5316,17 @@ app.post('/api/rol-komutlari', requireIzin('ayarlar'), (req, res) => {
 });
 
 app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
-    const { enabled, message, gecikmeSn, mesajlar } = req.body || {};
+    const { enabled, message, gecikmeSn, mesajlar, acikDurumlar } = req.body || {};
     if (typeof enabled === 'boolean') panelSettings.ticketAutoEnabled = enabled;
+    // Kategori bazli ac/kapa: { ac: false } gibi. Yalnizca kendi anahtari olan
+    // kategoriler yazilir; digerleri (YT) genel ayara uyar.
+    if (acikDurumlar && typeof acikDurumlar === 'object') {
+        for (const kat of TICKET_AUTO_KATEGORILER) {
+            if (kat.acikAyar && typeof acikDurumlar[kat.key] === 'boolean') {
+                panelSettings[kat.acikAyar] = acikDurumlar[kat.key];
+            }
+        }
+    }
     if (gecikmeSn !== undefined && gecikmeSn !== null && gecikmeSn !== '') {
         const sn = Number(gecikmeSn);
         if (!Number.isFinite(sn) || sn < 0 || sn > 120) {
@@ -5344,6 +5370,7 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
     const degisenler = yazilacak.map(([kat]) => kat.label).join(', ');
     addAudit('ticket-otomatik-ayar', req.session.username,
         `Otomatik ticket mesajı ${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`
+        + ` · AC otomatik: ${panelSettings.ticketAutoAcEnabled ? 'açık' : 'kapalı'}`
         + (degisenler ? ` · metin güncellendi: ${degisenler}` : ''), req);
     console.log(`[TicketOtomatik] Ayar değişti (${req.session.username}): `
         + `${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`
@@ -5353,6 +5380,8 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
         enabled: panelSettings.ticketAutoEnabled,
         kategoriler: TICKET_AUTO_KATEGORILER.map((k) => ({
             key: k.key, label: k.label, categoryId: k.kategori, message: panelSettings[k.ayar] || '',
+            acik: k.acikAyar ? Boolean(panelSettings[k.acikAyar]) : true,
+            acikDuzenlenir: Boolean(k.acikAyar),
         })),
         message: panelSettings.ticketAutoMessage,
     });
