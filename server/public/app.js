@@ -74,6 +74,7 @@ function hideError() {
 let currentUsername = null;
 let currentIsAdmin = false;
 let currentSekmeler = null; // null = kisit yok (yetki bilgisi henuz gelmedi)
+let currentTip = 'yetkili'; // 'ac' -> yalnizca Ticket'a Mesaj
 
 // Yonetici olmayan hesaplarda hesap yonetimi ve hesap loglari gizleniyor.
 // Sunucu tarafinda da kapali (requireAdmin) - burasi sadece gorunum.
@@ -118,6 +119,7 @@ async function checkSession() {
     if (data.loggedIn) {
         currentUsername = data.username;
         currentIsAdmin = Boolean(data.isAdmin);
+        currentTip = data.tip || 'yetkili';
         currentSekmeler = Array.isArray(data.sekmeler) ? data.sekmeler : null;
         showApp();
     } else {
@@ -136,13 +138,21 @@ function showApp() {
     appWrap.style.display = 'flex';
     document.getElementById('whoAmI').textContent = currentUsername || '';
     document.getElementById('whoAvatar').textContent = (currentUsername || '?').slice(0, 1);
-    document.getElementById('whoRol').textContent = currentIsAdmin ? 'Yönetici' : 'Yetkili';
+    document.getElementById('whoRol').textContent =
+        currentIsAdmin ? 'Yönetici' : (currentTip === 'ac' ? 'AC' : 'Yetkili');
     applyAdminVisibility();
     sideCanliTazele();
     connectWebSocket();
     refreshLogMenu();
     if (currentIsAdmin) refreshAccounts();
     loadKatilim();
+
+    // AC hesabi girince dogrudan Ticket'a Mesaj sekmesine dusuyor - baska
+    // sekmesi yok zaten, token isteyen ekran hemen onunde olsun.
+    if (currentTip === 'ac') {
+        const acDugme = document.querySelector('.side-nav .tab-btn[data-tab="ticketmesaj"]');
+        if (acDugme) acDugme.click();
+    }
 }
 
 async function doLogin() {
@@ -169,6 +179,7 @@ async function doLogin() {
         try {
             const me = await okuJson(await fetch('/api/me'));
             currentIsAdmin = Boolean(me.isAdmin);
+            currentTip = me.tip || 'yetkili';
             currentSekmeler = Array.isArray(me.sekmeler) ? me.sekmeler : null;
         } catch (hata) {
             currentIsAdmin = Boolean(data.isAdmin);
@@ -1565,6 +1576,24 @@ async function deleteAccount(username) {
     }
 }
 
+// Hesap tipi secimi (Yetkili / AC). AC seciliyse Discord ID alani gereksiz -
+// zaten ilk token kimligi kuruyor; ve tip aciklamasi gorunur oluyor.
+let addTip = 'yetkili';
+const addTipSecim = document.getElementById('addTipSecim');
+const addTipAciklama = document.getElementById('addTipAciklama');
+if (addTipSecim) {
+    addTipSecim.querySelectorAll('[data-tip]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            addTip = btn.dataset.tip;
+            addTipSecim.querySelectorAll('[data-tip]').forEach((b) =>
+                b.classList.toggle('active', b === btn));
+            addTipAciklama.style.display = addTip === 'ac' ? '' : 'none';
+            const idAlani = document.getElementById('addDiscordId');
+            idAlani.style.display = addTip === 'ac' ? 'none' : '';
+        });
+    });
+}
+
 document.getElementById('addAccountBtn').addEventListener('click', async () => {
     addAccountMsg.textContent = 'Ekleniyor...';
     try {
@@ -1575,6 +1604,7 @@ document.getElementById('addAccountBtn').addEventListener('click', async () => {
                 username: addUsername.value.trim(),
                 password: addPassword.value,
                 discordId: document.getElementById('addDiscordId').value.trim(),
+                tip: addTip,
             }),
         });
         const data = await okuJson(res);

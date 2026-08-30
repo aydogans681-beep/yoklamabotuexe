@@ -266,7 +266,7 @@ Token'lar hassas olduğu için özellik birkaç katman üzerine kuruldu:
 
 | Katman | Ne yapar |
 |---|---|
-| **Şifreleme** | Token'lar `ac-tokenlari.json`'da AES-256-GCM ile şifreli durur; anahtar `config.env`'deki `AC_ANAHTAR`'dan türetilir. Dosya tek başına sızsa bile içerik okunamaz. |
+| **Şifreleme** | Token'lar `ac-tokenlari.json`'da AES-256-GCM ile şifreli durur. Anahtar **ilk açılışta otomatik üretilip** `ac-anahtar.key`'e yazılır - elle `config.env` düzenlemek gerekmez. (İstersen `config.env`'e `AC_ANAHTAR` yazabilirsin; o öncelikli olur.) Dosya tek başına sızsa bile içerik okunamaz. |
 | **Sahiplik (ilk token kilitler)** | Bir AC'nin bağladığı **ilk** token, o panel hesabının kimliği olur ve kilitlenir. Sonrasında yalnızca aynı Discord hesabının token'ı kabul edilir - AC sonradan başkasının token'ına geçemez. Kilit token'dan ayrı `ac-kilit.json`'da durur; bağlantı kaldırılsa bile kimlik korunur. (Panel hesabına elle bir Discord ID bağlıysa o bağlayıcı olur; yoksa ilk token kilidi kurar.) |
 | **Gateway yok** | Gönderim tek bir REST isteğiyle yapılır - her AC için ayrı selfbot bağlantısı açılmaz. |
 | **Hız sınırı** | AC başına gönderimler arası 5 sn, saatte en fazla 30. Panelin kendi hesabı bu oturumda hızlı DM yüzünden defalarca kilitlendi; aynı hatayı tekrarlamıyoruz. |
@@ -277,16 +277,21 @@ ve ne zaman bağlandığını gösterir.
 
 ### Açmak için
 
-1. `config.env`'e en az 16 karakterlik rastgele bir `AC_ANAHTAR` ekle, botu
-   yeniden başlat. (Yoksa özellik kapalı kalır ve sekme bunu söyler.)
-2. Her AC için bir panel hesabı aç ve **Ticket'a Mesaj** sekme iznini ver
-   (Panel Hesapları > Yetkiler).
-3. AC hesabına girer, kendi token'ını bağlar. **İlk bağladığı hesap o panel
-   hesabına kilitlenir** - Discord ID'yi önceden bağlamana gerek yok.
+Elle hiçbir dosya düzenlemek gerekmiyor. Şifreleme anahtarı ilk açılışta
+kendiliğinden üretiliyor.
 
-> `AC_ANAHTAR`'ı sonradan değiştirirsen bağlı token'lar çözülemez; AC'ler
-> hesaplarını yeniden bağlar (panel bunu otomatik algılar). Anahtarı değiştirmek
-> kimlik kilidini bozmaz - AC yine yalnızca kendi hesabını bağlayabilir.
+1. Ayarlar > Panel Hesapları'ndan yeni hesap açarken **tip olarak AC** seç.
+   (Yetkili / AC anahtarı formda.) AC hesabı yalnızca **Ticket'a Mesaj**
+   sekmesini görür - başka hiçbir şeye erişemez, izin ayarlamana gerek yok.
+2. AC bu hesapla giriş yapar; doğrudan token isteyen ekrana düşer.
+3. AC kendi token'ını bağlar. **İlk bağladığı hesap o panel hesabına
+   kilitlenir** - sonradan başkasının token'ına geçemez.
+
+> `ac-anahtar.key` silinirse ya da `config.env`'deki `AC_ANAHTAR` değişirse
+> bağlı token'lar çözülemez; AC'ler hesaplarını yeniden bağlar (panel bunu
+> otomatik algılar). Bu, kimlik kilidini bozmaz - AC yine yalnızca kendi
+> hesabını bağlayabilir. Anahtar dosyasını yedeklemek istersen `ac-anahtar.key`'i
+> saklaman yeterli.
 
 ## Kenar çubuğu
 

@@ -893,8 +893,17 @@
                     <input type="text" class="text-search" id="addUsername" placeholder="Yeni kullanıcı adı">
                     <input type="password" class="text-search" id="addPassword" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
                     <input type="text" class="text-search" id="addDiscordId" placeholder="Discord ID (isteğe bağlı)">
+                    <div class="filter-chips" id="addTipSecim" title="Hesap tipi">
+                        <button type="button" class="chip active" data-tip="yetkili">Yetkili</button>
+                        <button type="button" class="chip" data-tip="ac">AC</button>
+                    </div>
                     <button id="addAccountBtn">Hesap Ekle</button>
                     <span class="scanStatus" id="addAccountMsg"></span>
+                    <p class="card-desc" id="addTipAciklama" style="flex-basis:100%; margin:6px 0 0; display:none;">
+                        <b>AC hesabı:</b> yalnızca <b>Ticket'a Mesaj</b> sekmesini görür. Giriş
+                        yapınca kendi Discord token'ını bağlar ve seçtiği ticket'a kendi
+                        hesabından mesaj gönderir. Log, yoklama, ayarlar vb. hiçbirine erişemez.
+                    </p>
                 </div>
             </div>
         </div>

@@ -21,6 +21,8 @@ log-isaretleri.json
 ac-tokenlari.json
 # AC kimlik kilidi: hangi panel hesabi hangi Discord hesabina kilitli
 ac-kilit.json
+# AC token sifreleme anahtari (otomatik uretilir)
+ac-anahtar.key
 
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.

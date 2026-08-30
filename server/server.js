@@ -270,13 +270,19 @@ function kullaniciYetkileri(username) {
     const admin = index === 0 || u.admin === true;
     if (admin) {
         return {
-            admin: true,
+            admin: true, tip: 'yetkili',
             sekmeler: IZIN_SEKME_ANAHTARLARI.slice(),
             loglar: LOG_CHANNELS.map((c) => c.key),
         };
     }
+    // AC hesabi: dis kisi. YALNIZCA Ticket'a Mesaj sekmesini gorur - log,
+    // yoklama, ayarlar vb. hicbirine erisemez. Izinleri elle degistirilemez;
+    // tip 'ac' oldugu surece sabit.
+    if (u.tip === 'ac') {
+        return { admin: false, tip: 'ac', sekmeler: ['ticketmesaj'], loglar: [] };
+    }
     return {
-        admin: false,
+        admin: false, tip: 'yetkili',
         sekmeler: Array.isArray(u.sekmeler) ? u.sekmeler : IZIN_SEKME_ANAHTARLARI.slice(),
         loglar: Array.isArray(u.loglar) ? u.loglar : LOG_CHANNELS.map((c) => c.key),
     };
@@ -1798,15 +1804,50 @@ const AC_KISI_ARALIK_MS = 5000;      // ayni AC iki gonderim arasinda
 const AC_KISI_SAATLIK = 30;          // ayni AC saatte en fazla
 const AC_MESAJ_TAVANI = 1800;        // tek mesajda karakter
 
-// --- Sifreleme ---
-// Anahtar config.env'den; yoksa ozellik KAPALI kalir (token istenmez).
-// Anahtari uretmek: herhangi bir 32+ karakterlik rastgele dize.
+// --- Sifreleme anahtari ---
+// Elle config.env duzenlemek gerekmiyor: anahtar ilk acilista OTOMATIK
+// uretilip ac-anahtar.key dosyasina yaziliyor, sonraki acilislarda oradan
+// okunuyor. Boylece ozellik "kutudan cikinca" calisiyor.
+//
+// Yine de config.env'e AC_ANAHTAR yazilmissa O onceliklidir - anahtari elle
+// yonetmek/tasimak isteyen icin. Dosya ile config.env ayni anda varsa
+// config.env kazanir.
+//
+// Anahtar dosyasi .gitignore'da. Silinirse yeni anahtar uretilir ve o ana
+// kadarki token'lar cozulemez (AC'ler yeniden baglar) - AC_ANAHTAR degistirmekle
+// ayni sonuc.
+const AC_ANAHTAR_PATH = path.join(ROOT_DIR, 'ac-anahtar.key');
+let acAnahtarOnbellek = null;
+
+function acAnahtarHamDize() {
+    // 1) config.env onceligi
+    const cfg = process.env.AC_ANAHTAR;
+    if (cfg && cfg.length >= 16) return cfg;
+    // 2) Dosyadan oku
+    try {
+        const dosya = fs.readFileSync(AC_ANAHTAR_PATH, 'utf8').trim();
+        if (dosya.length >= 16) return dosya;
+    } catch (error) { /* yok - asagida uretilecek */ }
+    // 3) Uret ve yaz
+    try {
+        const yeni = crypto.randomBytes(48).toString('base64');
+        fs.writeFileSync(AC_ANAHTAR_PATH, yeni, { mode: 0o600 });
+        console.log('[AC] Sifreleme anahtari otomatik uretildi: ac-anahtar.key');
+        return yeni;
+    } catch (error) {
+        // Diske yazamiyorsak (izin vb.) ozellik kapali kalir - sessiz calismaz.
+        console.log(`[AC] Anahtar uretilemedi: ${error.message}`);
+        return null;
+    }
+}
+
 function acAnahtari() {
-    const ham = process.env.AC_ANAHTAR;
-    if (!ham || ham.length < 16) return null;
-    // Sabit tuz: anahtar zaten gizli, tuzun amaci burada yalnizca ham dizeyi
-    // 32 bayta duzgun yaymak.
-    return crypto.scryptSync(ham, 'ac-token-tuzu', 32);
+    if (acAnahtarOnbellek) return acAnahtarOnbellek;
+    const ham = acAnahtarHamDize();
+    if (!ham) return null;
+    // Sabit tuz: anahtar zaten gizli, tuzun amaci ham dizeyi 32 bayta yaymak.
+    acAnahtarOnbellek = crypto.scryptSync(ham, 'ac-token-tuzu', 32);
+    return acAnahtarOnbellek;
 }
 
 function acSifrele(metin) {
@@ -3100,6 +3141,7 @@ app.get('/api/me', (req, res) => {
         loggedIn: true,
         username: session.username,
         isAdmin: yetki.admin,
+        tip: yetki.tip || 'yetkili',
         sekmeler: yetki.sekmeler,
         loglar: yetki.loglar,
     });
@@ -3234,18 +3276,27 @@ app.post('/api/hesaplar/ekle', requireAdmin, (req, res) => {
     if (discordId && !/^\d{17,20}$/.test(discordId)) {
         return res.json({ ok: false, error: 'Discord ID 17-20 haneli sayı olmalı.' });
     }
+    // Hesap tipi: 'ac' -> yalnizca Ticket'a Mesaj. Digeri normal yetkili.
+    const tip = (req.body && req.body.tip) === 'ac' ? 'ac' : 'yetkili';
     const salt = newSalt();
-    users.push({
+    const kayit = {
         username, salt, hash: hashPassword(password, salt),
         discordId: discordId || null, createdAt: Date.now(),
-    });
+    };
+    if (tip === 'ac') {
+        kayit.tip = 'ac';
+        // AC hesabina izin gerekmiyor; sekmesi kod tarafinda sabit.
+        kayit.sekmeler = ['ticketmesaj'];
+        kayit.loglar = [];
+    }
+    users.push(kayit);
     try {
         savePanelUsers(users);
     } catch (error) {
         return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
     }
     console.log(`[Hesap] Yeni panel hesabı eklendi: ${username} (ekleyen: ${req.session.username})`);
-    addAudit('hesap-ekle', req.session.username, `"${username}" hesabı eklendi`, req);
+    addAudit('hesap-ekle', req.session.username, `"${username}" hesabı eklendi (${tip})`, req);
     return res.json({ ok: true });
 });
 
