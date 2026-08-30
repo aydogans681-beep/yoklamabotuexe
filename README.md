@@ -244,6 +244,48 @@ Tasarım kararları ve sebepleri:
 > tepe etiketi ve `aria-label` üzerinden ulaşılabiliyor ama kopyalanabilir bir
 > tablo ikizi bulunmuyor.
 
+## Ticket'a Mesaj (AC)
+
+AC'lerin (içerik üreticiler) kendi Discord hesaplarından, `1470230380572573706`
+kategorisindeki bir ticket'a **elle** mesaj göndermesi için. Otomatik hiçbir şey
+yok: her mesaj bir butona basılarak gider.
+
+Akış: AC kendi token'ını bir kez bağlar → sekmede kategorideki açık ticket'lar
+listelenir → ticket'ı seçer, mesajını yazar, **Gönder**'e basar → mesaj o
+ticket'a kendi hesabından düşer. Kim ne zaman hangi ticket'a gönderdi Hesap
+Logları'na yazılır.
+
+> **Bu bir selfbot özelliğidir** (README başındaki uyarı burada da geçerli).
+> Kendi kullanıcı hesabından otomatik/panel üzerinden mesaj atmak Discord'un
+> kullanım şartlarına aykırıdır ve hesap işaretlenebilir. AC bunu bilerek,
+> kendi kararıyla bağlıyor.
+
+### Güvenlik tasarımı
+
+Token'lar hassas olduğu için özellik birkaç katman üzerine kuruldu:
+
+| Katman | Ne yapar |
+|---|---|
+| **Şifreleme** | Token'lar `ac-tokenlari.json`'da AES-256-GCM ile şifreli durur; anahtar `config.env`'deki `AC_ANAHTAR`'dan türetilir. Dosya tek başına sızsa bile içerik okunamaz. |
+| **Sahiplik** | Token kaydedilmeden önce Discord'a sorulur; dönen hesap ID'si, panel hesabına bağlı Discord ID ile aynı değilse **reddedilir**. Kimse başkasının token'ını giremez. |
+| **Gateway yok** | Gönderim tek bir REST isteğiyle yapılır - her AC için ayrı selfbot bağlantısı açılmaz. |
+| **Hız sınırı** | AC başına gönderimler arası 5 sn, saatte en fazla 30. Panelin kendi hesabı bu oturumda hızlı DM yüzünden defalarca kilitlendi; aynı hatayı tekrarlamıyoruz. |
+| **Kategori kilidi** | Mesaj yalnızca gerçekten o kategorideki bir kanala gidebilir - panel keyfi bir kanala mesaj atmanın yolu değil. |
+
+Token **bir daha ekrana yazılmaz**; panel yalnızca hangi hesabın bağlı olduğunu
+ve ne zaman bağlandığını gösterir.
+
+### Açmak için
+
+1. `config.env`'e en az 16 karakterlik rastgele bir `AC_ANAHTAR` ekle, botu
+   yeniden başlat. (Yoksa özellik kapalı kalır ve sekme bunu söyler.)
+2. AC'nin panel hesabına Ayarlar > Kendi Hesabım'dan **Discord ID** bağlı olmalı
+   (sahiplik doğrulaması için).
+3. AC'ye **Ticket'a Mesaj** sekme izni ver (Panel Hesapları > Yetkiler).
+
+> `AC_ANAHTAR`'ı sonradan değiştirirsen bağlı token'lar çözülemez; AC'ler
+> hesaplarını yeniden bağlar (panel bunu otomatik algılar).
+
 ## Kenar çubuğu
 
 Sekmeler dört gruba ayrılmıştır: **Yoklama** (Yoklama, Yetkililer, Rol Ver/Al),

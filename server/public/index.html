@@ -80,6 +80,10 @@
           <rect x="4.5" y="10" width="15" height="10" rx="2"/>
           <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
         </symbol>
+        <symbol id="i-ticketmesaj" viewBox="0 0 24 24">
+          <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4V6Z"/>
+          <path d="M8.5 9.5h7"/><path d="M8.5 13h4"/>
+        </symbol>
         <symbol id="i-saat" viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>
         </symbol>
@@ -226,6 +230,7 @@
                     <button class="tab-btn" data-tab="loglar"><span class="ico"><svg><use href="#i-loglar"/></svg></span><span class="etiket">TX Logs</span></button>
                     <button class="tab-btn" data-tab="mutelog"><span class="ico"><svg><use href="#i-mutelog"/></svg></span><span class="etiket">Mute Logları</span></button>
                     <button class="tab-btn" data-tab="felox"><span class="ico"><svg><use href="#i-felox"/></svg></span><span class="etiket">Felox</span></button>
+                    <button class="tab-btn" data-tab="ticketmesaj"><span class="ico"><svg><use href="#i-ticketmesaj"/></svg></span><span class="etiket">Ticket'a Mesaj</span></button>
                 </div>
 
                 <div class="nav-grup">
@@ -355,6 +360,72 @@
             <div id="listWrap">
                 <div class="empty-hint" id="emptyState">Taramayı başlat, sonuçlar burada listelenecek.</div>
                 <div id="list"></div>
+            </div>
+        </div>
+
+        <!-- ================= TICKET'A MESAJ ================= -->
+        <!-- AC kendi hesabini baglar, ticket secer, mesajini yazar, gonderir.
+             Otomatik hicbir sey yok - her mesaj bir butona basilarak gidiyor. -->
+        <div class="tab-panel" id="tab-ticketmesaj">
+            <div class="card" id="acBagliDegilKart">
+                <h2>Hesabını bağla</h2>
+                <p class="card-desc" id="acBagliDegilAciklama">Yükleniyor...</p>
+                <div class="toolbar" id="acTokenSatiri" style="display:none;">
+                    <input type="password" class="text-search" id="acToken"
+                           placeholder="Discord token'ın" autocomplete="off" spellcheck="false"
+                           style="flex:1; min-width:240px;">
+                    <button id="acBaglaBtn">Bağla</button>
+                </div>
+                <p class="card-desc" id="acUyari" style="margin:12px 0 0; display:none;">
+                    <b>Bilmen gerekenler:</b> Token'ın hesabının tam anahtarıdır.
+                    Panelde şifrelenerek saklanır ve bir daha ekrana yazılmaz, ama
+                    kendi hesabından mesaj göndermek Discord'un kullanım şartlarına
+                    aykırıdır ve hesabın işaretlenebilir. Bağlantıyı istediğin an
+                    kaldırabilirsin.
+                </p>
+                <span class="scanStatus" id="acBaglaMsg"></span>
+            </div>
+
+            <div id="acPanel" style="display:none;">
+                <div class="action-bar">
+                    <span class="scanStatus">Bağlı hesap:</span>
+                    <b id="acHesapAdi">—</b>
+                    <span class="scanStatus" id="acHesapZaman"></span>
+                    <span class="grow"></span>
+                    <button class="secondary small" id="acYenileBtn">Ticket'ları Yenile</button>
+                    <button class="secondary small" id="acCikarBtn">Bağlantıyı Kaldır</button>
+                </div>
+
+                <div class="logs-layout">
+                    <div class="activity-side">
+                        <div class="toolbar" style="margin-bottom:8px;">
+                            <input type="text" class="text-search" id="acAra" placeholder="Ticket ara...">
+                        </div>
+                        <div class="activity-list" id="acTicketListe">
+                            <div class="empty-hint">Yükleniyor...</div>
+                        </div>
+                    </div>
+                    <div class="logs-main">
+                        <div class="toolbar logs-toolbar">
+                            <span class="logs-title" id="acSeciliTicket">Soldan bir ticket seç</span>
+                            <span class="grow"></span>
+                            <span class="scanStatus" id="acSayac"></span>
+                        </div>
+                        <div class="card" style="margin:0;">
+                            <h2>Mesaj</h2>
+                            <p class="card-desc">
+                                Bu mesaj <b>senin Discord hesabından</b> seçtiğin ticket'a gidecek.
+                            </p>
+                            <textarea id="acMesaj" class="text-search" rows="8"
+                                      placeholder="Ticket'a gönderilecek mesajı yaz..."
+                                      style="width:100%; resize:vertical; line-height:1.6;"></textarea>
+                            <div class="toolbar" style="margin-top:11px;">
+                                <button id="acGonderBtn" disabled>Gönder</button>
+                                <span class="scanStatus" id="acGonderMsg"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

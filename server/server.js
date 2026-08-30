@@ -249,6 +249,7 @@ const IZIN_SEKMELERI = [
     { key: 'loglar', label: 'TX Logs' },
     { key: 'mutelog', label: 'Mute Logları' },
     { key: 'felox', label: 'Felox' },
+    { key: 'ticketmesaj', label: "Ticket'a Mesaj" },
     { key: 'ayarlar', label: 'Ayarlar' },
 ];
 const IZIN_SEKME_ANAHTARLARI = IZIN_SEKMELERI.map((x) => x.key);
@@ -1759,6 +1760,146 @@ function logCacheHepsiniYaz() {
     logStore.forEach((store) => {
         if (store.cacheKirli && store.messages.length) logCacheYaz(store);
     });
+}
+
+// ============================================================================
+// --- AC TICKET MESAJI ---
+// Her AC kendi Discord token'ini panele girer ve "Ticket'a Mesaj" sekmesinden
+// sectigi ticket'a KEND HESABINDAN mesaj gonderir. Mesaj elle gonderilir -
+// otomatik hicbir sey yok.
+//
+// TASARIM KARARLARI VE SEBEPLERI
+//
+// 1) Token'lar DUZ METIN durmuyor. AES-256-GCM ile sifreleniyor; anahtar
+//    config.env'deki AC_ANAHTAR'dan turetiliyor. Yani ac-tokenlari.json tek
+//    basina ele gecse (yedek, disk kopyasi) icindekiler okunamiyor.
+//    DURUSTCE: config.env de sizarsa koruma biter. Bu, tam bir cozum degil;
+//    yedek/kopya sizintisina karsi bir katman.
+//
+// 2) Kimse BASKASININ token'ini giremiyor. Kaydetmeden once token Discord'a
+//    soruluyor ve donen hesap ID'si, panel hesabina bagli Discord ID ile
+//    karsilastiriliyor. Tutmuyorsa kayit reddediliyor.
+//
+// 3) GATEWAY BAGLANTISI ACILMIYOR. Gonderim tek bir REST istegiyle yapiliyor.
+//    Her AC icin ayri bir selfbot baglantisi acmak hem agir olurdu hem de
+//    Discord'un isaretleme esigine cok daha hizli takilirdi.
+//
+// 4) Hiz siniri var. Bu oturumda panelin kendi hesabi hizli DM yuzunden uc kez
+//    kilitlendi; ayni hatayi burada tekrarlamiyoruz.
+//
+// 5) Token bir daha EKRANA DONMUYOR. Panel yalnizca "bagli mi, hangi hesap,
+//    ne zaman baglandi" gosteriyor.
+// ============================================================================
+const AC_TICKET_KATEGORI = '1470230380572573706';
+const AC_TOKEN_PATH = path.join(ROOT_DIR, 'ac-tokenlari.json');
+
+// Gonderim hiz siniri: kisi basina ve panel genelinde.
+const AC_KISI_ARALIK_MS = 5000;      // ayni AC iki gonderim arasinda
+const AC_KISI_SAATLIK = 30;          // ayni AC saatte en fazla
+const AC_MESAJ_TAVANI = 1800;        // tek mesajda karakter
+
+// --- Sifreleme ---
+// Anahtar config.env'den; yoksa ozellik KAPALI kalir (token istenmez).
+// Anahtari uretmek: herhangi bir 32+ karakterlik rastgele dize.
+function acAnahtari() {
+    const ham = process.env.AC_ANAHTAR;
+    if (!ham || ham.length < 16) return null;
+    // Sabit tuz: anahtar zaten gizli, tuzun amaci burada yalnizca ham dizeyi
+    // 32 bayta duzgun yaymak.
+    return crypto.scryptSync(ham, 'ac-token-tuzu', 32);
+}
+
+function acSifrele(metin) {
+    const anahtar = acAnahtari();
+    if (!anahtar) throw new Error('AC_ANAHTAR tanımlı değil.');
+    const iv = crypto.randomBytes(12);
+    const sifreleyici = crypto.createCipheriv('aes-256-gcm', anahtar, iv);
+    const veri = Buffer.concat([sifreleyici.update(metin, 'utf8'), sifreleyici.final()]);
+    return `${iv.toString('base64')}.${sifreleyici.getAuthTag().toString('base64')}.${veri.toString('base64')}`;
+}
+
+function acCoz(paket) {
+    const anahtar = acAnahtari();
+    if (!anahtar) return null;
+    try {
+        const [ivB, etiketB, veriB] = String(paket).split('.');
+        const cozucu = crypto.createDecipheriv('aes-256-gcm', anahtar,
+            Buffer.from(ivB, 'base64'));
+        cozucu.setAuthTag(Buffer.from(etiketB, 'base64'));
+        return Buffer.concat([cozucu.update(Buffer.from(veriB, 'base64')), cozucu.final()])
+            .toString('utf8');
+    } catch (error) {
+        // Anahtar degistiyse ya da kayit bozuksa: cozulemez. Sessizce null -
+        // kullanici "yeniden bagla" ekrani gorur.
+        return null;
+    }
+}
+
+// --- Depo: { username: { paket, discordId, etiket, at } } ---
+function acTokenlariniYukle() {
+    try {
+        const ham = JSON.parse(fs.readFileSync(AC_TOKEN_PATH, 'utf8'));
+        return (ham && typeof ham === 'object' && !Array.isArray(ham)) ? ham : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+const acTokenlari = acTokenlariniYukle();
+
+function acTokenlariniYaz() {
+    try {
+        const gecici = `${AC_TOKEN_PATH}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(acTokenlari), { mode: 0o600 });
+        fs.renameSync(gecici, AC_TOKEN_PATH);
+    } catch (error) {
+        console.log(`[AC] Token kaydedilemedi: ${error.message}`);
+    }
+}
+
+// --- Discord REST ---
+// Gateway acmiyoruz; tek istek. Kutuphane de kullanmiyoruz - selfbot
+// kutuphanesi bir istemci nesnesi kurmak isterdi.
+async function acDiscordIstek(yol, token, secenek = {}) {
+    const cevap = await fetch(`https://discord.com/api/v10${yol}`, {
+        method: secenek.method || 'GET',
+        headers: {
+            Authorization: token,
+            'Content-Type': 'application/json',
+        },
+        body: secenek.body ? JSON.stringify(secenek.body) : undefined,
+    });
+    const metin = await cevap.text();
+    let govde = null;
+    try { govde = metin ? JSON.parse(metin) : null; } catch (e) { govde = null; }
+    return { ok: cevap.ok, durum: cevap.status, govde };
+}
+
+// Hiz sinirlari - bellekte, kisi basina.
+const acSonGonderim = new Map();   // username -> ts
+const acSaatlik = new Map();       // username -> [ts, ...]
+
+function acHizKontrol(username) {
+    const simdi = Date.now();
+    const son = acSonGonderim.get(username) || 0;
+    const kalan = AC_KISI_ARALIK_MS - (simdi - son);
+    if (kalan > 0) {
+        return `Çok hızlı. ${Math.ceil(kalan / 1000)} saniye sonra tekrar dene.`;
+    }
+    const liste = (acSaatlik.get(username) || []).filter((t) => simdi - t < 3600000);
+    if (liste.length >= AC_KISI_SAATLIK) {
+        return `Saatlik gönderim sınırına takıldın (${AC_KISI_SAATLIK}). Bir süre bekle.`;
+    }
+    acSaatlik.set(username, liste);
+    return null;
+}
+
+function acHizIsle(username) {
+    const simdi = Date.now();
+    acSonGonderim.set(username, simdi);
+    const liste = acSaatlik.get(username) || [];
+    liste.push(simdi);
+    acSaatlik.set(username, liste);
 }
 
 // ============================================================================
@@ -4504,6 +4645,169 @@ app.get('/api/sahiplenme/tani', requireIzin('etkinlik'), (req, res) => {
         // Kategoride mesaj gorulup de kalip tutmazsa buraya dusuyor.
         eslesmeyenler: sahiplenmeEslesmeyen,
     });
+});
+
+// ============================================================================
+// --- AC TICKET MESAJI: UCLAR ---
+// ============================================================================
+
+// Bu AC'nin durumu: sunucu anahtari tanimli mi, hesabi bagli mi.
+app.get('/api/ac/durum', requireIzin('ticketmesaj'), (req, res) => {
+    const kullanici = req.session.username;
+    const kayit = acTokenlari[kullanici] || null;
+    res.json({
+        ok: true,
+        // Anahtar yoksa ozellik komple kapali - panel bunu acikca soyluyor ki
+        // "token girdim ama olmuyor" durumu olusmasin.
+        anahtarVar: Boolean(acAnahtari()),
+        bagliDiscordId: panelUserDiscordId(kullanici),
+        baglandi: Boolean(kayit),
+        hesap: kayit ? kayit.etiket : null,
+        hesapId: kayit ? kayit.discordId : null,
+        baglanmaZamani: kayit ? kayit.at : null,
+        kisiAralikSn: AC_KISI_ARALIK_MS / 1000,
+        saatlikTavan: AC_KISI_SAATLIK,
+        mesajTavani: AC_MESAJ_TAVANI,
+    });
+});
+
+// Token bagla. DISKE YAZILMADAN once Discord'a soruluyor ve donen hesabin,
+// panel hesabina bagli Discord ID ile ayni olup olmadigina bakiliyor - boylece
+// kimse baskasinin token'ini giremiyor.
+app.post('/api/ac/token', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acAnahtari()) {
+        return res.json({ ok: false, error: "Sunucuda AC_ANAHTAR tanımlı değil; yönetici config.env'e eklemeli." });
+    }
+    const beklenenId = panelUserDiscordId(kullanici);
+    if (!beklenenId) {
+        return res.json({
+            ok: false,
+            error: 'Panel hesabına Discord ID bağlı değil. Ayarlar > Kendi Hesabım bölümünden ekle.',
+        });
+    }
+
+    const token = String((req.body && req.body.token) || '').trim();
+    if (!token) return res.json({ ok: false, error: 'Token boş.' });
+
+    let kim;
+    try {
+        kim = await acDiscordIstek('/users/@me', token);
+    } catch (error) {
+        return res.json({ ok: false, error: `Discord'a ulaşılamadı: ${error.message}` });
+    }
+    if (!kim.ok || !kim.govde || !kim.govde.id) {
+        return res.json({ ok: false, error: "Discord bu token'ı kabul etmedi. Süresi dolmuş olabilir." });
+    }
+    if (kim.govde.id !== beklenenId) {
+        // Baskasinin token'i. Kaydetmiyoruz ve denemeyi denetime yaziyoruz.
+        addAudit('ac-token-uyusmazlik', kullanici,
+            `Girilen token ${kim.govde.id} hesabına ait, panel hesabına bağlı ID ${beklenenId}`, req);
+        return res.json({
+            ok: false,
+            error: "Bu token senin hesabına ait değil. Yalnızca kendi hesabının token'ını bağlayabilirsin.",
+        });
+    }
+
+    acTokenlari[kullanici] = {
+        paket: acSifrele(token),
+        discordId: kim.govde.id,
+        etiket: kim.govde.username || kim.govde.id,
+        at: Date.now(),
+    };
+    acTokenlariniYaz();
+    addAudit('ac-token-bagla', kullanici, `${kim.govde.username} (${kim.govde.id})`, req);
+    res.json({ ok: true, hesap: kim.govde.username, hesapId: kim.govde.id });
+});
+
+app.delete('/api/ac/token', requireIzin('ticketmesaj'), (req, res) => {
+    const kullanici = req.session.username;
+    if (acTokenlari[kullanici]) {
+        delete acTokenlari[kullanici];
+        acTokenlariniYaz();
+        addAudit('ac-token-sil', kullanici, 'Token bağlantısı kaldırıldı', req);
+    }
+    res.json({ ok: true });
+});
+
+// Kategorideki acik ticket'lar. Liste BOTUN kendi baglantisindan geliyor;
+// AC'nin token'i yalnizca gonderim aninda kullaniliyor.
+app.get('/api/ac/ticketlar', requireIzin('ticketmesaj'), async (req, res) => {
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+        if (!guild) return res.json({ ok: false, error: 'Sunucu bulunamadı.' });
+        const ticketlar = [...guild.channels.cache.values()]
+            .filter((k) => k.parentId === AC_TICKET_KATEGORI && typeof k.send === 'function')
+            .sort((a, b) => (b.createdTimestamp || 0) - (a.createdTimestamp || 0))
+            .map((k) => ({ id: k.id, ad: k.name, acilis: k.createdTimestamp || null }));
+        res.json({ ok: true, kategori: AC_TICKET_KATEGORI, ticketlar });
+    } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// Mesaji gonder: AC'nin KENDI token'iyla, tek REST istegi, gateway acmadan.
+app.post('/api/ac/gonder', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    const kayit = acTokenlari[kullanici];
+    if (!kayit) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    const mesaj = String((req.body && req.body.mesaj) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
+    if (!mesaj) return res.json({ ok: false, error: 'Mesaj boş.' });
+    if (mesaj.length > AC_MESAJ_TAVANI) {
+        return res.json({ ok: false, error: `Mesaj çok uzun (en fazla ${AC_MESAJ_TAVANI} karakter).` });
+    }
+
+    // Kanal GERCEKTEN bu kategoride mi? Bu kontrol olmasaydi panel, sunucudaki
+    // herhangi bir kanala mesaj atmanin yolu olurdu.
+    let kanal = null;
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+        kanal = guild && guild.channels.cache.get(kanalId);
+    } catch (error) {
+        return res.json({ ok: false, error: `Kanal doğrulanamadı: ${error.message}` });
+    }
+    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+        return res.json({ ok: false, error: 'Bu kanal ticket kategorisinde değil.' });
+    }
+
+    const hizHatasi = acHizKontrol(kullanici);
+    if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
+
+    const token = acCoz(kayit.paket);
+    if (!token) {
+        return res.json({
+            ok: false,
+            error: 'Kayıtlı token çözülemedi (sunucu anahtarı değişmiş olabilir). Hesabını yeniden bağla.',
+        });
+    }
+
+    let sonuc;
+    try {
+        sonuc = await acDiscordIstek(`/channels/${kanalId}/messages`, token, {
+            method: 'POST', body: { content: mesaj },
+        });
+    } catch (error) {
+        return res.json({ ok: false, error: `Gönderilemedi: ${error.message}` });
+    }
+
+    if (!sonuc.ok) {
+        // 401: token olmus. Kullaniciyi bos yere ugrastirmamak icin kaydi
+        // dusuruyoruz - zaten calismiyor.
+        if (sonuc.durum === 401) {
+            delete acTokenlari[kullanici];
+            acTokenlariniYaz();
+            return res.json({ ok: false, error: 'Token artık geçerli değil, bağlantı kaldırıldı. Yeniden bağla.' });
+        }
+        const detay = (sonuc.govde && sonuc.govde.message) || `HTTP ${sonuc.durum}`;
+        return res.json({ ok: false, error: `Discord reddetti: ${detay}` });
+    }
+
+    acHizIsle(kullanici);
+    addAudit('ac-ticket-mesaj', kullanici, `${kanal.name} (${kanalId}) - ${mesaj.length} karakter`, req);
+    res.json({ ok: true, kanal: kanal.name });
 });
 
 // --- PRIME SAAT HATIRLATMASI ---

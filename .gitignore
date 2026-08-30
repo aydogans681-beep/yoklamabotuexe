@@ -17,6 +17,8 @@ yoklama-katilim.json
 canli-sahiplenme.json
 # Şüpheli Log'daki Ban/Şüpheli/Temiz işaretleri - sunucuda oluşur
 log-isaretleri.json
+# GİZLİ: AC hesap tokenları (şifreli ama yine de depoya girmez)
+ac-tokenlari.json
 
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.

@@ -843,6 +843,7 @@ const SEKME_BASLIKLARI = {
     loglar:       ['i-loglar',       'TX Logs',        'Ban, unban, kick, warn, DM ve diğer log kanalları.'],
     mutelog:      ['i-mutelog',      'Mute Logları',   'Mute ve unmute kayıtları.'],
     felox:        ['i-felox',        'Felox',          'Felox kayıtları ve şüpheli log incelemesi.'],
+    ticketmesaj:  ['i-ticketmesaj',  "Ticket'a Mesaj", 'Kendi hesabından seçtiğin ticket\'a mesaj gönder.'],
     hesaploglari: ['i-hesaploglari', 'Hesap Logları',  'Panelde kim ne yaptı.'],
     ayarlar:      ['i-ayarlar',      'Ayarlar',        'Otomatik yoklama, rol botu, ticket mesajı ve panel hesapları.'],
 };
@@ -872,6 +873,7 @@ tabButtons.forEach((btn) => {
         if (btn.dataset.tab === 'loglar') txLogTab.refreshMenu();
         if (btn.dataset.tab === 'mutelog') muteLogTab.refreshMenu();
         if (btn.dataset.tab === 'felox') feloxLogTab.refreshMenu();
+        if (btn.dataset.tab === 'ticketmesaj') acDurumYukle();
         if (btn.dataset.tab === 'ayarlar') {
             if (currentIsAdmin) refreshAccounts();
             loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama(); loadPrime();
@@ -3870,5 +3872,222 @@ document.getElementById('otoYoklamaKaydetBtn').addEventListener('click', async (
         loadOtoYoklama();
     } catch (error) {
         otoYoklamaMsg.textContent = `Hata: ${error.message}`;
+    }
+});
+
+
+// ============================================================================
+// --- TICKET'A MESAJ (AC) ---
+// AC kendi Discord hesabini panele baglar, kategorideki bir ticket'i secer,
+// mesajini yazar ve gonderir. Otomatik hicbir sey yok: her mesaj bir butona
+// basilarak gidiyor.
+//
+// Token asla ekrana geri yazilmiyor - panel yalnizca hangi hesabin bagli
+// oldugunu ve ne zaman baglandigini gosteriyor.
+// ============================================================================
+const acBagliDegilKart = document.getElementById('acBagliDegilKart');
+const acBagliDegilAciklama = document.getElementById('acBagliDegilAciklama');
+const acTokenSatiri = document.getElementById('acTokenSatiri');
+const acTokenInput = document.getElementById('acToken');
+const acBaglaBtn = document.getElementById('acBaglaBtn');
+const acBaglaMsg = document.getElementById('acBaglaMsg');
+const acUyari = document.getElementById('acUyari');
+const acPanel = document.getElementById('acPanel');
+const acHesapAdi = document.getElementById('acHesapAdi');
+const acHesapZaman = document.getElementById('acHesapZaman');
+const acYenileBtn = document.getElementById('acYenileBtn');
+const acCikarBtn = document.getElementById('acCikarBtn');
+const acAra = document.getElementById('acAra');
+const acTicketListe = document.getElementById('acTicketListe');
+const acSeciliTicket = document.getElementById('acSeciliTicket');
+const acSayac = document.getElementById('acSayac');
+const acMesaj = document.getElementById('acMesaj');
+const acGonderBtn = document.getElementById('acGonderBtn');
+const acGonderMsg = document.getElementById('acGonderMsg');
+
+let acTicketler = [];
+let acSecili = null;
+let acAyar = { mesajTavani: 1800 };
+
+async function acDurumYukle() {
+    try {
+        const res = await fetch('/api/ac/durum');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) { acBagliDegilAciklama.textContent = `Hata: ${d.error}`; return; }
+        acAyar = d;
+
+        if (!d.anahtarVar) {
+            // Sunucuda sifreleme anahtari yoksa ozellik komple kapali. Bunu
+            // acikca soylemek gerekiyor, yoksa "token girdim olmadi" olur.
+            acPanel.style.display = 'none';
+            acBagliDegilKart.style.display = '';
+            acTokenSatiri.style.display = 'none';
+            acUyari.style.display = 'none';
+            acBagliDegilAciklama.innerHTML = 'Bu özellik sunucuda kapalı. Yönetici '
+                + '<b>config.env</b> dosyasına <b>AC_ANAHTAR</b> satırını eklemeli '
+                + '(en az 16 karakterlik rastgele bir dize), sonra botu yeniden başlatmalı.';
+            return;
+        }
+
+        if (!d.bagliDiscordId) {
+            // Sahiplik dogrulamasi panel hesabina bagli Discord ID uzerinden
+            // yapiliyor; o yoksa token baglanamaz.
+            acPanel.style.display = 'none';
+            acBagliDegilKart.style.display = '';
+            acTokenSatiri.style.display = 'none';
+            acUyari.style.display = 'none';
+            acBagliDegilAciklama.innerHTML = 'Panel hesabına Discord ID bağlı değil. '
+                + 'Token\'ın gerçekten sana ait olduğunu doğrulayabilmek için gerekli. '
+                + '<a href="#" id="acIdEkleBag">Ayarlar\'dan ekle →</a>';
+            const bag = document.getElementById('acIdEkleBag');
+            if (bag) bag.addEventListener('click', (e) => { e.preventDefault(); discordIdAlaninaGit(); });
+            return;
+        }
+
+        if (d.baglandi) {
+            acBagliDegilKart.style.display = 'none';
+            acPanel.style.display = '';
+            acHesapAdi.textContent = d.hesap || d.hesapId;
+            acHesapZaman.textContent = d.baglanmaZamani ? `· ${formatDate(d.baglanmaZamani)}` : '';
+            acSayac.textContent = `en fazla ${d.saatlikTavan}/saat · gönderimler arası ${d.kisiAralikSn} sn`;
+            acTicketleriYukle();
+        } else {
+            acPanel.style.display = 'none';
+            acBagliDegilKart.style.display = '';
+            acTokenSatiri.style.display = 'flex';
+            acUyari.style.display = '';
+            acBagliDegilAciklama.textContent =
+                'Ticket\'a kendi hesabından mesaj gönderebilmek için hesabını bağla.';
+        }
+    } catch (error) {
+        acBagliDegilAciklama.textContent = `Hata: ${error.message}`;
+    }
+}
+
+acBaglaBtn.addEventListener('click', async () => {
+    const token = acTokenInput.value.trim();
+    if (!token) { acBaglaMsg.textContent = 'Token boş.'; return; }
+    acBaglaBtn.disabled = true;
+    acBaglaMsg.textContent = 'Discord\'a soruluyor...';
+    try {
+        const res = await fetch('/api/ac/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        // Basarili da olsa olmasa da alani hemen bosaltiyoruz - token ekranda
+        // asili kalmasin.
+        acTokenInput.value = '';
+        if (!d.ok) { acBaglaMsg.textContent = d.error; return; }
+        acBaglaMsg.textContent = '';
+        acDurumYukle();
+    } catch (error) {
+        acBaglaMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        acBaglaBtn.disabled = false;
+    }
+});
+
+acCikarBtn.addEventListener('click', async () => {
+    if (!window.confirm('Hesap bağlantısı kaldırılsın mı? Token panelden silinir.')) return;
+    try {
+        await fetch('/api/ac/token', { method: 'DELETE' });
+        acSecili = null;
+        acDurumYukle();
+    } catch (error) {
+        acGonderMsg.textContent = `Hata: ${error.message}`;
+    }
+});
+
+async function acTicketleriYukle() {
+    acTicketListe.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(5) + '</div>';
+    try {
+        const res = await fetch('/api/ac/ticketlar');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) {
+            acTicketListe.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(d.error)}</div>`;
+            return;
+        }
+        acTicketler = d.ticketlar || [];
+        acTicketleriCiz();
+    } catch (error) {
+        acTicketListe.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function acTicketleriCiz() {
+    const terim = acAra.value.trim().toLocaleLowerCase('tr');
+    const liste = terim
+        ? acTicketler.filter((t) => t.ad.toLocaleLowerCase('tr').includes(terim))
+        : acTicketler;
+
+    acTicketListe.innerHTML = '';
+    if (liste.length === 0) {
+        acTicketListe.innerHTML = `<div class="empty-hint">${terim
+            ? 'Aramaya uyan ticket yok.'
+            : 'Bu kategoride açık ticket yok.'}</div>`;
+        return;
+    }
+    liste.forEach((t) => {
+        const btn = document.createElement('button');
+        btn.className = 'act-row' + (acSecili && acSecili.id === t.id ? ' active' : '');
+        btn.innerHTML = `
+            <span class="act-body">
+                <span class="act-name">${escapeHtml(t.ad)}</span>
+                <span class="act-last">${t.acilis ? `açıldı: ${formatDate(t.acilis)}` : ''}</span>
+            </span>`;
+        btn.addEventListener('click', () => {
+            acSecili = t;
+            acSeciliTicket.textContent = t.ad;
+            acGonderBtn.disabled = false;
+            acGonderMsg.textContent = '';
+            acTicketleriCiz();
+        });
+        acTicketListe.appendChild(btn);
+    });
+}
+
+acAra.addEventListener('input', acTicketleriCiz);
+acYenileBtn.addEventListener('click', acTicketleriYukle);
+
+acGonderBtn.addEventListener('click', async () => {
+    if (!acSecili) { acGonderMsg.textContent = 'Önce bir ticket seç.'; return; }
+    const mesaj = acMesaj.value.trim();
+    if (!mesaj) { acGonderMsg.textContent = 'Mesaj boş.'; return; }
+    if (mesaj.length > acAyar.mesajTavani) {
+        acGonderMsg.textContent = `Mesaj çok uzun (en fazla ${acAyar.mesajTavani}).`;
+        return;
+    }
+    // Yanlis ticket'a mesaj geri alinamaz - gondermeden once hangisi oldugunu
+    // acikca soruyoruz.
+    if (!window.confirm(`"${acSecili.ad}" ticket'ına kendi hesabından gönderilsin mi?`)) return;
+
+    acGonderBtn.disabled = true;
+    acGonderMsg.textContent = 'Gönderiliyor...';
+    try {
+        const res = await fetch('/api/ac/gonder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kanalId: acSecili.id, mesaj }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) {
+            acGonderMsg.textContent = d.error;
+            // Token dustuyse sunucu bagi kaldirdi; ekrani tazeleyip
+            // "yeniden bagla" durumuna gecelim.
+            if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+            return;
+        }
+        acMesaj.value = '';
+        acGonderMsg.textContent = `Gönderildi → ${d.kanal}`;
+    } catch (error) {
+        acGonderMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        acGonderBtn.disabled = false;
     }
 });
