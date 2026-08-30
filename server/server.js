@@ -249,7 +249,7 @@ const IZIN_SEKMELERI = [
     { key: 'loglar', label: 'TX Logs' },
     { key: 'mutelog', label: 'Mute Logları' },
     { key: 'felox', label: 'Felox' },
-    { key: 'ticketmesaj', label: "Ticket'a Mesaj" },
+    { key: 'ticketmesaj', label: 'Nexora Panel' },
     { key: 'ayarlar', label: 'Ayarlar' },
 ];
 const IZIN_SEKME_ANAHTARLARI = IZIN_SEKMELERI.map((x) => x.key);
@@ -2717,7 +2717,25 @@ async function findTicketOpener(channel) {
     return null;
 }
 
+// AC ticket kategorisinde ticket kapaninca da panelleri guncelle.
+client.on('channelDelete', (channel) => {
+    try {
+        if (channel && channel.parentId === AC_TICKET_KATEGORI) {
+            wsBroadcast({ type: 'ac-ticket-degisti', islem: 'kapandi', id: channel.id });
+        }
+    } catch (error) { /* sessizce gec */ }
+});
+
 client.on('channelCreate', async (channel) => {
+    // AC ticket kategorisinde yeni ticket acilinca panelleri canli guncelle.
+    // Bu, ticketAutoEnabled'dan BAGIMSIZ - otomatik mesajla ilgisi yok.
+    try {
+        if (channel && channel.parentId === AC_TICKET_KATEGORI) {
+            wsBroadcast({ type: 'ac-ticket-degisti', islem: 'acildi',
+                id: channel.id, ad: channel.name });
+        }
+    } catch (error) { /* yayin kozmetik - sessizce gec */ }
+
     try {
         if (!panelSettings.ticketAutoEnabled) return;
         if (!channel || !channel.guild) return;

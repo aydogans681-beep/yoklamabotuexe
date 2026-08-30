@@ -300,6 +300,10 @@ function connectWebSocket() {
             } else if (msg.type === 'log-isaret') {
                 // DİKKAT: 'log-durum' DEĞİL - o kanalın yüklenme durumu.
                 logTabs.forEach((t) => t.onIsaret(msg));
+            } else if (msg.type === 'ac-ticket-degisti') {
+                // AC ticket kategorisinde ticket açıldı/kapandı - liste canlı
+                // güncellensin (yalnızca sekme açık ve bağlıysa).
+                if (typeof acCanliGuncelle === 'function') acCanliGuncelle(msg);
             } else if (msg.type === 'yoklama-katilim') {
                 // Baska bir panel kullanicisi katildi - sayac anlik guncellensin.
                 loadKatilim();
@@ -854,7 +858,7 @@ const SEKME_BASLIKLARI = {
     loglar:       ['i-loglar',       'TX Logs',        'Ban, unban, kick, warn, DM ve diğer log kanalları.'],
     mutelog:      ['i-mutelog',      'Mute Logları',   'Mute ve unmute kayıtları.'],
     felox:        ['i-felox',        'Felox',          'Felox kayıtları ve şüpheli log incelemesi.'],
-    ticketmesaj:  ['i-ticketmesaj',  "Ticket'a Mesaj", 'Kendi hesabından seçtiğin ticket\'a mesaj gönder.'],
+    ticketmesaj:  ['i-ticketmesaj',  'Nexora Panel',   'Kategorideki ticket\'ları canlı gör, seçip Nexora at.'],
     hesaploglari: ['i-hesaploglari', 'Hesap Logları',  'Panelde kim ne yaptı.'],
     ayarlar:      ['i-ayarlar',      'Ayarlar',        'Otomatik yoklama, rol botu, ticket mesajı ve panel hesapları.'],
 };
@@ -4019,6 +4023,16 @@ acCikarBtn.addEventListener('click', async () => {
         acGonderMsg.textContent = `Hata: ${error.message}`;
     }
 });
+
+// Bir ticket açıldı/kapandı WebSocket olayı geldiğinde listeyi tazele -
+// yalnızca sekme açık ve hesap bağlıysa. Panel açık kalır ve ticket'lar
+// kendiliğinden görünür/kaybolur; AC "Yenile" basmak zorunda değil.
+function acCanliGuncelle(msg) {
+    const sekmeAcik = document.getElementById('tab-ticketmesaj').classList.contains('active');
+    const panelAcik = acPanel && acPanel.style.display !== 'none';
+    if (!sekmeAcik || !panelAcik) return;
+    acTicketleriYukle();
+}
 
 async function acTicketleriYukle() {
     acTicketListe.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(5) + '</div>';
