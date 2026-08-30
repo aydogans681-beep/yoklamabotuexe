@@ -3937,6 +3937,8 @@ const acSeciliTicket = document.getElementById('acSeciliTicket');
 const acSayac = document.getElementById('acSayac');
 const acMesaj = document.getElementById('acMesaj');
 const acGonderBtn = document.getElementById('acGonderBtn');
+const acNexoraBtn = document.getElementById('acNexoraBtn');
+const acNexoraMsg = document.getElementById('acNexoraMsg');
 const acGonderMsg = document.getElementById('acGonderMsg');
 
 let acTicketler = [];
@@ -4076,7 +4078,9 @@ function acTicketleriCiz() {
             acSecili = t;
             acSeciliTicket.textContent = t.ad;
             acGonderBtn.disabled = false;
+            acNexoraBtn.disabled = false;
             acGonderMsg.textContent = '';
+            acNexoraMsg.textContent = '';
             acTicketleriCiz();
         });
         acTicketListe.appendChild(btn);
@@ -4085,6 +4089,35 @@ function acTicketleriCiz() {
 
 acAra.addEventListener('input', acTicketleriCiz);
 acYenileBtn.addEventListener('click', acTicketleriYukle);
+
+acNexoraBtn.addEventListener('click', async () => {
+    if (!acSecili) { acNexoraMsg.textContent = 'Önce bir ticket seç.'; return; }
+    // Yanlis ticket'a Nexora atmak istenmez - onay isteniyor.
+    if (!window.confirm(`"${acSecili.ad}" ticket'ında kendi hesabından /nexorapin çalıştırılsın mı?`)) return;
+
+    acNexoraBtn.disabled = true;
+    // Gateway acilmasi birkac saniye surebilir - kullaniciya bekledigini soyle.
+    acNexoraMsg.textContent = 'Hesabına bağlanılıyor, gönderiliyor...';
+    try {
+        const res = await fetch('/api/ac/nexora', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kanalId: acSecili.id }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) {
+            acNexoraMsg.textContent = d.error;
+            if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+            return;
+        }
+        acNexoraMsg.textContent = `Nexora atıldı → ${d.kanal}`;
+    } catch (error) {
+        acNexoraMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        acNexoraBtn.disabled = false;
+    }
+});
 
 acGonderBtn.addEventListener('click', async () => {
     if (!acSecili) { acGonderMsg.textContent = 'Önce bir ticket seç.'; return; }

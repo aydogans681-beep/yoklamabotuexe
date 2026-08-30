@@ -1970,6 +1970,150 @@ function acHizIsle(username) {
 }
 
 // ============================================================================
+// --- NEXORA: AC HESABINDAN SLASH KOMUT ---
+// /nexorapin bir SLASH komut. Slash komut calistirmak (mesaj gondermenin
+// aksine) canli bir gateway baglantisi gerektiriyor: Discord, isteğin gecerli
+// bir oturuma (session_id) ait olmasini bekliyor. AC icin normalde gateway
+// ACMIYORUZ (yalnizca REST) - ama pin'i AC'nin KENDI hesabindan atmak sart
+// oldugu icin, o AC'ye GECICI bir gateway baglantisi aciliyor.
+//
+// Baglanti on-demand: AC tusa bastiginda aciliyor, bir sonraki basis icin bir
+// sure canli kaliyor, bir sure kullanilmazsa kendiliğinden kapaniyor. Bu, her
+// AC'ye SUREKLI acik baglanti tutmaktan cok daha az risk - ama yine de
+// mesaj gondermekten agir bir islem ve hesabin isaretlenme riskini artiriyor.
+// Kullanici bunu bilerek istedi.
+//
+// Ana botun slash komut makinesi (rolSlashGonder) client.user uzerinden
+// calisiyor; burasi ayni deseni AC'nin kendi client'i uzerinden tekrarliyor.
+// ============================================================================
+const NEXORA_KOMUT_ID = '1543548857529401404';   // /nexorapin
+const NEXORA_BOT_ID = '1518636692171522209';     // komutun sahibi bot
+
+const AC_GATEWAY_BOSTA_MS = 5 * 60 * 1000;       // 5 dk kullanilmazsa kapat
+const AC_GATEWAY_TAVANI = 15;                     // ayni anda en fazla acik baglanti
+const AC_GATEWAY_HAZIR_ZAMANASIMI = 22000;        // ready gelmezse vazgec
+
+const acGatewayler = new Map();   // username -> { client, hazir, sonKullanim, hazirlik }
+
+async function acGatewayAl(username) {
+    const mevcut = acGatewayler.get(username);
+    if (mevcut) {
+        mevcut.sonKullanim = Date.now();
+        if (mevcut.hazir && mevcut.client) return mevcut.client;
+        if (mevcut.hazirlik) return mevcut.hazirlik;  // baglanma zaten suruyor
+    }
+    if (acGatewayler.size >= AC_GATEWAY_TAVANI) {
+        // Bosta olani kapatmayi dene, yine de yer yoksa reddet.
+        acGatewayTemizle(true);
+        if (acGatewayler.size >= AC_GATEWAY_TAVANI) {
+            throw new Error('Şu an çok fazla aktif bağlantı var, biraz sonra tekrar dene.');
+        }
+    }
+
+    const kayit = acTokenlari[username];
+    if (!kayit) throw new Error('Hesap bağlı değil.');
+    const token = acCoz(kayit.paket);
+    if (!token) throw new Error('Kayıtlı token çözülemedi, hesabını yeniden bağla.');
+
+    const acClient = new Client({ checkUpdate: false });
+    acClient.on('error', () => {});   // sessiz: hatalar hazirlik promise'inde yakalaniyor
+
+    const hazirlik = new Promise((resolve, reject) => {
+        const zamanAsimi = setTimeout(() => {
+            reject(new Error('Gateway bağlantısı zaman aşımına uğradı (token geçersiz olabilir).'));
+        }, AC_GATEWAY_HAZIR_ZAMANASIMI);
+        acClient.once('ready', () => { clearTimeout(zamanAsimi); resolve(acClient); });
+    });
+
+    const yeni = { client: acClient, hazir: false, sonKullanim: Date.now(), hazirlik };
+    acGatewayler.set(username, yeni);
+
+    try {
+        await acClient.login(token);
+        await hazirlik;
+        yeni.hazir = true;
+        yeni.hazirlik = null;
+        console.log(`[Nexora] ${username} icin gateway hazir (${acClient.user ? acClient.user.tag : '?'}).`);
+        return acClient;
+    } catch (error) {
+        acGatewayKapat(username);
+        // Token olduyse kaydi da dusur - REST tarafi da 401 alacakti zaten.
+        if (/invalid token|token.*unavailable|4004/i.test(error.message || '')) {
+            delete acTokenlari[username];
+            acTokenlariniYaz();
+        }
+        throw error;
+    }
+}
+
+function acGatewayKapat(username) {
+    const kayit = acGatewayler.get(username);
+    if (!kayit) return;
+    acGatewayler.delete(username);
+    try { if (kayit.client) kayit.client.destroy(); } catch (error) { /* yoksay */ }
+}
+
+// Bosta kalan baglantilari kapat. zorla=true ise tavana dayanildiginda en
+// eskiyi de kapatmaya calisir.
+function acGatewayTemizle(zorla = false) {
+    const simdi = Date.now();
+    let enEski = null;
+    acGatewayler.forEach((kayit, username) => {
+        if (simdi - kayit.sonKullanim > AC_GATEWAY_BOSTA_MS) {
+            acGatewayKapat(username);
+        } else if (!enEski || kayit.sonKullanim < enEski.sonKullanim) {
+            enEski = { username, sonKullanim: kayit.sonKullanim };
+        }
+    });
+    if (zorla && enEski && acGatewayler.size >= AC_GATEWAY_TAVANI) {
+        acGatewayKapat(enEski.username);
+    }
+}
+setInterval(() => acGatewayTemizle(false), 60 * 1000);
+
+// AC'nin kendi client'i uzerinden /nexorapin'i ticket kanalinda calistirir.
+// rolSlashGonder ile ayni akis, tek fark: ana client yerine AC client.
+async function acNexoraGonder(username, kanalId) {
+    const acClient = await acGatewayAl(username);
+
+    const guild = acClient.guilds.cache.get(GUILD_ID) || await acClient.guilds.fetch(GUILD_ID);
+    if (!guild) throw new Error('Sunucu AC hesabında görünmüyor (AC sunucuda mı?).');
+
+    let kanal = guild.channels.cache.get(kanalId);
+    if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+        throw new Error('Kanal ticket kategorisinde değil.');
+    }
+
+    // Komutu ID ile coz (rolKomutunuBul'un sadelestirilmis hali - tek komut).
+    const data = await acClient.api.guilds[guild.id]['application-command-index'].get();
+    const komutlar = (data && data.application_commands) || [];
+    const ham = komutlar.find((c) => c.id === NEXORA_KOMUT_ID && c.type === 1)
+        || komutlar.find((c) => c.name === 'nexorapin' && c.application_id === NEXORA_BOT_ID && c.type === 1);
+    if (!ham) {
+        throw new Error('/nexorapin komutu sunucuda bulunamadı (Nexora botu ekli ve komut yayında mı?).');
+    }
+
+    const botUser = await acClient.users.fetch(ham.application_id).catch(() => null);
+    if (!botUser || !botUser.application) throw new Error('Nexora botu getirilemedi.');
+    if (botUser._partial) await botUser.getProfile().catch(() => {});
+    botUser.application.commands._add(ham, true);
+    const nesne = botUser.application.commands.cache.get(ham.id);
+    if (!nesne) throw new Error('Nexora komutu önbelleğe alınamadı.');
+
+    const sahteMesaj = new SlashMesaji(acClient, {
+        channel_id: kanal.id,
+        guild_id: guild.id,
+        author: acClient.user,
+        content: '',
+        id: acClient.user.id,
+    });
+    await nesne.sendSlashCommand(sahteMesaj, [], []);
+    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+}
+
+
+// ============================================================================
 // --- LOG İŞARETLERİ (Şüpheli Log) ---
 // Bir log kaydı panelden "ban / şüpheli / temiz" diye işaretlenebiliyor.
 // İşaretler mesaj ID'sine bağlı, mesajların kendisinden AYRI bir dosyada
@@ -4912,6 +5056,31 @@ app.post('/api/ac/gonder', requireIzin('ticketmesaj'), async (req, res) => {
     acHizIsle(kullanici);
     addAudit('ac-ticket-mesaj', kullanici, `${kanal.name} (${kanalId}) - ${mesaj.length} karakter`, req);
     res.json({ ok: true, kanal: kanal.name });
+});
+
+// Nexora pin: AC'nin KENDI hesabindan /nexorapin'i sectigi ticket'ta calistirir.
+app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    const kayit = acTokenlari[kullanici];
+    if (!kayit) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
+
+    // Ayni hiz siniri: gateway ustunden slash komut, mesajdan daha agir bir islem.
+    const hizHatasi = acHizKontrol(kullanici);
+    if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
+
+    let sonuc;
+    try {
+        sonuc = await acNexoraGonder(kullanici, kanalId);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+
+    acHizIsle(kullanici);
+    addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})`, req);
+    res.json({ ok: true, kanal: sonuc.kanal });
 });
 
 // --- PRIME SAAT HATIRLATMASI ---

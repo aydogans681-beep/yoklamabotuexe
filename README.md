@@ -244,21 +244,29 @@ Tasarım kararları ve sebepleri:
 > tepe etiketi ve `aria-label` üzerinden ulaşılabiliyor ama kopyalanabilir bir
 > tablo ikizi bulunmuyor.
 
-## Ticket'a Mesaj (AC)
+## Nexora Panel (AC)
 
 AC'lerin (içerik üreticiler) kendi Discord hesaplarından, `1470230380572573706`
-kategorisindeki bir ticket'a **elle** mesaj göndermesi için. Otomatik hiçbir şey
-yok: her mesaj bir butona basılarak gider.
+kategorisindeki ticket'lara işlem yapması için. Otomatik hiçbir şey **kendi
+başına** olmaz: her işlem bir butona basılarak tetiklenir.
 
 Akış: AC kendi token'ını bir kez bağlar → sekmede kategorideki açık ticket'lar
-listelenir → ticket'ı seçer, mesajını yazar, **Gönder**'e basar → mesaj o
-ticket'a kendi hesabından düşer. Kim ne zaman hangi ticket'a gönderdi Hesap
-Logları'na yazılır.
+listelenir ve **yeni bir ticket açıldığında liste anlık güncellenir** → AC bir
+ticket'ı seçer → iki şey yapabilir:
+
+- **⚡ Nexora At** - seçili ticket kanalında, AC'nin **kendi hesabından**
+  `/nexorapin` slash komutunu (`1543548857529401404`) çalıştırır. Her AC kendi
+  hesabıyla ayrı ayrı atar; panelin ana botu araya girmez.
+- **Mesaj (isteğe bağlı)** - AC bir metin yazıp **Gönder**'e basarsa, o metin
+  ticket'a yine kendi hesabından düşer.
+
+Kim ne zaman hangi ticket'a Nexora attı ya da mesaj gönderdi, Hesap Logları'na
+yazılır.
 
 > **Bu bir selfbot özelliğidir** (README başındaki uyarı burada da geçerli).
-> Kendi kullanıcı hesabından otomatik/panel üzerinden mesaj atmak Discord'un
-> kullanım şartlarına aykırıdır ve hesap işaretlenebilir. AC bunu bilerek,
-> kendi kararıyla bağlıyor.
+> Kendi kullanıcı hesabından otomatik/panel üzerinden mesaj atmak veya slash
+> komut çalıştırmak Discord'un kullanım şartlarına aykırıdır ve hesap
+> işaretlenebilir. AC bunu bilerek, kendi kararıyla bağlıyor.
 
 ### Güvenlik tasarımı
 
@@ -268,9 +276,9 @@ Token'lar hassas olduğu için özellik birkaç katman üzerine kuruldu:
 |---|---|
 | **Şifreleme** | Token'lar `ac-tokenlari.json`'da AES-256-GCM ile şifreli durur. Anahtar **ilk açılışta otomatik üretilip** `ac-anahtar.key`'e yazılır - elle `config.env` düzenlemek gerekmez. (İstersen `config.env`'e `AC_ANAHTAR` yazabilirsin; o öncelikli olur.) Dosya tek başına sızsa bile içerik okunamaz. |
 | **Sahiplik (ilk token kilitler)** | Bir AC'nin bağladığı **ilk** token, o panel hesabının kimliği olur ve kilitlenir. Sonrasında yalnızca aynı Discord hesabının token'ı kabul edilir - AC sonradan başkasının token'ına geçemez. Kilit token'dan ayrı `ac-kilit.json`'da durur; bağlantı kaldırılsa bile kimlik korunur. (Panel hesabına elle bir Discord ID bağlıysa o bağlayıcı olur; yoksa ilk token kilidi kurar.) |
-| **Gateway yok** | Gönderim tek bir REST isteğiyle yapılır - her AC için ayrı selfbot bağlantısı açılmaz. |
-| **Hız sınırı** | AC başına gönderimler arası 5 sn, saatte en fazla 30. Panelin kendi hesabı bu oturumda hızlı DM yüzünden defalarca kilitlendi; aynı hatayı tekrarlamıyoruz. |
-| **Kategori kilidi** | Mesaj yalnızca gerçekten o kategorideki bir kanala gidebilir - panel keyfi bir kanala mesaj atmanın yolu değil. |
+| **Gateway istek üzerine** | Düz mesaj tek bir REST isteğiyle gider. Slash komut (`/nexorapin`) ise **canlı bir gateway oturumu** gerektirir; bu yüzden **Nexora At**'e basıldığında o AC için geçici bir selfbot bağlantısı açılır, komut atılır ve bağlantı **5 dk boşta kalınca kendiliğinden kapanır**. Aynı anda en çok 15 AC bağlantısı tutulur. Sürekli açık selfbot yok - kalıcı bağlantı yalnızca panelin kendi botunda. |
+| **Hız sınırı** | AC başına işlemler arası 5 sn, saatte en fazla 30. Panelin kendi hesabı bu oturumda hızlı DM yüzünden defalarca kilitlendi; aynı hatayı tekrarlamıyoruz. |
+| **Kategori kilidi** | Mesaj ve Nexora yalnızca gerçekten o kategorideki (`1470230380572573706`) bir kanala gidebilir - panel keyfi bir kanala işlem atmanın yolu değil. |
 
 Token **bir daha ekrana yazılmaz**; panel yalnızca hangi hesabın bağlı olduğunu
 ve ne zaman bağlandığını gösterir.
@@ -281,7 +289,7 @@ Elle hiçbir dosya düzenlemek gerekmiyor. Şifreleme anahtarı ilk açılışta
 kendiliğinden üretiliyor.
 
 1. Ayarlar > Panel Hesapları'ndan yeni hesap açarken **tip olarak AC** seç.
-   (Yetkili / AC anahtarı formda.) AC hesabı yalnızca **Ticket'a Mesaj**
+   (Yetkili / AC anahtarı formda.) AC hesabı yalnızca **Nexora Panel**
    sekmesini görür - başka hiçbir şeye erişemez, izin ayarlamana gerek yok.
 2. AC bu hesapla giriş yapar; doğrudan token isteyen ekrana düşer.
 3. AC kendi token'ını bağlar. **İlk bağladığı hesap o panel hesabına
@@ -743,6 +751,10 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `GET /api/aktiflik[?bas=&bit=]` | Aktiflik - seste geçirilen süre |
 | `GET /api/etkinlik/:key/gunluk[?bas=&bit=]` | Etkinlik - kişi başına mesaj sayısı |
 | `GET /api/sahiplenme/tani` | Ticket sahiplenme teşhisi (eşleşmeyen mesajlar) |
+| `GET /api/ac/durum`, `POST /api/ac/token` | AC token bağlama/durum (Nexora Panel) |
+| `GET /api/ac/ticketlar` | AC kategorisindeki açık ticket'lar |
+| `POST /api/ac/gonder` | Seçili ticket'a AC'nin kendi hesabından mesaj |
+| `POST /api/ac/nexora` | Seçili ticket'ta AC'nin kendi hesabından `/nexorapin` slash komutu |
 | `POST /api/loglar/:key/isaret` | Log kaydını Ban/Şüpheli/Temiz işaretler (yalnızca panelde) |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
-| `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi |
+| `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi, AC ticket açılış/kapanış (`ac-ticket-degisti`) |

@@ -411,16 +411,31 @@
                             <span class="grow"></span>
                             <span class="scanStatus" id="acSayac"></span>
                         </div>
-                        <div class="card" style="margin:0;">
-                            <h2>Mesaj</h2>
+                        <!-- Asıl eylem: Nexora At. Seçili ticket'ta AC'nin kendi
+                             hesabından /nexorapin çalıştırır. -->
+                        <div class="card accent-card" style="margin:0 0 12px;">
+                            <h2>Nexora</h2>
                             <p class="card-desc">
-                                Bu mesaj <b>senin Discord hesabından</b> seçtiğin ticket'a gidecek.
+                                <b>Nexora At</b> tuşu, seçtiğin ticket'ta <b>senin Discord
+                                hesabından</b> <code>/nexorapin</code> komutunu çalıştırır.
                             </p>
-                            <textarea id="acMesaj" class="text-search" rows="8"
+                            <div class="toolbar">
+                                <button id="acNexoraBtn" disabled>⚡ Nexora At</button>
+                                <span class="scanStatus" id="acNexoraMsg"></span>
+                            </div>
+                        </div>
+
+                        <!-- İkincil: serbest metin mesaj (isteğe bağlı). -->
+                        <div class="card" style="margin:0;">
+                            <h2>Mesaj (isteğe bağlı)</h2>
+                            <p class="card-desc">
+                                Ticket'a kendi hesabından düz bir mesaj da gönderebilirsin.
+                            </p>
+                            <textarea id="acMesaj" class="text-search" rows="5"
                                       placeholder="Ticket'a gönderilecek mesajı yaz..."
                                       style="width:100%; resize:vertical; line-height:1.6;"></textarea>
                             <div class="toolbar" style="margin-top:11px;">
-                                <button id="acGonderBtn" disabled>Gönder</button>
+                                <button class="secondary" id="acGonderBtn" disabled>Gönder</button>
                                 <span class="scanStatus" id="acGonderMsg"></span>
                             </div>
                         </div>
