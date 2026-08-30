@@ -19,6 +19,8 @@ canli-sahiplenme.json
 log-isaretleri.json
 # GİZLİ: AC hesap tokenları (şifreli ama yine de depoya girmez)
 ac-tokenlari.json
+# AC kimlik kilidi: hangi panel hesabi hangi Discord hesabina kilitli
+ac-kilit.json
 
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.

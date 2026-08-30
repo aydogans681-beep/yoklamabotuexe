@@ -267,7 +267,7 @@ Token'lar hassas olduğu için özellik birkaç katman üzerine kuruldu:
 | Katman | Ne yapar |
 |---|---|
 | **Şifreleme** | Token'lar `ac-tokenlari.json`'da AES-256-GCM ile şifreli durur; anahtar `config.env`'deki `AC_ANAHTAR`'dan türetilir. Dosya tek başına sızsa bile içerik okunamaz. |
-| **Sahiplik** | Token kaydedilmeden önce Discord'a sorulur; dönen hesap ID'si, panel hesabına bağlı Discord ID ile aynı değilse **reddedilir**. Kimse başkasının token'ını giremez. |
+| **Sahiplik (ilk token kilitler)** | Bir AC'nin bağladığı **ilk** token, o panel hesabının kimliği olur ve kilitlenir. Sonrasında yalnızca aynı Discord hesabının token'ı kabul edilir - AC sonradan başkasının token'ına geçemez. Kilit token'dan ayrı `ac-kilit.json`'da durur; bağlantı kaldırılsa bile kimlik korunur. (Panel hesabına elle bir Discord ID bağlıysa o bağlayıcı olur; yoksa ilk token kilidi kurar.) |
 | **Gateway yok** | Gönderim tek bir REST isteğiyle yapılır - her AC için ayrı selfbot bağlantısı açılmaz. |
 | **Hız sınırı** | AC başına gönderimler arası 5 sn, saatte en fazla 30. Panelin kendi hesabı bu oturumda hızlı DM yüzünden defalarca kilitlendi; aynı hatayı tekrarlamıyoruz. |
 | **Kategori kilidi** | Mesaj yalnızca gerçekten o kategorideki bir kanala gidebilir - panel keyfi bir kanala mesaj atmanın yolu değil. |
@@ -279,12 +279,14 @@ ve ne zaman bağlandığını gösterir.
 
 1. `config.env`'e en az 16 karakterlik rastgele bir `AC_ANAHTAR` ekle, botu
    yeniden başlat. (Yoksa özellik kapalı kalır ve sekme bunu söyler.)
-2. AC'nin panel hesabına Ayarlar > Kendi Hesabım'dan **Discord ID** bağlı olmalı
-   (sahiplik doğrulaması için).
-3. AC'ye **Ticket'a Mesaj** sekme izni ver (Panel Hesapları > Yetkiler).
+2. Her AC için bir panel hesabı aç ve **Ticket'a Mesaj** sekme iznini ver
+   (Panel Hesapları > Yetkiler).
+3. AC hesabına girer, kendi token'ını bağlar. **İlk bağladığı hesap o panel
+   hesabına kilitlenir** - Discord ID'yi önceden bağlamana gerek yok.
 
 > `AC_ANAHTAR`'ı sonradan değiştirirsen bağlı token'lar çözülemez; AC'ler
-> hesaplarını yeniden bağlar (panel bunu otomatik algılar).
+> hesaplarını yeniden bağlar (panel bunu otomatik algılar). Anahtarı değiştirmek
+> kimlik kilidini bozmaz - AC yine yalnızca kendi hesabını bağlayabilir.
 
 ## Kenar çubuğu
 

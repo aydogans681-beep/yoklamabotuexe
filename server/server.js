@@ -1847,6 +1847,32 @@ function acTokenlariniYukle() {
 
 const acTokenlari = acTokenlariniYukle();
 
+// --- Kimlik kilidi ---
+// Bir AC'nin BAGLADIGI ILK token, o panel hesabinin kimligini belirler ve
+// kilitlenir. Sonrasinda yalnizca ayni Discord hesabinin token'i kabul edilir;
+// baska birinin token'ina gecilemez. Kilit token'dan AYRI dosyada durur:
+// AC baglantiyi kaldirsa bile kimlik korunur (aksi halde baglantiyi kaldirip
+// baskasinin token'ini baglama yolu acilirdi).
+const AC_KILIT_PATH = path.join(ROOT_DIR, 'ac-kilit.json');
+function acKilitleriniYukle() {
+    try {
+        const ham = JSON.parse(fs.readFileSync(AC_KILIT_PATH, 'utf8'));
+        return (ham && typeof ham === 'object' && !Array.isArray(ham)) ? ham : {};
+    } catch (error) {
+        return {};
+    }
+}
+const acKilitleri = acKilitleriniYukle();   // { username: discordId }
+function acKilitleriniYaz() {
+    try {
+        const gecici = `${AC_KILIT_PATH}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(acKilitleri));
+        fs.renameSync(gecici, AC_KILIT_PATH);
+    } catch (error) {
+        console.log(`[AC] Kilit kaydedilemedi: ${error.message}`);
+    }
+}
+
 function acTokenlariniYaz() {
     try {
         const gecici = `${AC_TOKEN_PATH}.tmp`;
@@ -4665,6 +4691,10 @@ app.get('/api/ac/durum', requireIzin('ticketmesaj'), (req, res) => {
         hesap: kayit ? kayit.etiket : null,
         hesapId: kayit ? kayit.discordId : null,
         baglanmaZamani: kayit ? kayit.at : null,
+        // Kimlik kilidi: elle baglanmis ID ya da ilk token'la kilitlenen.
+        // On yuz artik "Discord ID bagli degil" kapisi gostermiyor - ilk
+        // token kilidi kurdugu icin onceden ID sart degil.
+        kilitliId: panelUserDiscordId(kullanici) || acKilitleri[kullanici] || null,
         kisiAralikSn: AC_KISI_ARALIK_MS / 1000,
         saatlikTavan: AC_KISI_SAATLIK,
         mesajTavani: AC_MESAJ_TAVANI,
@@ -4679,14 +4709,6 @@ app.post('/api/ac/token', requireIzin('ticketmesaj'), async (req, res) => {
     if (!acAnahtari()) {
         return res.json({ ok: false, error: "Sunucuda AC_ANAHTAR tanımlı değil; yönetici config.env'e eklemeli." });
     }
-    const beklenenId = panelUserDiscordId(kullanici);
-    if (!beklenenId) {
-        return res.json({
-            ok: false,
-            error: 'Panel hesabına Discord ID bağlı değil. Ayarlar > Kendi Hesabım bölümünden ekle.',
-        });
-    }
-
     const token = String((req.body && req.body.token) || '').trim();
     if (!token) return res.json({ ok: false, error: 'Token boş.' });
 
@@ -4699,14 +4721,26 @@ app.post('/api/ac/token', requireIzin('ticketmesaj'), async (req, res) => {
     if (!kim.ok || !kim.govde || !kim.govde.id) {
         return res.json({ ok: false, error: "Discord bu token'ı kabul etmedi. Süresi dolmuş olabilir." });
     }
-    if (kim.govde.id !== beklenenId) {
-        // Baskasinin token'i. Kaydetmiyoruz ve denemeyi denetime yaziyoruz.
+
+    // Kimlik kilidi. Iki kaynak: panel hesabina elle baglanmis Discord ID
+    // (varsa) ya da bu hesabin ILK token'iyla kilitlenen kimlik. Ilki varsa
+    // o baglayici; yoksa ilk token kilidi kurar.
+    const beklenenId = panelUserDiscordId(kullanici) || acKilitleri[kullanici] || null;
+    if (beklenenId && kim.govde.id !== beklenenId) {
+        // Kilitli kimlikten baska bir hesabin token'i. Reddet, denetime yaz.
         addAudit('ac-token-uyusmazlik', kullanici,
-            `Girilen token ${kim.govde.id} hesabına ait, panel hesabına bağlı ID ${beklenenId}`, req);
+            `Girilen token ${kim.govde.id} hesabına ait, bu panel hesabı ${beklenenId} kimliğine kilitli`, req);
         return res.json({
             ok: false,
-            error: "Bu token senin hesabına ait değil. Yalnızca kendi hesabının token'ını bağlayabilirsin.",
+            error: "Bu panel hesabı başka bir Discord hesabına kilitli. Yalnızca ilk bağladığın hesabın token'ını girebilirsin.",
         });
+    }
+
+    // Ilk kez baglaniyorsa kimligi kilitle (elle baglanmis ID yoksa).
+    const ilkKilit = !acKilitleri[kullanici];
+    if (ilkKilit) {
+        acKilitleri[kullanici] = kim.govde.id;
+        acKilitleriniYaz();
     }
 
     acTokenlari[kullanici] = {
@@ -4716,7 +4750,8 @@ app.post('/api/ac/token', requireIzin('ticketmesaj'), async (req, res) => {
         at: Date.now(),
     };
     acTokenlariniYaz();
-    addAudit('ac-token-bagla', kullanici, `${kim.govde.username} (${kim.govde.id})`, req);
+    addAudit('ac-token-bagla', kullanici,
+        `${kim.govde.username} (${kim.govde.id})${ilkKilit ? ' - kimlik kilitlendi' : ''}`, req);
     res.json({ ok: true, hesap: kim.govde.username, hesapId: kim.govde.id });
 });
 

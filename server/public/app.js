@@ -3930,21 +3930,6 @@ async function acDurumYukle() {
             return;
         }
 
-        if (!d.bagliDiscordId) {
-            // Sahiplik dogrulamasi panel hesabina bagli Discord ID uzerinden
-            // yapiliyor; o yoksa token baglanamaz.
-            acPanel.style.display = 'none';
-            acBagliDegilKart.style.display = '';
-            acTokenSatiri.style.display = 'none';
-            acUyari.style.display = 'none';
-            acBagliDegilAciklama.innerHTML = 'Panel hesabına Discord ID bağlı değil. '
-                + 'Token\'ın gerçekten sana ait olduğunu doğrulayabilmek için gerekli. '
-                + '<a href="#" id="acIdEkleBag">Ayarlar\'dan ekle →</a>';
-            const bag = document.getElementById('acIdEkleBag');
-            if (bag) bag.addEventListener('click', (e) => { e.preventDefault(); discordIdAlaninaGit(); });
-            return;
-        }
-
         if (d.baglandi) {
             acBagliDegilKart.style.display = 'none';
             acPanel.style.display = '';
@@ -3957,8 +3942,11 @@ async function acDurumYukle() {
             acBagliDegilKart.style.display = '';
             acTokenSatiri.style.display = 'flex';
             acUyari.style.display = '';
-            acBagliDegilAciklama.textContent =
-                'Ticket\'a kendi hesabından mesaj gönderebilmek için hesabını bağla.';
+            acBagliDegilAciklama.innerHTML = d.kilitliId
+                ? 'Bu panel hesabı bir Discord hesabına <b>kilitli</b>. '
+                  + 'Aynı hesabın token\'ını bağla.'
+                : 'Ticket\'a kendi hesabından mesaj gönderebilmek için hesabını bağla. '
+                  + 'İlk bağladığın hesap bu panel hesabına kilitlenir.';
         }
     } catch (error) {
         acBagliDegilAciklama.textContent = `Hata: ${error.message}`;
