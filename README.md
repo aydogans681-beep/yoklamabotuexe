@@ -252,16 +252,19 @@ başına** olmaz: her işlem bir butona basılarak tetiklenir.
 
 Akış: AC kendi token'ını bir kez bağlar → sekmede kategorideki açık ticket'lar
 listelenir ve **yeni bir ticket açıldığında liste anlık güncellenir** → AC bir
-ticket'ı seçer → iki şey yapabilir:
+ticket'ı seçer → **Nexora At** menüsünden işlem yapar. Hepsi AC'nin **kendi
+hesabından** gider:
 
-- **⚡ Nexora At** - seçili ticket kanalında, AC'nin **kendi hesabından**
-  `/nexorapin` slash komutunu (`1543548857529401404`) çalıştırır. Her AC kendi
-  hesabıyla ayrı ayrı atar; panelin ana botu araya girmez.
-- **Mesaj (isteğe bağlı)** - AC bir metin yazıp **Gönder**'e basarsa, o metin
-  ticket'a yine kendi hesabından düşer.
+- **⚡ Nexora At (/nexorapin)** - seçili ticket kanalında, AC'nin kendi
+  hesabından `/nexorapin` slash komutunu (`1543548857529401404`) çalıştırır.
+  Her AC kendi hesabıyla ayrı ayrı atar; panelin ana botu araya girmez.
+- **📸 SS iste** - altındaki hazır mesajı (*"Uygulamayı çalıştırıp tam ekran ss
+  atabilir misin?"*) tek tıkla seçili ticket'a AC'nin kendi hesabından gönderir.
+- **Mesaj (isteğe bağlı)** - AC serbest bir metin yazıp **Gönder**'e basarsa, o
+  metin ticket'a yine kendi hesabından düşer.
 
-Kim ne zaman hangi ticket'a Nexora attı ya da mesaj gönderdi, Hesap Logları'na
-yazılır.
+Kim ne zaman hangi ticket'a Nexora attı, SS istedi ya da mesaj gönderdi, Hesap
+Logları'na yazılır.
 
 > **Bu bir selfbot özelliğidir** (README başındaki uyarı burada da geçerli).
 > Kendi kullanıcı hesabından otomatik/panel üzerinden mesaj atmak veya slash

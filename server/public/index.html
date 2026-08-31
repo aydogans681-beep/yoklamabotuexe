@@ -477,17 +477,27 @@
                             <span class="grow"></span>
                             <span class="scanStatus" id="acSayac"></span>
                         </div>
-                        <!-- Asıl eylem: Nexora At. Seçili ticket'ta AC'nin kendi
-                             hesabından /nexorapin çalıştırır. -->
+                        <!-- Nexora At menüsü: seçili ticket'ta AC'nin KENDİ
+                             hesabından iki hazır eylem. İkisi de /nexorapin'i
+                             kullanan hesabın (token'ı girilen AC) hesabından gider. -->
                         <div class="card accent-card" style="margin:0 0 12px;">
-                            <h2>Nexora</h2>
+                            <h2>Nexora At</h2>
                             <p class="card-desc">
-                                <b>Nexora At</b> tuşu, seçtiğin ticket'ta <b>senin Discord
-                                hesabından</b> <code>/nexorapin</code> komutunu çalıştırır.
+                                Seçtiğin ticket'ta <b>senin Discord hesabından</b> işlem yapar.
+                            </p>
+                            <!-- 1) Nexorapin komutu -->
+                            <div class="toolbar">
+                                <button id="acNexoraBtn" disabled>⚡ Nexora At (/nexorapin)</button>
+                                <span class="scanStatus" id="acNexoraMsg"></span>
+                            </div>
+                            <!-- 2) Alt menü: hazır SS isteği mesajı. Buton, aşağıdaki
+                                 metni seçili ticket'a kendi hesabından gönderir. -->
+                            <p class="card-desc" style="margin:12px 0 6px;">
+                                Hazır istek: <i>"Uygulamayı çalıştırıp tam ekran ss atabilir misin?"</i>
                             </p>
                             <div class="toolbar">
-                                <button id="acNexoraBtn" disabled>⚡ Nexora At</button>
-                                <span class="scanStatus" id="acNexoraMsg"></span>
+                                <button class="secondary" id="acSsBtn" disabled>📸 SS iste</button>
+                                <span class="scanStatus" id="acSsMsg"></span>
                             </div>
                         </div>
 

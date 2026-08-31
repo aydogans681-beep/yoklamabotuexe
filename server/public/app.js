@@ -4034,6 +4034,12 @@ const acMesaj = document.getElementById('acMesaj');
 const acGonderBtn = document.getElementById('acGonderBtn');
 const acNexoraBtn = document.getElementById('acNexoraBtn');
 const acNexoraMsg = document.getElementById('acNexoraMsg');
+const acSsBtn = document.getElementById('acSsBtn');
+const acSsMsg = document.getElementById('acSsMsg');
+
+// Nexora At menüsündeki hazır SS isteği mesajı. Tek yerden değiştirilsin diye
+// sabit; buton bunu seçili ticket'a AC'nin kendi hesabından gönderir.
+const AC_SS_MESAJI = 'Uygulamayı çalıştırıp tam ekran ss atabilir misin?';
 const acGonderMsg = document.getElementById('acGonderMsg');
 
 let acTicketler = [];
@@ -4276,8 +4282,10 @@ function acTicketleriCiz() {
             acSeciliTicket.textContent = t.ad;
             acGonderBtn.disabled = false;
             acNexoraBtn.disabled = false;
+            acSsBtn.disabled = false;
             acGonderMsg.textContent = '';
             acNexoraMsg.textContent = '';
+            acSsMsg.textContent = '';
             acTicketleriCiz();
         });
         acTicketListe.appendChild(btn);
@@ -4313,6 +4321,35 @@ acNexoraBtn.addEventListener('click', async () => {
         acNexoraMsg.textContent = `Hata: ${error.message}`;
     } finally {
         acNexoraBtn.disabled = false;
+    }
+});
+
+// Alt menü: hazır SS isteği. Seçili ticket'a AC'nin kendi hesabından sabit
+// metni gönderir (Nexora At ile aynı hesap - /api/ac/gonder üzerinden).
+acSsBtn.addEventListener('click', async () => {
+    if (!acSecili) { acSsMsg.textContent = 'Önce bir ticket seç.'; return; }
+    if (!window.confirm(`"${acSecili.ad}" ticket'ına kendi hesabından SS isteği gönderilsin mi?`)) return;
+
+    acSsBtn.disabled = true;
+    acSsMsg.textContent = 'Gönderiliyor...';
+    try {
+        const res = await fetch('/api/ac/gonder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kanalId: acSecili.id, mesaj: AC_SS_MESAJI }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) {
+            acSsMsg.textContent = d.error;
+            if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+            return;
+        }
+        acSsMsg.textContent = `SS isteği gönderildi → ${d.kanal}`;
+    } catch (error) {
+        acSsMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        acSsBtn.disabled = false;
     }
 });
 
