@@ -4332,7 +4332,9 @@ acNexoraBtn.addEventListener('click', async () => {
             if (/yeniden bağla/i.test(d.error)) acDurumYukle();
             return;
         }
-        acNexoraMsg.textContent = `Nexora atıldı → ${d.kanal}`;
+        acNexoraMsg.textContent = d.yanit
+            ? `Nexora atıldı ✓ → ${d.kanal}`
+            : `Komut gönderildi ama Nexora bottan yanıt görülmedi → ${d.kanal}. Discord'da kontrol et.`;
     } catch (error) {
         acNexoraMsg.textContent = `Hata: ${error.message}`;
     } finally {

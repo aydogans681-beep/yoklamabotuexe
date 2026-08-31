@@ -2145,31 +2145,57 @@ async function acNexoraGonder(username, kanalId) {
         throw new Error('Kanal ticket kategorisinde değil.');
     }
 
-    // Komutu ID ile coz (rolKomutunuBul'un sadelestirilmis hali - tek komut).
+    // Komutu guild dizininde bul: GERCEK application_id ve ad'i buradan aliyoruz
+    // (hardcoded ID'ler yanlissa bile ada gore yakalanir). type===1 -> slash.
     const data = await acClient.api.guilds[guild.id]['application-command-index'].get();
     const komutlar = (data && data.application_commands) || [];
     const ham = komutlar.find((c) => c.id === NEXORA_KOMUT_ID && c.type === 1)
-        || komutlar.find((c) => c.name === 'nexorapin' && c.application_id === NEXORA_BOT_ID && c.type === 1);
+        || komutlar.find((c) => c.name === 'nexorapin' && c.application_id === NEXORA_BOT_ID && c.type === 1)
+        || komutlar.find((c) => c.name === 'nexorapin' && c.type === 1);
     if (!ham) {
         throw new Error('/nexorapin komutu sunucuda bulunamadı (Nexora botu ekli ve komut yayında mı?).');
     }
+    console.log(`[Nexora] ${username} → #${kanal.name}: komut name=${ham.name} id=${ham.id} app=${ham.application_id}`);
 
-    const botUser = await acClient.users.fetch(ham.application_id).catch(() => null);
-    if (!botUser || !botUser.application) throw new Error('Nexora botu getirilemedi.');
-    if (botUser._partial) await botUser.getProfile().catch(() => {});
-    botUser.application.commands._add(ham, true);
-    const nesne = botUser.application.commands.cache.get(ham.id);
-    if (!nesne) throw new Error('Nexora komutu önbelleğe alınamadı.');
-
-    const sahteMesaj = new SlashMesaji(acClient, {
-        channel_id: kanal.id,
-        guild_id: guild.id,
-        author: acClient.user,
-        content: '',
-        id: acClient.user.id,
+    // Nexora bot komuttan sonra kanala yazarsa gorelim - "atildi" derken
+    // gercekten calistigindan emin olalim (sessiz basarisizligi yakalamak icin).
+    let dinle = null;
+    const yanitBekle = new Promise((resolve) => {
+        const zaman = setTimeout(() => { if (dinle) acClient.off('messageCreate', dinle); resolve(false); }, 8000);
+        dinle = (m) => {
+            if (m.channelId === kanal.id && m.author && m.author.id === ham.application_id) {
+                clearTimeout(zaman); acClient.off('messageCreate', dinle); resolve(true);
+            }
+        };
+        acClient.on('messageCreate', dinle);
     });
-    await nesne.sendSlashCommand(sahteMesaj, [], []);
-    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+
+    // Gonderim: v2.x'te kanal.sendSlash(botId, komutAdi) manuel interaction'dan
+    // cok daha guvenilir (kutuphane gecerli bir interaction kuruyor). Yoksa eski
+    // manuel yola dusuyoruz.
+    try {
+        if (typeof kanal.sendSlash === 'function') {
+            await kanal.sendSlash(ham.application_id, ham.name);
+        } else {
+            const botUser = await acClient.users.fetch(ham.application_id).catch(() => null);
+            if (!botUser || !botUser.application) throw new Error('Nexora botu getirilemedi.');
+            if (botUser._partial) await botUser.getProfile().catch(() => {});
+            botUser.application.commands._add(ham, true);
+            const nesne = botUser.application.commands.cache.get(ham.id);
+            if (!nesne) throw new Error('Nexora komutu önbelleğe alınamadı.');
+            const sahteMesaj = new SlashMesaji(acClient, {
+                channel_id: kanal.id, guild_id: guild.id, author: acClient.user, content: '', id: acClient.user.id,
+            });
+            await nesne.sendSlashCommand(sahteMesaj, [], []);
+        }
+    } catch (error) {
+        if (dinle) acClient.off('messageCreate', dinle);
+        throw new Error(`Komut gönderilemedi: ${error.message}`);
+    }
+
+    const yanit = await yanitBekle;
+    console.log(`[Nexora] ${username} → #${kanal.name}: gönderildi, bot yanıtı=${yanit}`);
+    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null, yanit };
 }
 
 // AC kategorisinde ticket acilinca otomatik karsilamayi HANGI AC hesabi atsin?
@@ -5244,8 +5270,8 @@ app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
     }
 
     acHizIsle(kullanici);
-    addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})`, req);
-    res.json({ ok: true, kanal: sonuc.kanal });
+    addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})${sonuc.yanit ? '' : ' [bot yanıtı yok]'}`, req);
+    res.json({ ok: true, kanal: sonuc.kanal, yanit: Boolean(sonuc.yanit) });
 });
 
 // Nexora sonucu: seçili ticket'ı açan kişinin (veya elle girilen) Discord ID'si
