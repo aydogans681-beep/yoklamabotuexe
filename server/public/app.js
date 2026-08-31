@@ -4323,6 +4323,9 @@ function acTicketleriCiz() {
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
             acNexoraPinMsg.textContent = '';
+            // Gateway'i şimdiden ısıt: "Nexora At"a basınca "bağlanıyor" beklemesi
+            // olmasın (ticket seçimi ile tuşa basma arasına yayılır).
+            fetch('/api/ac/hazirla', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
             acTicketleriCiz();
         });
         acTicketListe.appendChild(btn);
@@ -4353,9 +4356,7 @@ acNexoraBtn.addEventListener('click', async () => {
             if (/yeniden bağla/i.test(d.error)) acDurumYukle();
             return;
         }
-        acNexoraMsg.textContent = d.yanit
-            ? `Nexora atıldı ✓ → ${d.kanal}`
-            : `Komut gönderildi ama Nexora bottan yanıt görülmedi → ${d.kanal}. Discord'da kontrol et.`;
+        acNexoraMsg.textContent = `Nexora atıldı ✓ → ${d.kanal}`;
     } catch (error) {
         acNexoraMsg.textContent = `Hata: ${error.message}`;
     } finally {

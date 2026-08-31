@@ -2054,7 +2054,7 @@ const NEXORA_API_URL = (process.env.NEXORA_API_URL || '').trim();
 const NEXORA_API_KEY = (process.env.NEXORA_API_KEY || '').trim();
 const NEXORA_API_ZAMANASIMI = 15000;
 
-const AC_GATEWAY_BOSTA_MS = 5 * 60 * 1000;       // 5 dk kullanilmazsa kapat
+const AC_GATEWAY_BOSTA_MS = 12 * 60 * 1000;      // 12 dk kullanilmazsa kapat (uzun: sicak kalsin)
 const AC_GATEWAY_TAVANI = 15;                     // ayni anda en fazla acik baglanti
 const AC_GATEWAY_HAZIR_ZAMANASIMI = 22000;        // ready gelmezse vazgec
 
@@ -2162,18 +2162,17 @@ async function acNexoraGonder(username, kanalId) {
     }
     console.log(`[Nexora] ${username} → #${kanal.name}: komut name=${ham.name} id=${ham.id} app=${ham.application_id}`);
 
-    // Nexora bot komuttan sonra kanala yazarsa gorelim - "atildi" derken
-    // gercekten calistigindan emin olalim (sessiz basarisizligi yakalamak icin).
+    // Nexora bot komuttan sonra kanala yazarsa yalnizca LOG'a yaz - ARKA PLANDA,
+    // cevabi BEKLETMEDEN. (Eskiden burada 8 sn beklenip yavaslatiliyordu.)
     let dinle = null;
-    const yanitBekle = new Promise((resolve) => {
-        const zaman = setTimeout(() => { if (dinle) acClient.off('messageCreate', dinle); resolve(false); }, 8000);
-        dinle = (m) => {
-            if (m.channelId === kanal.id && m.author && m.author.id === ham.application_id) {
-                clearTimeout(zaman); acClient.off('messageCreate', dinle); resolve(true);
-            }
-        };
-        acClient.on('messageCreate', dinle);
-    });
+    const zaman = setTimeout(() => { if (dinle) acClient.off('messageCreate', dinle); }, 8000);
+    dinle = (m) => {
+        if (m.channelId === kanal.id && m.author && m.author.id === ham.application_id) {
+            clearTimeout(zaman); acClient.off('messageCreate', dinle);
+            console.log(`[Nexora] ${username} → #${kanal.name}: bot yanıtladı ✓`);
+        }
+    };
+    acClient.on('messageCreate', dinle);
 
     // Gonderim: v2.x'te kanal.sendSlash(botId, komutAdi) manuel interaction'dan
     // cok daha guvenilir (kutuphane gecerli bir interaction kuruyor). Yoksa eski
@@ -2194,13 +2193,12 @@ async function acNexoraGonder(username, kanalId) {
             await nesne.sendSlashCommand(sahteMesaj, [], []);
         }
     } catch (error) {
-        if (dinle) acClient.off('messageCreate', dinle);
+        clearTimeout(zaman); if (dinle) acClient.off('messageCreate', dinle);
         throw new Error(`Komut gönderilemedi: ${error.message}`);
     }
 
-    const yanit = await yanitBekle;
-    console.log(`[Nexora] ${username} → #${kanal.name}: gönderildi, bot yanıtı=${yanit}`);
-    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null, yanit };
+    console.log(`[Nexora] ${username} → #${kanal.name}: /nexorapin gönderildi.`);
+    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
 }
 
 // AC kategorisinde ticket acilinca otomatik karsilamayi HANGI AC hesabi atsin?
@@ -5376,8 +5374,20 @@ app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
     }
 
     acHizIsle(kullanici);
-    addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})${sonuc.yanit ? '' : ' [bot yanıtı yok]'}`, req);
-    res.json({ ok: true, kanal: sonuc.kanal, yanit: Boolean(sonuc.yanit) });
+    addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})`, req);
+    res.json({ ok: true, kanal: sonuc.kanal });
+});
+
+// Gateway'i ONCEDEN isit: AC bir ticket secince frontend bunu cagirir (bekletmeden).
+// Boylece "Nexora At"a bastiginda gateway zaten hazir olur - "bağlanıyor" beklemesi
+// kullanicinin ticket'i secip tusa basma arasinda gizlenir.
+app.post('/api/ac/hazirla', requireIzin('ticketmesaj'), (req, res) => {
+    const kullanici = req.session.username;
+    if (acTokenlari[kullanici]) {
+        // Arka planda ac/hazirla - istegi bekletme.
+        acGatewayAl(kullanici).catch((e) => console.log(`[Nexora] ${kullanici} isitma hatasi: ${e.message}`));
+    }
+    res.json({ ok: true });
 });
 
 // Nexora Pinini Görüntüle: Nexora botunun ticket'a attığı pini kanaldan çekip
