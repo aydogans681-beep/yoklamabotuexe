@@ -289,8 +289,10 @@ Elle hiçbir dosya düzenlemek gerekmiyor. Şifreleme anahtarı ilk açılışta
 kendiliğinden üretiliyor.
 
 1. Ayarlar > Panel Hesapları'ndan yeni hesap açarken **tip olarak AC** seç.
-   (Yetkili / AC anahtarı formda.) AC hesabı yalnızca **Nexora Panel**
-   sekmesini görür - başka hiçbir şeye erişemez, izin ayarlamana gerek yok.
+   (Yetkili / AC anahtarı formda.) AC hesabı yalnızca **Nexora Panel** ve
+   **Felox** sekmesini görür - yoklama, yetkililer, ayarlar, diğer log
+   kanalları vb. hiçbirine erişemez, izin ayarlamana gerek yok. (Felox
+   sekmesinde yalnızca **Felox** kanalı görünür; Şüpheli Log dahil değildir.)
    Her AC'nin **kendi ayrı hesabı** olur ve **kendi token'ını** girer.
 2. AC bu hesapla giriş yapar ve **tam ekran bir "Token Gir" kapısıyla**
    karşılaşır. Token bağlamadan panelde **hiçbir şey yapamaz** - kenar çubuğu,

@@ -275,11 +275,12 @@ function kullaniciYetkileri(username) {
             loglar: LOG_CHANNELS.map((c) => c.key),
         };
     }
-    // AC hesabi: dis kisi. YALNIZCA Ticket'a Mesaj sekmesini gorur - log,
-    // yoklama, ayarlar vb. hicbirine erisemez. Izinleri elle degistirilemez;
-    // tip 'ac' oldugu surece sabit.
+    // AC hesabi: dis kisi. YALNIZCA Nexora Panel ve Felox kanalini gorur -
+    // yoklama, yetkililer, ayarlar, diger log kanallari vb. hicbirine erisemez.
+    // Izinleri elle degistirilemez; tip 'ac' oldugu surece sabit.
+    // (Felox sekmesi + yalnizca 'feloxlog' kanali; Supheli Log dahil DEGIL.)
     if (u.tip === 'ac') {
-        return { admin: false, tip: 'ac', sekmeler: ['ticketmesaj'], loglar: [] };
+        return { admin: false, tip: 'ac', sekmeler: ['ticketmesaj', 'felox'], loglar: ['feloxlog'] };
     }
     return {
         admin: false, tip: 'yetkili',
