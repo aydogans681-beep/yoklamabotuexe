@@ -1374,7 +1374,9 @@ async function refreshAccounts() {
                 ${user.isSelf ? '<span class="acc-badge">Sen</span>' : ''}
                 ${user.admin
                     ? '<span class="acc-badge ok">Yönetici</span>'
-                    : `<span class="acc-badge" title="Görebildiği sekmeler">${user.sekmeler.length}/${IZIN_TOPLAM_SEKME} sekme · ${user.loglar.length} log</span>`}
+                    : (user.tip === 'ac'
+                        ? '<span class="acc-badge" style="color:var(--accent);border-color:var(--accent)" title="AC hesabı: girişte token kapısı, yalnızca Nexora Panel">AC</span>'
+                        : `<span class="acc-badge" title="Görebildiği sekmeler">${user.sekmeler.length}/${IZIN_TOPLAM_SEKME} sekme · ${user.loglar.length} log</span>`)}
                 <span class="acc-spacer"></span>
                 ${user.isPrimary ? '' : `<button class="secondary small" data-izin="${escapeHtml(user.username)}">Yetkiler</button>`}
                 <button class="secondary small" data-dcid="${escapeHtml(user.username)}"

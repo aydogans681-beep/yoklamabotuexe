@@ -3480,6 +3480,7 @@ app.get('/api/hesaplar', requireAdmin, (req, res) => {
             isPrimary: index === 0, // masaustu surumunun kullandigi hesap
             isSelf: u.username === req.session.username,
             admin: yetki.admin,
+            tip: yetki.tip || 'yetkili',   // 'ac' -> yalnizca Nexora Panel + token kapisi
             sekmeler: yetki.sekmeler,
             loglar: yetki.loglar,
         };
