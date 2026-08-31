@@ -270,8 +270,16 @@ Hepsi AC'nin **kendi hesabından** gider:
 - **Mesaj (isteğe bağlı)** - AC serbest bir metin yazıp **Gönder**'e basarsa, o
   metin ticket'a yine kendi hesabından düşer.
 
-Kim ne zaman hangi ticket'a Nexora attı, SS istedi, sonuç sorguladı ya da mesaj
-gönderdi, Hesap Logları'na yazılır.
+**Otomatik "kontrol":** Tokenini giren bir AC, kategorideki bir ticket'a
+**`kontrol`** yazınca (butona basmadan), o AC'nin kendi hesabından **otomatik**
+önce `/nexorapin`, sonra *"Uygulamayı çalıştırıp tam ekran ss atabilir misin?"*
+gider. Panelin ana botu mesajı görüp tetikler; yalnızca **yazan kişi bağlı bir
+AC ise** çalışır (rastgele biri "kontrol" yazınca değil), aynı kanalda 15 sn
+içinde tekrar tetiklenmez. Ayarlar > Yeni Ticket'a Otomatik Mesaj altındaki
+anahtardan (`acKontrolOtomatik`, varsayılan açık) kapatılabilir.
+
+Kim ne zaman hangi ticket'a Nexora attı, SS istedi, pin görüntüledi, "kontrol"
+otomasyonu çalıştı ya da mesaj gönderdi, Hesap Logları'na yazılır.
 
 > **Bu bir selfbot özelliğidir** (README başındaki uyarı burada da geçerli).
 > Kendi kullanıcı hesabından otomatik/panel üzerinden mesaj atmak veya slash

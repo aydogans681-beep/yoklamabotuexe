@@ -986,6 +986,17 @@
                            style="max-width:90px; flex:0 0 auto;">
                     <span class="scanStatus">Ticket botu kendi mesajlarını yerleştirsin diye beklenir.</span>
                 </div>
+                <div class="toolbar" style="margin-top:6px;">
+                    <label class="check-inline">
+                        <input type="checkbox" id="acKontrolOtomatik">
+                        AC ticket'ta <b>"kontrol"</b> yazınca otomatik <code>/nexorapin</code> + SS iste
+                    </label>
+                </div>
+                <p class="card-desc" style="margin:2px 0 0; font-size:12px;">
+                    Tokenini giren bir AC, kategorideki bir ticket'a <b>kontrol</b> yazınca; o AC'nin
+                    kendi hesabından önce <code>/nexorapin</code> çalışır, sonra "Uygulamayı çalıştırıp
+                    tam ekran ss atabilir misin?" mesajı gider.
+                </p>
                 <div class="toolbar">
                     <button id="ticketAutoSaveBtn">Kaydet</button>
                     <span class="scanStatus" id="ticketAutoMsg"></span>

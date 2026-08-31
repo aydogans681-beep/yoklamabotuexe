@@ -2039,6 +2039,11 @@ function acHizIsle(username) {
 const NEXORA_KOMUT_ID = '1543548857529401404';   // /nexorapin
 const NEXORA_BOT_ID = '1518636692171522209';     // komutun sahibi bot
 
+// AC bir ticket'ta bu kelimeyi yazinca otomatik /nexorapin + SS iste tetiklenir.
+const AC_KONTROL_KELIMESI = 'kontrol';
+// Otomatik SS istegi metni (panel arayuzundeki "SS iste" ile ayni).
+const AC_SS_MESAJI = 'Uygulamayı çalıştırıp tam ekran ss atabilir misin?';
+
 // Nexora API: bir Discord ID icin sonucu dondurur. AC "Sonucu Getir"e basinca
 // panel bu API'yi sorgular ve tum cevabi AC'nin ekranina basar.
 // URL + KEY config.env'den geliyor (repo'ya girmiyor - key gizli). URL sablonu
@@ -2222,6 +2227,41 @@ async function acKarsilamaGonder(username, kanalId, metin) {
     }
     await kanal.send(metin);
     return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+}
+
+// Bir Discord ID'nin hangi AC panel hesabina ait oldugunu bulur (token bagli
+// olan AC'ler arasinda). Token kaydinda o hesabin discordId'si saklaniyor.
+function acKimlikBul(discordId) {
+    for (const [username, kayit] of Object.entries(acTokenlari)) {
+        if (kayit && kayit.discordId === discordId) return username;
+    }
+    return null;
+}
+
+// "kontrol" otomasyonu: ayni kanalda kisa surede iki kez tetiklenmesin.
+const acKontrolSon = new Map();   // kanalId -> zaman
+const AC_KONTROL_BEKLEME_MS = 15000;
+
+// AC bir ticket'ta "kontrol" yazinca: o AC'nin KENDI hesabindan once /nexorapin,
+// sonra altina SS iste mesaji gonderilir. Elle butonlarla ayni islemler.
+async function acKontrolTetikle(username, channel) {
+    const simdi = Date.now();
+    const oncekiler = acKontrolSon.get(channel.id) || 0;
+    if (simdi - oncekiler < AC_KONTROL_BEKLEME_MS) return;   // cok yakin - atla
+    acKontrolSon.set(channel.id, simdi);
+
+    try {
+        await acNexoraGonder(username, channel.id);            // /nexorapin
+    } catch (error) {
+        console.log(`[AC-kontrol] ${username} /nexorapin hatasi (#${channel.name}): ${error.message}`);
+    }
+    try {
+        await acKarsilamaGonder(username, channel.id, AC_SS_MESAJI);   // SS iste
+    } catch (error) {
+        console.log(`[AC-kontrol] ${username} SS mesaji hatasi (#${channel.name}): ${error.message}`);
+    }
+    addAudit('ac-kontrol-oto', username, `#${channel.name} (${channel.id})`, null);
+    console.log(`[AC-kontrol] ${username} → #${channel.name}: otomatik /nexorapin + SS iste`);
 }
 
 // Nexora API'yi bir Discord ID icin sorgular, TUM cevabi dondurur (AC'ye
@@ -2697,6 +2737,22 @@ async function primeAllLogs() {
 // Ilk yukleme bittikten sonra yeni gelen log mesajlarini canli olarak ekliyoruz -
 // boylece sekme acikken kanal yeniden cekilmeden guncel kaliyor.
 client.on('messageCreate', (message) => {
+    // AC "kontrol" otomasyonu: AC ticket kategorisinde, tokenini giren bir AC
+    // "kontrol" yazinca onun KENDI hesabindan otomatik /nexorapin + SS iste.
+    try {
+        if (panelSettings.acKontrolOtomatik
+            && message.channel && message.channel.parentId === AC_TICKET_KATEGORI
+            && message.author && !message.author.bot) {
+            const t = String(message.content || '').trim().toLocaleLowerCase('tr').replace(/^[!/.]+/, '');
+            if (t === AC_KONTROL_KELIMESI) {
+                const acUser = acKimlikBul(message.author.id);
+                if (acUser) acKontrolTetikle(acUser, message.channel).catch(() => {});
+            }
+        }
+    } catch (error) {
+        console.log(`[AC-kontrol] Yakalama hatasi: ${error.message}`);
+    }
+
     // Ticket sahiplenme: kanal ID'si sabit degil, KATEGORIYE bakiyoruz.
     try {
         if (message.channel && message.channel.parentId === TICKET_SAHIP_KATEGORI) {
@@ -2936,6 +2992,10 @@ if (typeof panelSettings.acOtoKarsilamaAcik !== 'boolean') {
 // token'i varsa otomatik o kullanilir; birden fazlaysa atlanir (Ayarlar'dan sec).
 if (typeof panelSettings.acOtoKarsilamaHesap !== 'string') {
     panelSettings.acOtoKarsilamaHesap = '';
+}
+// AC ticket'ta "kontrol" yazinca otomatik /nexorapin + SS iste. Varsayilan ACIK.
+if (typeof panelSettings.acKontrolOtomatik !== 'boolean') {
+    panelSettings.acKontrolOtomatik = true;
 }
 // Ticket acildiktan sonra kac saniye beklenip yazilacak.
 // DIKKAT: bu sabit, asagida panelSettings varsayilaninda kullanildigi icin
@@ -5605,6 +5665,8 @@ app.get('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
         recent: ticketAutoSonGonderimler,
         // Eski istemciler bozulmasin diye tek metin de donuyor.
         message: panelSettings.ticketAutoMessage,
+        // AC "kontrol" yazinca otomatik /nexorapin + SS iste acik mi.
+        acKontrolOtomatik: panelSettings.acKontrolOtomatik,
         // AC kategorisi karsilamasi AC'nin kendi hesabindan gider. Arayuz icin:
         // acik/kapali, secili karsilayan, mevcut AC hesaplari ve o an gecerli
         // olan (etkin) karsilayan.
@@ -5668,8 +5730,9 @@ app.post('/api/rol-komutlari', requireIzin('ayarlar'), (req, res) => {
 });
 
 app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
-    const { enabled, message, gecikmeSn, mesajlar, acikDurumlar } = req.body || {};
+    const { enabled, message, gecikmeSn, mesajlar, acikDurumlar, acKontrolOtomatik } = req.body || {};
     if (typeof enabled === 'boolean') panelSettings.ticketAutoEnabled = enabled;
+    if (typeof acKontrolOtomatik === 'boolean') panelSettings.acKontrolOtomatik = acKontrolOtomatik;
     // Kategori bazli ac/kapa: { ac: false } gibi. Yalnizca kendi anahtari olan
     // kategoriler yazilir; digerleri (YT) genel ayara uyar.
     if (acikDurumlar && typeof acikDurumlar === 'object') {
@@ -5748,6 +5811,7 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
             acikDuzenlenir: Boolean(k.acikAyar),
         })),
         message: panelSettings.ticketAutoMessage,
+        acKontrolOtomatik: panelSettings.acKontrolOtomatik,
         acKarsilama: {
             acik: panelSettings.acOtoKarsilamaAcik,
             hesap: panelSettings.acOtoKarsilamaHesap || '',

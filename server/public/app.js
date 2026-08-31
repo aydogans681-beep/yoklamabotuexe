@@ -3283,6 +3283,8 @@ async function loadTicketAuto() {
         const d = await okuJson(res);
         if (!d.ok) return;
         ticketAutoEnabled.checked = d.enabled;
+        const acKontrolEl = document.getElementById('acKontrolOtomatik');
+        if (acKontrolEl) acKontrolEl.checked = Boolean(d.acKontrolOtomatik);
         document.getElementById('ticketAutoGecikme').value = d.gecikmeSn;
         ticketAutoInGuild = Boolean(d.inGuild);
         ticketAutoKategoriler = d.kategoriler || [];
@@ -3344,6 +3346,7 @@ document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 enabled: ticketAutoEnabled.checked,
+                acKontrolOtomatik: (document.getElementById('acKontrolOtomatik') || {}).checked === true,
                 mesajlar: Object.fromEntries(
                     [...ticketAutoKutular.querySelectorAll('textarea')]
                         .map((t) => [t.dataset.tkkat, t.value])),
