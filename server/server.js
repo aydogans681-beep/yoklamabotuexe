@@ -1937,6 +1937,43 @@ function acTokenlariniYaz() {
     }
 }
 
+// --- Per-AC Nexora API deposu: { username: { paket, at } } ---
+// HER AC KENDI Nexora API'sini girer (herkes ayni API'yi kullanmaz). paket,
+// { url, key } nesnesinin sifreli hali (token'larla ayni AES-256-GCM anahtari).
+// Key gizli oldugu icin sifreli durur; istemciye asla dondurulmez.
+const AC_NEXORA_API_PATH = path.join(ROOT_DIR, 'ac-nexora-api.json');
+function acNexoraApilariniYukle() {
+    try {
+        const ham = JSON.parse(fs.readFileSync(AC_NEXORA_API_PATH, 'utf8'));
+        return (ham && typeof ham === 'object' && !Array.isArray(ham)) ? ham : {};
+    } catch (error) {
+        return {};
+    }
+}
+const acNexoraApilari = acNexoraApilariniYukle();
+function acNexoraApilariniYaz() {
+    try {
+        const gecici = `${AC_NEXORA_API_PATH}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(acNexoraApilari), { mode: 0o600 });
+        fs.renameSync(gecici, AC_NEXORA_API_PATH);
+    } catch (error) {
+        console.log(`[AC] Nexora API kaydedilemedi: ${error.message}`);
+    }
+}
+// AC'nin kayitli API'sini { url, key } olarak dondurur (yoksa/cozulemezse null).
+function acNexoraApiAl(username) {
+    const kayit = acNexoraApilari[username];
+    if (!kayit || !kayit.paket) return null;
+    const cozulen = acCoz(kayit.paket);
+    if (!cozulen) return null;
+    try {
+        const o = JSON.parse(cozulen);
+        return { url: String(o.url || ''), key: String(o.key || '') };
+    } catch (error) {
+        return null;
+    }
+}
+
 // --- Discord REST ---
 // Gateway acmiyoruz; tek istek. Kutuphane de kullanmiyoruz - selfbot
 // kutuphanesi bir istemci nesnesi kurmak isterdi.
@@ -2162,23 +2199,26 @@ async function acKarsilamaGonder(username, kanalId, metin) {
 }
 
 // Nexora API'yi bir Discord ID icin sorgular, TUM cevabi dondurur (AC'ye
-// oldugu gibi gosterilecek). Panelin ana botunu/AC gateway'ini kullanmaz -
-// dogrudan HTTP. Key sunucuda kalir, istemciye ASLA gitmez.
-async function nexoraApiSorgula(discordId) {
-    if (!NEXORA_API_URL) {
-        throw new Error('Nexora API ayarlı değil. config.env\'e NEXORA_API_URL (ve NEXORA_API_KEY) ekle, sonra botu yeniden başlat.');
+// oldugu gibi gosterilecek). apiUrl/apiKey CAGIRANDAN gelir - her AC kendi
+// API'sini girdigi icin global degil, o AC'nin kayitli degerleri. Panelin ana
+// botunu/AC gateway'ini kullanmaz - dogrudan HTTP. Key sunucuda kalir.
+async function nexoraApiSorgula(discordId, apiUrl, apiKey) {
+    apiUrl = String(apiUrl || '').trim();
+    apiKey = String(apiKey || '').trim();
+    if (!apiUrl) {
+        throw new Error('Nexora API ayarlı değil. Nexora Sonucu bölümünden kendi API adresini ve key\'ini gir.');
     }
-    let url = NEXORA_API_URL.replace(/\{id\}/g, encodeURIComponent(discordId));
+    let url = apiUrl.replace(/\{id\}/g, encodeURIComponent(discordId));
     // URL'de {id} yer tutucusu yoksa Discord ID'yi sorgu parametresi olarak ekle.
-    if (!/\{id\}/.test(NEXORA_API_URL) && !url.includes(discordId)) {
+    if (!/\{id\}/.test(apiUrl) && !url.includes(discordId)) {
         url += (url.includes('?') ? '&' : '?') + 'discordId=' + encodeURIComponent(discordId);
     }
-    if (NEXORA_API_KEY) url = url.replace(/\{key\}/g, encodeURIComponent(NEXORA_API_KEY));
+    if (apiKey) url = url.replace(/\{key\}/g, encodeURIComponent(apiKey));
 
     const headers = { Accept: 'application/json' };
-    if (NEXORA_API_KEY) {
-        headers.Authorization = `Bearer ${NEXORA_API_KEY}`;
-        headers['x-api-key'] = NEXORA_API_KEY;
+    if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`;
+        headers['x-api-key'] = apiKey;
     }
 
     let cevap;
@@ -5213,8 +5253,12 @@ app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
 app.post('/api/ac/nexora-sonuc', requireIzin('ticketmesaj'), async (req, res) => {
     const kullanici = req.session.username;
     if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
-    if (!NEXORA_API_URL) {
-        return res.json({ ok: false, error: 'Nexora API ayarlı değil (config.env: NEXORA_API_URL, NEXORA_API_KEY).' });
+
+    // Her AC KENDI API'sini kullanır. Kendi kaydı yoksa global config'e düşülür
+    // (config.env - opsiyonel varsayılan); o da yoksa uyarı.
+    const acApi = acNexoraApiAl(kullanici) || (NEXORA_API_URL ? { url: NEXORA_API_URL, key: NEXORA_API_KEY } : null);
+    if (!acApi || !acApi.url) {
+        return res.json({ ok: false, error: 'Önce kendi Nexora API\'ni gir (Nexora Sonucu bölümü).' });
     }
 
     // Discord ID: elle girildiyse onu kullan; yoksa ticket'ı açanı otomatik bul.
@@ -5241,7 +5285,7 @@ app.post('/api/ac/nexora-sonuc', requireIzin('ticketmesaj'), async (req, res) =>
 
     let sonuc;
     try {
-        sonuc = await nexoraApiSorgula(discordId);
+        sonuc = await nexoraApiSorgula(discordId, acApi.url, acApi.key);
     } catch (error) {
         return res.json({ ok: false, error: error.message });
     }
@@ -5249,6 +5293,59 @@ app.post('/api/ac/nexora-sonuc', requireIzin('ticketmesaj'), async (req, res) =>
     acHizIsle(kullanici);
     addAudit('ac-nexora-sonuc', kullanici, `Discord ${discordId}`, req);
     res.json({ ok: true, discordId, sonuc });
+});
+
+// AC'nin KENDI Nexora API'si: durum (url görünür, key ASLA dönmez).
+app.get('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {
+    const api = acNexoraApiAl(req.session.username);
+    res.json({
+        ok: true,
+        ayarli: Boolean(api && api.url),
+        url: api ? api.url : '',
+        keyVar: Boolean(api && api.key),
+        // Kendi kaydı yoksa global fallback var mı (yalnızca bilgi).
+        genelVar: Boolean(NEXORA_API_URL),
+    });
+});
+
+// AC kendi Nexora API'sini kaydeder. Key boş bırakılırsa mevcut key korunur
+// (URL'i değiştirip key'i yeniden yazmak zorunda kalmasın).
+app.post('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {
+    const kullanici = req.session.username;
+    const url = String((req.body && req.body.url) || '').trim();
+    let key = String((req.body && req.body.key) || '').trim();
+    if (!/^https?:\/\/.+/i.test(url)) {
+        return res.json({ ok: false, error: 'Geçerli bir API adresi gir (http:// veya https:// ile başlamalı).' });
+    }
+    if (url.length > 500 || key.length > 300) {
+        return res.json({ ok: false, error: 'API adresi/anahtarı çok uzun.' });
+    }
+    if (!acAnahtari()) {
+        return res.json({ ok: false, error: 'Şifreleme anahtarı hazır değil; botu yeniden başlat.' });
+    }
+    // Key boşsa ve önceden kayıt varsa eski key'i koru.
+    if (!key) {
+        const eski = acNexoraApiAl(kullanici);
+        if (eski && eski.key) key = eski.key;
+    }
+    try {
+        acNexoraApilari[kullanici] = { paket: acSifrele(JSON.stringify({ url, key })), at: Date.now() };
+        acNexoraApilariniYaz();
+    } catch (error) {
+        return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
+    }
+    addAudit('ac-nexora-api-kaydet', kullanici, url, req);
+    res.json({ ok: true, ayarli: true, url, keyVar: Boolean(key) });
+});
+
+app.delete('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {
+    const kullanici = req.session.username;
+    if (acNexoraApilari[kullanici]) {
+        delete acNexoraApilari[kullanici];
+        acNexoraApilariniYaz();
+        addAudit('ac-nexora-api-sil', kullanici, '', req);
+    }
+    res.json({ ok: true, ayarli: false });
 });
 
 // --- PRIME SAAT HATIRLATMASI ---

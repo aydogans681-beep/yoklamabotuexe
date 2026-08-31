@@ -4040,6 +4040,15 @@ const acNexoraSonucId = document.getElementById('acNexoraSonucId');
 const acNexoraSonucBtn = document.getElementById('acNexoraSonucBtn');
 const acNexoraSonucMsg = document.getElementById('acNexoraSonucMsg');
 const acNexoraSonucKutu = document.getElementById('acNexoraSonucKutu');
+const acNexoraApiUrl = document.getElementById('acNexoraApiUrl');
+const acNexoraApiKey = document.getElementById('acNexoraApiKey');
+const acNexoraApiKaydet = document.getElementById('acNexoraApiKaydet');
+const acNexoraApiSil = document.getElementById('acNexoraApiSil');
+const acNexoraApiDurum = document.getElementById('acNexoraApiDurum');
+const acNexoraApiMsg = document.getElementById('acNexoraApiMsg');
+
+// Bu AC'nin kendi Nexora API'si ayarlı mı? Sonucu Getir buna bağlı.
+let acNexoraApiAyarli = false;
 
 // Nexora At menüsündeki hazır SS isteği mesajı. Tek yerden değiştirilsin diye
 // sabit; buton bunu seçili ticket'a AC'nin kendi hesabından gönderir.
@@ -4122,6 +4131,7 @@ async function acDurumYukle() {
             acHesapZaman.textContent = d.baglanmaZamani ? `· ${formatDate(d.baglanmaZamani)}` : '';
             acSayac.textContent = `en fazla ${d.saatlikTavan}/saat · gönderimler arası ${d.kisiAralikSn} sn`;
             acTicketleriYukle();
+            acNexoraApiYukle();
         } else {
             acPanel.style.display = 'none';
             acBagliDegilKart.style.display = '';
@@ -4287,11 +4297,11 @@ function acTicketleriCiz() {
             acGonderBtn.disabled = false;
             acNexoraBtn.disabled = false;
             acSsBtn.disabled = false;
-            acNexoraSonucBtn.disabled = false;
             acGonderMsg.textContent = '';
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
             acNexoraSonucMsg.textContent = '';
+            acSonucBtnGuncelle();
             acTicketleriCiz();
         });
         acTicketListe.appendChild(btn);
@@ -4407,6 +4417,79 @@ function acNexoraSonucCiz(discordId, sonuc) {
     acNexoraSonucKutu.innerHTML = bas + govde;
     acNexoraSonucKutu.hidden = false;
 }
+
+// Sonucu Getir yalnızca AC kendi API'sini girmişse ve (ticket seçili ya da
+// elle ID varsa) açık olur.
+function acSonucBtnGuncelle() {
+    const hedefVar = Boolean(acSecili) || acNexoraSonucId.value.trim().length > 0;
+    acNexoraSonucBtn.disabled = !(acNexoraApiAyarli && hedefVar);
+}
+acNexoraSonucId.addEventListener('input', acSonucBtnGuncelle);
+
+// AC'nin kendi Nexora API durumunu yükle (panelde bağlı olunca çağrılır).
+async function acNexoraApiYukle() {
+    try {
+        const res = await fetch('/api/ac/nexora-api');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) return;
+        acNexoraApiAyarli = Boolean(d.ayarli) || Boolean(d.genelVar);
+        if (d.ayarli) {
+            acNexoraApiDurum.innerHTML = '<span style="color:var(--ok,#3ba55d)">ayarlı ✓</span>';
+            if (document.activeElement !== acNexoraApiUrl) acNexoraApiUrl.value = d.url || '';
+            acNexoraApiKey.placeholder = 'API key (değiştirmezsen boş bırak)';
+            acNexoraApiSil.hidden = false;
+        } else if (d.genelVar) {
+            acNexoraApiDurum.textContent = 'ortak (varsayılan) API kullanılıyor — istersen kendininkini gir';
+            acNexoraApiSil.hidden = true;
+        } else {
+            acNexoraApiDurum.innerHTML = '<span style="color:var(--attn)">ayarlı değil — API adresini ve key\'ini gir</span>';
+            acNexoraApiSil.hidden = true;
+        }
+        acSonucBtnGuncelle();
+    } catch (error) { /* sessizce geç */ }
+}
+
+acNexoraApiKaydet.addEventListener('click', async () => {
+    const url = acNexoraApiUrl.value.trim();
+    const key = acNexoraApiKey.value.trim();
+    if (!/^https?:\/\/.+/i.test(url)) {
+        acNexoraApiMsg.textContent = 'Geçerli bir API adresi gir (http/https).';
+        return;
+    }
+    acNexoraApiKaydet.disabled = true;
+    acNexoraApiMsg.textContent = 'Kaydediliyor...';
+    try {
+        const res = await fetch('/api/ac/nexora-api', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, key }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) { acNexoraApiMsg.textContent = d.error; return; }
+        acNexoraApiKey.value = '';   // key ekranda asılı kalmasın
+        acNexoraApiMsg.textContent = 'Kaydedildi ✓';
+        acNexoraApiYukle();
+    } catch (error) {
+        acNexoraApiMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        acNexoraApiKaydet.disabled = false;
+    }
+});
+
+acNexoraApiSil.addEventListener('click', async () => {
+    if (!window.confirm('Kendi Nexora API bilgin silinsin mi?')) return;
+    try {
+        await fetch('/api/ac/nexora-api', { method: 'DELETE' });
+        acNexoraApiUrl.value = '';
+        acNexoraApiKey.value = '';
+        acNexoraApiMsg.textContent = 'Silindi.';
+        acNexoraApiYukle();
+    } catch (error) {
+        acNexoraApiMsg.textContent = `Hata: ${error.message}`;
+    }
+});
 
 acNexoraSonucBtn.addEventListener('click', async () => {
     const elleId = acNexoraSonucId.value.trim();

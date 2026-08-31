@@ -506,10 +506,38 @@
                         <div class="card" style="margin:0 0 12px;">
                             <h2>Nexora Sonucu</h2>
                             <p class="card-desc">
-                                Seçili ticket'ı açan kişinin sonucunu Nexora API'sinden getirir.
-                                İstersen elle bir <b>Discord ID</b> de girebilirsin (boşsa ticket'ı
-                                açan kişi otomatik bulunur).
+                                Seçili ticket'ı açan kişinin sonucunu <b>senin kendi Nexora
+                                API'nden</b> getirir. Her AC kendi API'sini girer. İstersen elle
+                                bir <b>Discord ID</b> de girebilirsin (boşsa ticket'ı açan kişi
+                                otomatik bulunur).
                             </p>
+
+                            <!-- Her AC KENDI Nexora API'sini girer (URL + key). Key sunucuda
+                                 şifreli saklanır, bir daha ekrana yazılmaz. -->
+                            <div style="border:1px solid var(--border); border-radius:10px; padding:11px; margin-bottom:12px;">
+                                <div class="toolbar" style="margin-bottom:8px;">
+                                    <b>Nexora API'n</b>
+                                    <span class="scanStatus" id="acNexoraApiDurum">kontrol ediliyor...</span>
+                                    <span class="grow"></span>
+                                    <button class="secondary small" id="acNexoraApiSil" hidden>Sil</button>
+                                </div>
+                                <div class="toolbar" style="flex-wrap:wrap; gap:8px;">
+                                    <input type="text" class="text-search" id="acNexoraApiUrl"
+                                           placeholder="API adresin — ör. https://.../check?discord={id}"
+                                           spellcheck="false" style="flex:1; min-width:280px;">
+                                    <input type="password" class="text-search" id="acNexoraApiKey"
+                                           placeholder="API key" autocomplete="off" spellcheck="false"
+                                           style="flex:0 0 200px; min-width:160px;">
+                                    <button id="acNexoraApiKaydet">API'yi Kaydet</button>
+                                    <span class="scanStatus" id="acNexoraApiMsg"></span>
+                                </div>
+                                <p class="card-desc" style="margin:8px 0 0; font-size:12px;">
+                                    <code>{id}</code> yazan yere Discord ID girer (yoksa sona
+                                    <code>?discordId=</code> eklenir). Key gizli tutulur; değiştirmezsen
+                                    boş bırak, eski key korunur.
+                                </p>
+                            </div>
+
                             <div class="toolbar">
                                 <input type="text" class="text-search" id="acNexoraSonucId"
                                        placeholder="Discord ID (boşsa otomatik)" spellcheck="false"

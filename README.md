@@ -262,10 +262,12 @@ hesabından** gider:
   atabilir misin?"*) tek tıkla seçili ticket'a AC'nin kendi hesabından gönderir.
 - **🔎 Sonucu Getir** - seçili ticket'ı açan kişinin (ya da elle girilen bir
   Discord ID'nin) sonucunu **Nexora API**'sinden çeker ve **tüm cevabı** AC'nin
-  ekranına basar (iç içe alanlar, linkler ve görsel URL'leri dahil). API adresi
-  ve anahtarı `config.env`'de (`NEXORA_API_URL`, `NEXORA_API_KEY`); ayarlı
-  değilse buton "API ayarlı değil" der. Anahtar **yalnızca sunucuda** kalır,
-  istemciye asla gitmez.
+  ekranına basar (iç içe alanlar, linkler ve görsel URL'leri dahil). **Her AC
+  KENDİ API'sini** panelden girer (URL + key; herkes ayrı, ortak değil). Key
+  sunucuda token'larla aynı şekilde **şifreli** (`ac-nexora-api.json`) saklanır
+  ve **bir daha ekrana/istemciye gitmez**. Kendi API'sini girmeyen AC için,
+  varsa `config.env`'deki opsiyonel ortak `NEXORA_API_URL`/`NEXORA_API_KEY`
+  fallback olur; o da yoksa buton "önce kendi API'ni gir" der.
 - **Mesaj (isteğe bağlı)** - AC serbest bir metin yazıp **Gönder**'e basarsa, o
   metin ticket'a yine kendi hesabından düşer.
 
