@@ -4088,13 +4088,18 @@ async function acDurumYukle() {
             acBagliDegilKart.style.display = '';
             acTokenSatiri.style.display = 'none';
             acUyari.style.display = 'none';
-            acBagliDegilAciklama.innerHTML = 'Bu özellik sunucuda kapalı. Yönetici '
-                + '<b>config.env</b> dosyasına <b>AC_ANAHTAR</b> satırını eklemeli '
-                + '(en az 16 karakterlik rastgele bir dize), sonra botu yeniden başlatmalı.';
+            acBagliDegilAciklama.innerHTML = 'Bu özellik sunucuda henüz aktif değil. '
+                + 'Şifreleme anahtarı ilk açılışta <b>kendiliğinden üretilir</b> - elle '
+                + 'bir şey eklemen gerekmez. Genelde sebep: <b>bot güncellendi ama yeniden '
+                + 'başlatılmadı</b>. Sunucuda <code>pm2 restart all</code> ver. Yine kapalı '
+                + 'kalırsa bot klasörüne yazma izni yoktur (<code>ac-anahtar.key</code> '
+                + 'oluşturulamıyordur).';
             if (acKapisi) {
-                acGateGoster('kapali', 'Bu özellik sunucuda henüz açık değil. '
-                    + 'Yöneticinin şifreleme anahtarını eklemesi gerekiyor. '
-                    + 'Sonra bu ekrandan token\'ını bağlayabilirsin.');
+                acGateGoster('kapali', 'Bu özellik sunucuda henüz aktif değil. '
+                    + 'Şifreleme anahtarı ilk açılışta kendiliğinden üretilir; genelde '
+                    + 'sebep botun güncellenip yeniden başlatılmamasıdır. Yönetici '
+                    + 'sunucuda botu yeniden başlatınca (pm2 restart) bu ekrandan '
+                    + 'token\'ını bağlayabilirsin.');
             }
             return;
         }

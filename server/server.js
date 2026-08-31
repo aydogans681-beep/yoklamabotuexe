@@ -4986,7 +4986,7 @@ app.get('/api/ac/durum', requireIzin('ticketmesaj'), (req, res) => {
 app.post('/api/ac/token', requireIzin('ticketmesaj'), async (req, res) => {
     const kullanici = req.session.username;
     if (!acAnahtari()) {
-        return res.json({ ok: false, error: "Sunucuda AC_ANAHTAR tanımlı değil; yönetici config.env'e eklemeli." });
+        return res.json({ ok: false, error: 'Şifreleme anahtarı hazır değil. Bot güncellendiyse yeniden başlatılmalı (pm2 restart); anahtar açılışta kendiliğinden üretilir.' });
     }
     const token = String((req.body && req.body.token) || '').trim();
     if (!token) return res.json({ ok: false, error: 'Token boş.' });
