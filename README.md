@@ -260,11 +260,17 @@ hesabından** gider:
   Her AC kendi hesabıyla ayrı ayrı atar; panelin ana botu araya girmez.
 - **📸 SS iste** - altındaki hazır mesajı (*"Uygulamayı çalıştırıp tam ekran ss
   atabilir misin?"*) tek tıkla seçili ticket'a AC'nin kendi hesabından gönderir.
+- **🔎 Sonucu Getir** - seçili ticket'ı açan kişinin (ya da elle girilen bir
+  Discord ID'nin) sonucunu **Nexora API**'sinden çeker ve **tüm cevabı** AC'nin
+  ekranına basar (iç içe alanlar, linkler ve görsel URL'leri dahil). API adresi
+  ve anahtarı `config.env`'de (`NEXORA_API_URL`, `NEXORA_API_KEY`); ayarlı
+  değilse buton "API ayarlı değil" der. Anahtar **yalnızca sunucuda** kalır,
+  istemciye asla gitmez.
 - **Mesaj (isteğe bağlı)** - AC serbest bir metin yazıp **Gönder**'e basarsa, o
   metin ticket'a yine kendi hesabından düşer.
 
-Kim ne zaman hangi ticket'a Nexora attı, SS istedi ya da mesaj gönderdi, Hesap
-Logları'na yazılır.
+Kim ne zaman hangi ticket'a Nexora attı, SS istedi, sonuç sorguladı ya da mesaj
+gönderdi, Hesap Logları'na yazılır.
 
 > **Bu bir selfbot özelliğidir** (README başındaki uyarı burada da geçerli).
 > Kendi kullanıcı hesabından otomatik/panel üzerinden mesaj atmak veya slash

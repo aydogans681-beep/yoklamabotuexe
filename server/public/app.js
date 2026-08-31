@@ -4036,6 +4036,10 @@ const acNexoraBtn = document.getElementById('acNexoraBtn');
 const acNexoraMsg = document.getElementById('acNexoraMsg');
 const acSsBtn = document.getElementById('acSsBtn');
 const acSsMsg = document.getElementById('acSsMsg');
+const acNexoraSonucId = document.getElementById('acNexoraSonucId');
+const acNexoraSonucBtn = document.getElementById('acNexoraSonucBtn');
+const acNexoraSonucMsg = document.getElementById('acNexoraSonucMsg');
+const acNexoraSonucKutu = document.getElementById('acNexoraSonucKutu');
 
 // Nexora At menüsündeki hazır SS isteği mesajı. Tek yerden değiştirilsin diye
 // sabit; buton bunu seçili ticket'a AC'nin kendi hesabından gönderir.
@@ -4283,9 +4287,11 @@ function acTicketleriCiz() {
             acGonderBtn.disabled = false;
             acNexoraBtn.disabled = false;
             acSsBtn.disabled = false;
+            acNexoraSonucBtn.disabled = false;
             acGonderMsg.textContent = '';
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
+            acNexoraSonucMsg.textContent = '';
             acTicketleriCiz();
         });
         acTicketListe.appendChild(btn);
@@ -4350,6 +4356,83 @@ acSsBtn.addEventListener('click', async () => {
         acSsMsg.textContent = `Hata: ${error.message}`;
     } finally {
         acSsBtn.disabled = false;
+    }
+});
+
+// --- Nexora Sonucu: API cevabını AC'nin ekranına bas ---
+// Cevabın şeklini bilmiyoruz; "hepsini göster" istendi. Bu yüzden gelen JSON'u
+// özyinelemeli olarak anahtar/değer satırlarına çeviriyoruz: string/sayı/bool
+// düz yazılır, URL'ler tıklanır link, görsel URL'leri <img>, iç içe nesne/dizi
+// bir alt seviye olarak açılır.
+function nexoraGorselMi(s) {
+    return /^https?:\/\/\S+\.(png|jpe?g|gif|webp|bmp)(\?\S*)?$/i.test(s);
+}
+function nexoraDegerHtml(deger) {
+    if (deger === null || deger === undefined) return '<span class="muted">—</span>';
+    if (typeof deger === 'boolean') return deger ? '✅ true' : '❌ false';
+    if (typeof deger === 'number') return escapeHtml(String(deger));
+    if (typeof deger === 'string') {
+        const s = deger.trim();
+        if (nexoraGorselMi(s)) {
+            return `<div><a href="${escapeHtml(s)}" target="_blank" rel="noopener">${escapeHtml(s)}</a>`
+                + `<br><img src="${escapeHtml(s)}" alt="" style="max-width:100%; max-height:360px; margin-top:6px; border-radius:8px;"></div>`;
+        }
+        if (/^https?:\/\/\S+$/i.test(s)) {
+            return `<a href="${escapeHtml(s)}" target="_blank" rel="noopener">${escapeHtml(s)}</a>`;
+        }
+        return escapeHtml(deger || '—');
+    }
+    if (Array.isArray(deger)) {
+        if (deger.length === 0) return '<span class="muted">[boş]</span>';
+        return `<div style="display:grid; gap:6px;">${deger.map((x, i) =>
+            `<div><b class="muted">#${i + 1}</b> ${nexoraDegerHtml(x)}</div>`).join('')}</div>`;
+    }
+    if (typeof deger === 'object') return nexoraNesneHtml(deger);
+    return escapeHtml(String(deger));
+}
+function nexoraNesneHtml(nesne) {
+    const anahtarlar = Object.keys(nesne);
+    if (anahtarlar.length === 0) return '<span class="muted">{boş}</span>';
+    return `<div style="display:grid; gap:8px;">${anahtarlar.map((k) => `
+        <div style="display:grid; grid-template-columns:minmax(120px,180px) 1fr; gap:10px; align-items:start;">
+            <b style="word-break:break-word;">${escapeHtml(k)}</b>
+            <div style="min-width:0; word-break:break-word;">${nexoraDegerHtml(nesne[k])}</div>
+        </div>`).join('')}</div>`;
+}
+function acNexoraSonucCiz(discordId, sonuc) {
+    const bas = `<div class="scanStatus" style="margin-bottom:8px;">Sorgulanan Discord ID: <b>${escapeHtml(String(discordId))}</b></div>`;
+    let govde;
+    if (sonuc && typeof sonuc === 'object') govde = nexoraNesneHtml(sonuc);
+    else govde = `<pre style="white-space:pre-wrap; margin:0;">${escapeHtml(String(sonuc))}</pre>`;
+    acNexoraSonucKutu.innerHTML = bas + govde;
+    acNexoraSonucKutu.hidden = false;
+}
+
+acNexoraSonucBtn.addEventListener('click', async () => {
+    const elleId = acNexoraSonucId.value.trim();
+    if (!elleId && !acSecili) { acNexoraSonucMsg.textContent = 'Ticket seç ya da Discord ID gir.'; return; }
+
+    acNexoraSonucBtn.disabled = true;
+    acNexoraSonucMsg.textContent = 'Nexora sonucu getiriliyor...';
+    try {
+        const res = await fetch('/api/ac/nexora-sonuc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kanalId: acSecili ? acSecili.id : '', discordId: elleId }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) {
+            acNexoraSonucMsg.textContent = d.error;
+            if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+            return;
+        }
+        acNexoraSonucMsg.textContent = 'Sonuç geldi.';
+        acNexoraSonucCiz(d.discordId, d.sonuc);
+    } catch (error) {
+        acNexoraSonucMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        acNexoraSonucBtn.disabled = false;
     }
 });
 

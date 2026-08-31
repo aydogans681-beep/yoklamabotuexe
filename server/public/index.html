@@ -501,6 +501,26 @@
                             </div>
                         </div>
 
+                        <!-- Nexora Sonucu: seçili ticket'ı açan kişinin Discord ID'si
+                             için Nexora API'sini sorgular, sonucu bu ekrana basar. -->
+                        <div class="card" style="margin:0 0 12px;">
+                            <h2>Nexora Sonucu</h2>
+                            <p class="card-desc">
+                                Seçili ticket'ı açan kişinin sonucunu Nexora API'sinden getirir.
+                                İstersen elle bir <b>Discord ID</b> de girebilirsin (boşsa ticket'ı
+                                açan kişi otomatik bulunur).
+                            </p>
+                            <div class="toolbar">
+                                <input type="text" class="text-search" id="acNexoraSonucId"
+                                       placeholder="Discord ID (boşsa otomatik)" spellcheck="false"
+                                       style="max-width:260px;">
+                                <button class="secondary" id="acNexoraSonucBtn" disabled>🔎 Sonucu Getir</button>
+                                <span class="scanStatus" id="acNexoraSonucMsg"></span>
+                            </div>
+                            <div id="acNexoraSonucKutu" hidden
+                                 style="margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; overflow-x:auto;"></div>
+                        </div>
+
                         <!-- İkincil: serbest metin mesaj (isteğe bağlı). -->
                         <div class="card" style="margin:0;">
                             <h2>Mesaj (isteğe bağlı)</h2>

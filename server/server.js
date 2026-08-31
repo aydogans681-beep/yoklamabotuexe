@@ -2002,6 +2002,16 @@ function acHizIsle(username) {
 const NEXORA_KOMUT_ID = '1543548857529401404';   // /nexorapin
 const NEXORA_BOT_ID = '1518636692171522209';     // komutun sahibi bot
 
+// Nexora API: bir Discord ID icin sonucu dondurur. AC "Sonucu Getir"e basinca
+// panel bu API'yi sorgular ve tum cevabi AC'nin ekranina basar.
+// URL + KEY config.env'den geliyor (repo'ya girmiyor - key gizli). URL sablonu
+// {id} (Discord ID) ve istege bagli {key} yer tutucularini destekliyor. Key
+// ayrica Authorization: Bearer ve x-api-key basliklarinda da gonderiliyor ki
+// API hangi yontemi bekliyorsa calissin.
+const NEXORA_API_URL = (process.env.NEXORA_API_URL || '').trim();
+const NEXORA_API_KEY = (process.env.NEXORA_API_KEY || '').trim();
+const NEXORA_API_ZAMANASIMI = 15000;
+
 const AC_GATEWAY_BOSTA_MS = 5 * 60 * 1000;       // 5 dk kullanilmazsa kapat
 const AC_GATEWAY_TAVANI = 15;                     // ayni anda en fazla acik baglanti
 const AC_GATEWAY_HAZIR_ZAMANASIMI = 22000;        // ready gelmezse vazgec
@@ -2149,6 +2159,42 @@ async function acKarsilamaGonder(username, kanalId, metin) {
     }
     await kanal.send(metin);
     return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+}
+
+// Nexora API'yi bir Discord ID icin sorgular, TUM cevabi dondurur (AC'ye
+// oldugu gibi gosterilecek). Panelin ana botunu/AC gateway'ini kullanmaz -
+// dogrudan HTTP. Key sunucuda kalir, istemciye ASLA gitmez.
+async function nexoraApiSorgula(discordId) {
+    if (!NEXORA_API_URL) {
+        throw new Error('Nexora API ayarlı değil. config.env\'e NEXORA_API_URL (ve NEXORA_API_KEY) ekle, sonra botu yeniden başlat.');
+    }
+    let url = NEXORA_API_URL.replace(/\{id\}/g, encodeURIComponent(discordId));
+    // URL'de {id} yer tutucusu yoksa Discord ID'yi sorgu parametresi olarak ekle.
+    if (!/\{id\}/.test(NEXORA_API_URL) && !url.includes(discordId)) {
+        url += (url.includes('?') ? '&' : '?') + 'discordId=' + encodeURIComponent(discordId);
+    }
+    if (NEXORA_API_KEY) url = url.replace(/\{key\}/g, encodeURIComponent(NEXORA_API_KEY));
+
+    const headers = { Accept: 'application/json' };
+    if (NEXORA_API_KEY) {
+        headers.Authorization = `Bearer ${NEXORA_API_KEY}`;
+        headers['x-api-key'] = NEXORA_API_KEY;
+    }
+
+    let cevap;
+    try {
+        cevap = await fetch(url, { headers, signal: AbortSignal.timeout(NEXORA_API_ZAMANASIMI) });
+    } catch (error) {
+        throw new Error(`Nexora API'ye ulaşılamadı: ${error.message}`);
+    }
+    const ham = await cevap.text();
+    let veri;
+    try { veri = JSON.parse(ham); } catch (e) { veri = ham; }   // JSON degilse duz metin
+    if (!cevap.ok) {
+        const kisa = typeof veri === 'string' ? veri.slice(0, 300) : JSON.stringify(veri).slice(0, 300);
+        throw new Error(`Nexora API hata döndü (${cevap.status}): ${kisa}`);
+    }
+    return veri;
 }
 
 
@@ -5160,6 +5206,49 @@ app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
     acHizIsle(kullanici);
     addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})`, req);
     res.json({ ok: true, kanal: sonuc.kanal });
+});
+
+// Nexora sonucu: seçili ticket'ı açan kişinin (veya elle girilen) Discord ID'si
+// için Nexora API'yi sorgular ve TÜM cevabı AC'nin ekranına döndürür.
+app.post('/api/ac/nexora-sonuc', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+    if (!NEXORA_API_URL) {
+        return res.json({ ok: false, error: 'Nexora API ayarlı değil (config.env: NEXORA_API_URL, NEXORA_API_KEY).' });
+    }
+
+    // Discord ID: elle girildiyse onu kullan; yoksa ticket'ı açanı otomatik bul.
+    let discordId = String((req.body && req.body.discordId) || '').trim();
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    if (!discordId) {
+        if (!/^\d{17,20}$/.test(kanalId)) {
+            return res.json({ ok: false, error: 'Ticket seç ya da bir Discord ID gir.' });
+        }
+        let kanal = client.channels.cache.get(kanalId);
+        if (!kanal) { try { kanal = await client.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+        if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+            return res.json({ ok: false, error: 'Kanal ticket kategorisinde değil.' });
+        }
+        discordId = await findTicketOpener(kanal).catch(() => null);
+        if (!discordId) {
+            return res.json({ ok: false, error: 'Ticket\'ı açan kişinin Discord ID\'si bulunamadı; elle gir.' });
+        }
+    }
+    if (!/^\d{17,20}$/.test(discordId)) return res.json({ ok: false, error: 'Geçersiz Discord ID.' });
+
+    const hizHatasi = acHizKontrol(kullanici);
+    if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
+
+    let sonuc;
+    try {
+        sonuc = await nexoraApiSorgula(discordId);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+
+    acHizIsle(kullanici);
+    addAudit('ac-nexora-sonuc', kullanici, `Discord ${discordId}`, req);
+    res.json({ ok: true, discordId, sonuc });
 });
 
 // --- PRIME SAAT HATIRLATMASI ---
