@@ -147,11 +147,13 @@ function showApp() {
     if (currentIsAdmin) refreshAccounts();
     loadKatilim();
 
-    // AC hesabi girince dogrudan Ticket'a Mesaj sekmesine dusuyor - baska
-    // sekmesi yok zaten, token isteyen ekran hemen onunde olsun.
+    // AC hesabi girince: token bağlamadan HİÇBİR ŞEY yapamasın diye hemen tam
+    // ekran kapıyı göster (panel arkada bir an bile görünmesin). Durum gelince
+    // (acDurumYukle) bağlıysa kapı kapanır, değilse token ekranı önünde kalır.
     if (currentTip === 'ac') {
+        acGateGoster('token');
         const acDugme = document.querySelector('.side-nav .tab-btn[data-tab="ticketmesaj"]');
-        if (acDugme) acDugme.click();
+        if (acDugme) acDugme.click();   // acDurumYukle'yi tetikler
     }
 }
 
@@ -3166,6 +3168,12 @@ const ticketAutoKutular = document.getElementById('ticketAutoKutular');
 const ticketAutoKatAcikSatiri = document.getElementById('ticketAutoKatAcikSatiri');
 const ticketAutoKatAcik = document.getElementById('ticketAutoKatAcik');
 const ticketAutoKatAcikEtiket = document.getElementById('ticketAutoKatAcikEtiket');
+const acKarsilamaAyar = document.getElementById('acKarsilamaAyar');
+const acKarsilamaHesapSec = document.getElementById('acKarsilamaHesapSec');
+const acKarsilamaDurum = document.getElementById('acKarsilamaDurum');
+
+// AC karşılama ayarı sunucudan gelir: { acik, hesap, etkin, hesaplar[] }.
+let acKarsilamaVeri = { acik: true, hesap: '', etkin: null, hesaplar: [] };
 
 // Kategori bazlı metin kutuları. Her kategori için bir <textarea>, ama aynı
 // anda yalnızca biri görünür - üstteki sekmelerden seçiliyor. Metinler burada
@@ -3206,9 +3214,40 @@ function ticketAutoKutuGoster() {
     if (kat && kat.acikDuzenlenir) {
         ticketAutoKatAcikSatiri.hidden = false;
         ticketAutoKatAcik.checked = Boolean(ticketAutoAcikDurum[kat.key]);
-        ticketAutoKatAcikEtiket.textContent = `"${kat.label}" kategorisinde otomatik mesaj açık`;
+        ticketAutoKatAcikEtiket.textContent = kat.key === 'ac'
+            ? 'AC karşılaması açık (AC\'nin kendi hesabından gönderilir)'
+            : `"${kat.label}" kategorisinde otomatik mesaj açık`;
     } else {
         ticketAutoKatAcikSatiri.hidden = true;
+    }
+
+    // Karşılayan AC hesabı seçimi yalnızca AC kategorisinde görünür.
+    if (kat && kat.key === 'ac') {
+        acKarsilamaAyar.hidden = false;
+        acKarsilamaDurumCiz();
+    } else {
+        acKarsilamaAyar.hidden = true;
+    }
+}
+
+// Karşılayan AC hesabı seçimini ve durum yazısını çizer.
+function acKarsilamaDurumCiz() {
+    const hesaplar = acKarsilamaVeri.hesaplar || [];
+    const secili = acKarsilamaHesapSec.value || acKarsilamaVeri.hesap || '';
+    acKarsilamaHesapSec.innerHTML = '<option value="">Otomatik (tek AC bağlıysa o)</option>'
+        + hesaplar.map((h) => `<option value="${escapeHtml(h.username)}"${h.username === secili ? ' selected' : ''}>`
+            + `${escapeHtml(h.username)}${h.tokenVar ? '' : ' — token yok'}</option>`).join('');
+    acKarsilamaHesapSec.value = secili;
+
+    const etkin = acKarsilamaVeri.etkin;
+    if (!acKarsilamaVeri.acik) {
+        acKarsilamaDurum.textContent = 'AC karşılaması kapalı.';
+    } else if (etkin) {
+        acKarsilamaDurum.textContent = `Karşılayan: ${etkin} (kendi hesabından)`;
+    } else if (hesaplar.length === 0) {
+        acKarsilamaDurum.innerHTML = '<span style="color:var(--attn)">⚠ Hiç AC hesabı yok. Önce AC hesabı aç ve token bağlat.</span>';
+    } else {
+        acKarsilamaDurum.innerHTML = '<span style="color:var(--attn)">⚠ Karşılayacak hesap belirsiz. Bir AC hesabı seç (token\'ı bağlı olmalı).</span>';
     }
 }
 
@@ -3216,6 +3255,21 @@ function ticketAutoKutuGoster() {
 // kadar yalnızca bellekte; Kaydet'e basınca sunucuya gider).
 ticketAutoKatAcik.addEventListener('change', () => {
     if (ticketAutoAktifKat) ticketAutoAcikDurum[ticketAutoAktifKat] = ticketAutoKatAcik.checked;
+});
+
+// Karşılayan AC hesabı seçimi değişince önizlemeyi güncelle. Seçilen hesabın
+// token'ı yoksa etkin karşılayan yine belirsiz kalır - bunu hemen göster.
+acKarsilamaHesapSec.addEventListener('change', () => {
+    acKarsilamaVeri.hesap = acKarsilamaHesapSec.value;
+    const secili = acKarsilamaHesapSec.value;
+    if (secili) {
+        const h = (acKarsilamaVeri.hesaplar || []).find((x) => x.username === secili);
+        acKarsilamaVeri.etkin = h && h.tokenVar ? secili : null;
+    } else {
+        const tokenli = (acKarsilamaVeri.hesaplar || []).filter((x) => x.tokenVar);
+        acKarsilamaVeri.etkin = tokenli.length === 1 ? tokenli[0].username : null;
+    }
+    acKarsilamaDurumCiz();
 });
 
 let ticketAutoInGuild = false;
@@ -3230,6 +3284,10 @@ async function loadTicketAuto() {
         document.getElementById('ticketAutoGecikme').value = d.gecikmeSn;
         ticketAutoInGuild = Boolean(d.inGuild);
         ticketAutoKategoriler = d.kategoriler || [];
+        // AC karşılama verisi - kullanıcı dropdown'la oynamıyorsa sunucuyla eşitle.
+        if (d.acKarsilama && document.activeElement !== acKarsilamaHesapSec) {
+            acKarsilamaVeri = d.acKarsilama;
+        }
 
         // Metin kutularını yalnızca ilk yüklemede (ya da kategori sayısı
         // değişince) yeniden kuruyoruz - her yüklemede sıfırdan yazsaydık
@@ -3292,6 +3350,7 @@ document.getElementById('ticketAutoSaveBtn').addEventListener('click', async () 
                     ticketAutoKategoriler
                         .filter((k) => k.acikDuzenlenir)
                         .map((k) => [k.key, Boolean(ticketAutoAcikDurum[k.key])])),
+                acKarsilamaHesap: acKarsilamaHesapSec.value || '',
                 gecikmeSn: document.getElementById('ticketAutoGecikme').value,
             }),
         });
@@ -3979,6 +4038,38 @@ let acTicketler = [];
 let acSecili = null;
 let acAyar = { mesajTavani: 1800 };
 
+// AC token kapısı: AC hesabı token bağlamadan panele giremez. Kapı tam ekran
+// açılır, appWrap'i gizler; token bağlanınca kapanır.
+const acGate = document.getElementById('acGate');
+const acGateToken = document.getElementById('acGateToken');
+const acGateBaglaBtn = document.getElementById('acGateBaglaBtn');
+const acGateError = document.getElementById('acGateError');
+const acGateAciklama = document.getElementById('acGateAciklama');
+const acGateAlan = document.getElementById('acGateAlan');
+const acGateUyari = document.getElementById('acGateUyari');
+
+function acGateGoster(mod, mesajHtml) {
+    appWrap.style.display = 'none';
+    loginWrap.style.display = 'none';
+    acGate.style.display = 'flex';
+    if (mod === 'kapali') {
+        // Sunucuda anahtar yok - token girmenin anlamı yok, alanı gizle.
+        acGateAlan.style.display = 'none';
+        acGateBaglaBtn.style.display = 'none';
+        acGateUyari.style.display = 'none';
+    } else {
+        acGateAlan.style.display = '';
+        acGateBaglaBtn.style.display = '';
+        acGateUyari.style.display = '';
+    }
+    if (mesajHtml) acGateAciklama.innerHTML = mesajHtml;
+}
+
+function acGateGizle() {
+    acGate.style.display = 'none';
+    if (appWrap.style.display === 'none') appWrap.style.display = 'flex';
+}
+
 async function acDurumYukle() {
     try {
         const res = await fetch('/api/ac/durum');
@@ -3986,6 +4077,7 @@ async function acDurumYukle() {
         const d = await okuJson(res);
         if (!d.ok) { acBagliDegilAciklama.textContent = `Hata: ${d.error}`; return; }
         acAyar = d;
+        const acKapisi = currentTip === 'ac';   // kapı yalnızca AC hesaplarında
 
         if (!d.anahtarVar) {
             // Sunucuda sifreleme anahtari yoksa ozellik komple kapali. Bunu
@@ -3997,10 +4089,16 @@ async function acDurumYukle() {
             acBagliDegilAciklama.innerHTML = 'Bu özellik sunucuda kapalı. Yönetici '
                 + '<b>config.env</b> dosyasına <b>AC_ANAHTAR</b> satırını eklemeli '
                 + '(en az 16 karakterlik rastgele bir dize), sonra botu yeniden başlatmalı.';
+            if (acKapisi) {
+                acGateGoster('kapali', 'Bu özellik sunucuda henüz açık değil. '
+                    + 'Yöneticinin şifreleme anahtarını eklemesi gerekiyor. '
+                    + 'Sonra bu ekrandan token\'ını bağlayabilirsin.');
+            }
             return;
         }
 
         if (d.baglandi) {
+            if (acKapisi) acGateGizle();
             acBagliDegilKart.style.display = 'none';
             acPanel.style.display = '';
             acHesapAdi.textContent = d.hesap || d.hesapId;
@@ -4012,11 +4110,14 @@ async function acDurumYukle() {
             acBagliDegilKart.style.display = '';
             acTokenSatiri.style.display = 'flex';
             acUyari.style.display = '';
-            acBagliDegilAciklama.innerHTML = d.kilitliId
+            const kilitliMi = d.kilitliId
                 ? 'Bu panel hesabı bir Discord hesabına <b>kilitli</b>. '
                   + 'Aynı hesabın token\'ını bağla.'
                 : 'Ticket\'a kendi hesabından mesaj gönderebilmek için hesabını bağla. '
                   + 'İlk bağladığın hesap bu panel hesabına kilitlenir.';
+            acBagliDegilAciklama.innerHTML = kilitliMi;
+            // AC hesabıysa: token bağlanana kadar tam ekran kapı önünde dursun.
+            if (acKapisi) acGateGoster('token', kilitliMi);
         }
     } catch (error) {
         acBagliDegilAciklama.textContent = `Hata: ${error.message}`;
@@ -4054,10 +4155,65 @@ acCikarBtn.addEventListener('click', async () => {
     try {
         await fetch('/api/ac/token', { method: 'DELETE' });
         acSecili = null;
-        acDurumYukle();
+        acDurumYukle();   // AC hesabıysa bu, kapıyı yeniden gösterir
     } catch (error) {
         acGonderMsg.textContent = `Hata: ${error.message}`;
     }
+});
+
+// --- AC TOKEN KAPISI: token bağla ---
+acGateBaglaBtn.addEventListener('click', async () => {
+    const token = acGateToken.value.trim();
+    acGateError.style.display = 'none';
+    if (!token) {
+        acGateError.textContent = 'Token boş.';
+        acGateError.style.display = '';
+        return;
+    }
+    acGateBaglaBtn.disabled = true;
+    const eskiMetin = acGateBaglaBtn.innerHTML;
+    acGateBaglaBtn.textContent = 'Discord\'a soruluyor...';
+    try {
+        const res = await fetch('/api/ac/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        acGateToken.value = '';   // token ekranda asılı kalmasın
+        if (!d.ok) {
+            acGateError.textContent = d.error || 'Bağlanamadı.';
+            acGateError.style.display = '';
+            return;
+        }
+        // Başarılı: durum yenilenince kapı kapanır ve panel açılır.
+        await acDurumYukle();
+        // Bağlandıysa panel sekmesine geç.
+        const acDugme = document.querySelector('.side-nav .tab-btn[data-tab="ticketmesaj"]');
+        if (acDugme && acGate.style.display === 'none') acDugme.click();
+    } catch (error) {
+        acGateError.textContent = `Hata: ${error.message}`;
+        acGateError.style.display = '';
+    } finally {
+        acGateBaglaBtn.disabled = false;
+        acGateBaglaBtn.innerHTML = eskiMetin;
+    }
+});
+
+acGateToken.addEventListener('keydown', (e) => { if (e.key === 'Enter') acGateBaglaBtn.click(); });
+
+document.getElementById('acGateGoster').addEventListener('click', () => {
+    const gizli = acGateToken.type === 'password';
+    acGateToken.type = gizli ? 'text' : 'password';
+    document.getElementById('acGateGoster').textContent = gizli ? 'Gizle' : 'Göster';
+});
+
+document.getElementById('acGateCikis').addEventListener('click', async (e) => {
+    e.preventDefault();
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (error) { /* yoksay */ }
+    acGate.style.display = 'none';
+    location.reload();
 });
 
 // Bir ticket açıldı/kapandı WebSocket olayı geldiğinde listeyi tazele -

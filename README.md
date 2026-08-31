@@ -291,9 +291,13 @@ kendiliğinden üretiliyor.
 1. Ayarlar > Panel Hesapları'ndan yeni hesap açarken **tip olarak AC** seç.
    (Yetkili / AC anahtarı formda.) AC hesabı yalnızca **Nexora Panel**
    sekmesini görür - başka hiçbir şeye erişemez, izin ayarlamana gerek yok.
-2. AC bu hesapla giriş yapar; doğrudan token isteyen ekrana düşer.
+   Her AC'nin **kendi ayrı hesabı** olur ve **kendi token'ını** girer.
+2. AC bu hesapla giriş yapar ve **tam ekran bir "Token Gir" kapısıyla**
+   karşılaşır. Token bağlamadan panelde **hiçbir şey yapamaz** - kenar çubuğu,
+   ticket listesi, hiçbiri açılmaz; önünde yalnızca token bağlama ekranı durur.
 3. AC kendi token'ını bağlar. **İlk bağladığı hesap o panel hesabına
-   kilitlenir** - sonradan başkasının token'ına geçemez.
+   kilitlenir** - sonradan başkasının token'ına geçemez. Token bağlanınca kapı
+   kapanır ve Nexora Panel açılır. Bağlantı kaldırılırsa kapı yeniden gelir.
 
 > `ac-anahtar.key` silinirse ya da `config.env`'deki `AC_ANAHTAR` değişirse
 > bağlı token'lar çözülemez; AC'ler hesaplarını yeniden bağlar (panel bunu
@@ -532,18 +536,24 @@ Başka bir kanala da işaretleme açmak için `LOG_CHANNELS`'daki satırına
 
   İki kategori var, **her birinin kendi metni**:
 
-  | Sekme | Kategori | Kime | Otomatik mesaj |
+  | Sekme | Kategori | Kime | Mesajı kim atar |
   |---|---|---|---|
-  | Yayıncı (YT) | `1476223556806512660` | yayıncı başvuruları | ana şaltere uyar |
-  | AC | `1470230380572573706` | AC başvuru/destek | **varsayılan KAPALI** |
+  | Yayıncı (YT) | `1476223556806512660` | yayıncı başvuruları | **panelin ana hesabı** |
+  | AC | `1470230380572573706` | AC başvuru/destek | **tokenini giren AC'nin kendi hesabı** |
 
   **İki kademeli şalter:** üstteki "Açık (ana şalter)" hepsini birden açıp
   kapatır. Bunun altında **her kategorinin kendi aç/kapa anahtarı** olabilir.
-  AC kategorisi artık karşılamayı **Nexora Panel'den** (AC kendi hesabından)
-  yaptığı için otomatik mesajı **varsayılan olarak kapalıdır** - bot ayrıca
-  karşılamaz. YT'nin ayrı anahtarı yoktur, doğrudan ana şaltere uyar. AC
-  otomatik mesajını yine de istersen AC sekmesindeki anahtardan açabilirsin
-  (`panelSettings.ticketAutoAcEnabled`).
+
+  **YT** karşılamasını panelin ana hesabı atar (klasik davranış).
+  **AC karşılamasını panelin ana hesabı DEĞİL, tokenini giren bir AC'nin KENDİ
+  Discord hesabı atar** - varsayılan **açık**. Bu istendi: AC ticket'ına
+  karşılamayı panel sahibinin hesabı değil, AC'nin kendisi atmalı.
+
+  **Karşılayan AC hesabı** AC sekmesinden seçilir. Boş bırakılırsa: **tek bir
+  AC token'ı bağlıysa otomatik o** kullanılır; **birden fazla AC** bağlıysa ve
+  seçim yoksa karşılama atlanır (belirsizlik) - o zaman Ayarlar'dan bir AC
+  hesabı seçmen gerekir. Slash komut gibi bu da AC'nin gateway'ini kısa süreli
+  açar (bkz. güvenlik tablosu).
 
   Ayarlar'da üstteki sekmelerden kategori seçilir, altındaki kutuya o
   kategorinin metni yazılır. Kaydet ikisini birden gönderir. Metinlerden biri
@@ -556,8 +566,9 @@ Başka bir kanala da işaretleme açmak için `LOG_CHANNELS`'daki satırına
 
   Yeni kategori eklemek: `server.js`'teki `TICKET_AUTO_KATEGORILER` listesine
   bir satır (`acikAyar: null` ana şaltere uyar, bir anahtar adı yazılırsa o
-  kategori kendi aç/kapa anahtarını alır) ve `panelSettings`'e bir varsayılan;
-  arayüz kendiliğinden büyür.
+  kategori kendi aç/kapa anahtarını alır; `gonderen: 'bot'` panelin ana hesabı,
+  `gonderen: 'ac'` tokenini giren AC'nin kendi hesabı yazar) ve `panelSettings`'e
+  bir varsayılan; arayüz kendiliğinden büyür.
 
 - **Prime Saat Hatırlatması** - belirtilen saatlerde (varsayılan `20:00`,
   `21:00`, `22:00`) Discord'da **aktif olup seste olmayan** yetkililere

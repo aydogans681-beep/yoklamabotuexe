@@ -2112,6 +2112,32 @@ async function acNexoraGonder(username, kanalId) {
     return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
 }
 
+// AC kategorisinde ticket acilinca otomatik karsilamayi HANGI AC hesabi atsin?
+// Kural: Ayarlar'da bir hesap secilmisse ve o hesabin token'i varsa o. Yoksa
+// tek bir AC token'i varsa otomatik o. Birden fazla varsa ve secim yoksa null
+// (belirsiz - karsilama atlanir, log'a yazilir; Ayarlar'dan secilmesi gerekir).
+function acKarsilamaHesabiSec() {
+    const secili = String(panelSettings.acOtoKarsilamaHesap || '').trim();
+    if (secili && acTokenlari[secili]) return secili;
+    const tokenli = Object.keys(acTokenlari);
+    if (tokenli.length === 1) return tokenli[0];
+    return null;
+}
+
+// Verilen AC'nin kendi hesabindan bir ticket kanalina DUZ metin yazar (slash
+// degil - karsilama mesaji). acNexoraGonder ile ayni gateway makinesini
+// kullanir, tek fark: komut yerine kanal.send.
+async function acKarsilamaGonder(username, kanalId, metin) {
+    const acClient = await acGatewayAl(username);
+    let kanal = acClient.channels.cache.get(kanalId);
+    if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+        throw new Error('Kanal AC ticket kategorisinde değil.');
+    }
+    await kanal.send(metin);
+    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+}
+
 
 // ============================================================================
 // --- LOG İŞARETLERİ (Şüpheli Log) ---
@@ -2675,9 +2701,12 @@ const TICKET_AUTO_GUILD = '1476217696331890818';
 // yaziliysa, genel ayar acik olsa bile bu kategori ayrica o anahtara bakar.
 // AC kategorisi artik kendi karsilamasini Nexora Panel'den yaptigi icin onun
 // otomatik mesaji varsayilan olarak KAPALI (asagida false'a set ediliyor).
+// gonderen: 'bot' = panelin ana hesabi yazar. 'ac' = mesaj, tokenini giren bir
+// AC'nin KENDI hesabindan gider (asagida acKarsilamaGonder). AC kategorisinde
+// karsilamayi panel sahibinin degil, AC'nin kendi hesabinin atmasi istendi.
 const TICKET_AUTO_KATEGORILER = [
-    { key: 'yt', label: 'Yayıncı (YT)', kategori: '1476223556806512660', ayar: 'ticketAutoMessage',   acikAyar: null },
-    { key: 'ac', label: 'AC',           kategori: '1470230380572573706', ayar: 'ticketAutoMessageAc', acikAyar: 'ticketAutoAcEnabled' },
+    { key: 'yt', label: 'Yayıncı (YT)', kategori: '1476223556806512660', ayar: 'ticketAutoMessage',   acikAyar: null,                gonderen: 'bot' },
+    { key: 'ac', label: 'AC',           kategori: '1470230380572573706', ayar: 'ticketAutoMessageAc', acikAyar: 'acOtoKarsilamaAcik', gonderen: 'ac' },
 ];
 
 function ticketAutoKategoriBul(parentId) {
@@ -2725,11 +2754,17 @@ if (typeof panelSettings.ticketAutoMessage !== 'string') panelSettings.ticketAut
 if (typeof panelSettings.ticketAutoMessageAc !== 'string') {
     panelSettings.ticketAutoMessageAc = VARSAYILAN_AC_MESAJI;
 }
-// AC kategorisinde otomatik karsilama VARSAYILAN OLARAK KAPALI. AC'ler ticket'a
-// kendileri Nexora Panel'den mesaj/pin attigi icin bot ayrica karsilamasin.
-// Elle acmak istenirse Ayarlar'dan acilir (panelSettings'e true yazilir).
-if (typeof panelSettings.ticketAutoAcEnabled !== 'boolean') {
-    panelSettings.ticketAutoAcEnabled = false;
+// AC kategorisinde otomatik karsilama: mesaj panelin ana hesabindan DEGIL,
+// tokenini giren bir AC'nin KENDI hesabindan gider. Varsayilan ACIK.
+// (Anahtar adi bilerek yeni: eski 'ticketAutoAcEnabled' baska anlamdaydi;
+// yeni ada gecince eski panel-settings degeri yoksayilir, varsayilan uygulanir.)
+if (typeof panelSettings.acOtoKarsilamaAcik !== 'boolean') {
+    panelSettings.acOtoKarsilamaAcik = true;
+}
+// Karsilamayi hangi AC hesabi atsin (panel kullanici adi). Bos ise: tek AC
+// token'i varsa otomatik o kullanilir; birden fazlaysa atlanir (Ayarlar'dan sec).
+if (typeof panelSettings.acOtoKarsilamaHesap !== 'string') {
+    panelSettings.acOtoKarsilamaHesap = '';
 }
 // Ticket acildiktan sonra kac saniye beklenip yazilacak.
 // DIKKAT: bu sabit, asagida panelSettings varsayilaninda kullanildigi icin
@@ -2935,7 +2970,23 @@ client.on('channelCreate', async (channel) => {
 
         const acan = await findTicketOpener(channel);
         const metin = (acan ? `<@${acan}>\n\n` : '') + kategoriMetni;
-        await channel.send(metin);
+
+        // Kim yazacak? YT: panelin ana hesabi. AC: tokenini giren bir AC'nin
+        // KENDI hesabi (panel sahibinin hesabi degil - bu bilerek istendi).
+        let gonderenEtiket = 'ana hesap';
+        if (kat.gonderen === 'ac') {
+            const greeter = acKarsilamaHesabiSec();
+            if (!greeter) {
+                console.log(`[TicketOtomatik] AC karşılaması atlandı (#${channel.name}):`
+                    + ' karşılayacak AC hesabı belirsiz. Ayarlar\'dan bir AC hesabı seç'
+                    + ' ya da tek bir AC token bağlı olsun.');
+                return;
+            }
+            const sonuc = await acKarsilamaGonder(greeter, channel.id, metin);
+            gonderenEtiket = `AC: ${greeter}${sonuc.hesap ? ` (${sonuc.hesap})` : ''}`;
+        } else {
+            await channel.send(metin);
+        }
 
         const kayit = {
             at: Date.now(),
@@ -2944,14 +2995,15 @@ client.on('channelCreate', async (channel) => {
             openerId: acan,
             kategori: kat.key,
             kategoriAd: kat.label,
+            gonderen: gonderenEtiket,
         };
         ticketAutoSonGonderimler.unshift(kayit);
         while (ticketAutoSonGonderimler.length > 25) ticketAutoSonGonderimler.pop();
 
         console.log(`[TicketOtomatik] ${kat.label}: #${channel.name} kanalina mesaj`
-            + ` yazildi (acan: ${acan || 'bulunamadi'}).`);
+            + ` yazildi (${gonderenEtiket}, acan: ${acan || 'bulunamadi'}).`);
         addAudit('ticket-otomatik', 'sistem',
-            `${kat.label} · #${channel.name} kanalına otomatik mesaj yazıldı`
+            `${kat.label} · #${channel.name} kanalına otomatik mesaj yazıldı [${gonderenEtiket}]`
             + `${acan ? ` (açan: ${acan})` : ' (açan bulunamadı)'}`, null);
         wsBroadcast({ type: 'ticket-otomatik', entry: kayit });
     } catch (error) {
@@ -5264,6 +5316,17 @@ app.get('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
         recent: ticketAutoSonGonderimler,
         // Eski istemciler bozulmasin diye tek metin de donuyor.
         message: panelSettings.ticketAutoMessage,
+        // AC kategorisi karsilamasi AC'nin kendi hesabindan gider. Arayuz icin:
+        // acik/kapali, secili karsilayan, mevcut AC hesaplari ve o an gecerli
+        // olan (etkin) karsilayan.
+        acKarsilama: {
+            acik: panelSettings.acOtoKarsilamaAcik,
+            hesap: panelSettings.acOtoKarsilamaHesap || '',
+            etkin: acKarsilamaHesabiSec(),
+            hesaplar: loadPanelUsers()
+                .filter((u) => u.tip === 'ac')
+                .map((u) => ({ username: u.username, tokenVar: Boolean(acTokenlari[u.username]) })),
+        },
     });
 });
 
@@ -5327,6 +5390,17 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
             }
         }
     }
+    // AC karsilamasini hangi AC hesabi atsin. Bos = otomatik (tek AC). Bir deger
+    // verildiyse gercek bir AC panel hesabi olmali.
+    const { acKarsilamaHesap } = req.body || {};
+    if (acKarsilamaHesap !== undefined) {
+        const secim = String(acKarsilamaHesap || '').trim();
+        if (secim) {
+            const acHesabiMi = loadPanelUsers().some((u) => u.username === secim && u.tip === 'ac');
+            if (!acHesabiMi) return res.json({ ok: false, error: 'Seçilen karşılama hesabı bir AC hesabı değil.' });
+        }
+        panelSettings.acOtoKarsilamaHesap = secim;
+    }
     if (gecikmeSn !== undefined && gecikmeSn !== null && gecikmeSn !== '') {
         const sn = Number(gecikmeSn);
         if (!Number.isFinite(sn) || sn < 0 || sn > 120) {
@@ -5370,7 +5444,8 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
     const degisenler = yazilacak.map(([kat]) => kat.label).join(', ');
     addAudit('ticket-otomatik-ayar', req.session.username,
         `Otomatik ticket mesajı ${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`
-        + ` · AC otomatik: ${panelSettings.ticketAutoAcEnabled ? 'açık' : 'kapalı'}`
+        + ` · AC karşılama (AC hesabından): ${panelSettings.acOtoKarsilamaAcik ? 'açık' : 'kapalı'}`
+        + ` · karşılayan: ${acKarsilamaHesabiSec() || 'belirsiz'}`
         + (degisenler ? ` · metin güncellendi: ${degisenler}` : ''), req);
     console.log(`[TicketOtomatik] Ayar değişti (${req.session.username}): `
         + `${panelSettings.ticketAutoEnabled ? 'açık' : 'kapalı'}`
@@ -5384,6 +5459,14 @@ app.post('/api/ticket-otomatik', requireIzin('ayarlar'), (req, res) => {
             acikDuzenlenir: Boolean(k.acikAyar),
         })),
         message: panelSettings.ticketAutoMessage,
+        acKarsilama: {
+            acik: panelSettings.acOtoKarsilamaAcik,
+            hesap: panelSettings.acOtoKarsilamaHesap || '',
+            etkin: acKarsilamaHesabiSec(),
+            hesaplar: loadPanelUsers()
+                .filter((u) => u.tip === 'ac')
+                .map((u) => ({ username: u.username, tokenVar: Boolean(acTokenlari[u.username]) })),
+        },
     });
 });
 

@@ -182,6 +182,72 @@
         </div>
     </div>
 
+    <!-- --- AC TOKEN KAPISI ---
+         AC hesabı giriş yapınca, token bağlamadan HİÇBİR ŞEY yapamasın diye
+         önüne çıkan tam ekran kapı. Token bağlanınca kapanır ve Nexora Panel
+         açılır. Yalnızca AC hesaplarında ve token bağlı DEĞİLKEN görünür. -->
+    <div class="login-wrap" id="acGate" style="display:none;">
+        <div class="login-bg" aria-hidden="true">
+            <span class="glow glow-a"></span>
+            <span class="glow glow-b"></span>
+            <span class="grid"></span>
+        </div>
+        <div class="giris-hero">
+            <div class="hero-sol">
+                <div class="hero-rozet">NEXORA PANEL · AC ERİŞİMİ</div>
+                <h1 class="hero-baslik">
+                    Önce <span>Token'ını Bağla</span>
+                </h1>
+                <p class="hero-alt" id="acGateAciklama">
+                    Bu panelde işlem yapabilmek için Discord hesabını bağlaman gerekir.
+                    Token'ını girmeden ticket'lara Nexora atamaz veya mesaj gönderemezsin.
+                    İlk bağladığın hesap bu panele kilitlenir.
+                </p>
+
+                <div class="hero-form">
+                    <div id="acGateError" style="display:none;"></div>
+
+                    <div class="field" id="acGateAlan">
+                        <label for="acGateToken">Discord Token</label>
+                        <div class="input-wrap">
+                            <span class="input-ico" aria-hidden="true"><svg><use href="#i-kilit"/></svg></span>
+                            <input type="password" id="acGateToken" autocomplete="off"
+                                   placeholder="Discord token'ın" spellcheck="false">
+                            <button type="button" class="input-btn" id="acGateGoster"
+                                    aria-label="Token'ı göster">Göster</button>
+                        </div>
+                    </div>
+
+                    <button class="primary login-btn" id="acGateBaglaBtn">
+                        <svg class="btn-ico"><use href="#i-kilit"/></svg>Token Gir ve Bağla
+                    </button>
+
+                    <p class="login-not" id="acGateUyari">
+                        Token'ın hesabının tam anahtarıdır; panelde şifrelenerek saklanır ve
+                        bir daha ekrana yazılmaz. Kendi hesabından mesaj/işlem yapmak Discord'un
+                        kullanım şartlarına aykırıdır ve hesabın işaretlenebilir — bunu bilerek
+                        bağlıyorsun.
+                    </p>
+                    <p class="login-not">
+                        <a href="#" id="acGateCikis">Farklı hesapla giriş yap / Çıkış</a>
+                    </p>
+                </div>
+            </div>
+
+            <div class="hero-sag" aria-hidden="true">
+                <span class="halka halka-1"></span>
+                <span class="halka halka-2"></span>
+                <span class="halka halka-3"></span>
+                <span class="hero-parilti"></span>
+                <div class="brand-mark hero-logo" id="acGateBrand">
+                    <img src="/logo" alt="" class="brand-img"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="brand-fallback" style="display:none;"><span>MD</span><small>PvP</small></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- --- YETKİ DÜZENLEME PENCERESİ (yalnızca yönetici) --- -->
     <div class="modal-backdrop" id="izinModal" style="display:none;">
         <div class="modal">
@@ -848,8 +914,10 @@
                     Belirtilen kategoride yeni bir ticket açıldığında bu mesaj yazılır ve
                     ticket'ı açan kişi etiketlenir. <b>Discord'a kendiliğinden mesaj atar</b> —
                     üstteki anahtar ana şalter; her kategorinin altında kendi aç/kapa
-                    anahtarı olabilir. <b>AC kategorisi</b> artık kendi karşılamasını
-                    Nexora Panel'den yaptığı için varsayılan olarak <b>kapalıdır</b>.
+                    anahtarı olabilir. <b>YT</b> mesajını panelin ana hesabı atar.
+                    <b>AC kategorisinde karşılamayı, tokenini giren bir AC'nin KENDİ
+                    hesabı atar</b> (panelin ana hesabı değil) — hangi AC hesabının
+                    atacağını aşağıdan seçebilirsin.
                 </p>
                 <div class="toolbar" style="margin-bottom:12px;">
                     <label class="check-inline">
@@ -869,6 +937,20 @@
                         <input type="checkbox" id="ticketAutoKatAcik">
                         <span id="ticketAutoKatAcikEtiket">Bu kategoride otomatik mesaj açık</span>
                     </label>
+                </div>
+                <!-- AC karşılamasını hangi AC hesabı atacak. Yalnızca AC
+                     kategorisi seçiliyken görünür. Mesaj bu hesabın KENDİ
+                     Discord hesabından gider, panelin ana botundan değil. -->
+                <div id="acKarsilamaAyar" style="margin:8px 0 4px;" hidden>
+                    <label class="muted" for="acKarsilamaHesapSec" style="display:block; margin-bottom:4px;">
+                        Karşılamayı atacak AC hesabı (kendi hesabından gider)
+                    </label>
+                    <div class="toolbar">
+                        <select class="text-search" id="acKarsilamaHesapSec" style="max-width:280px;">
+                            <option value="">Otomatik (tek AC bağlıysa o)</option>
+                        </select>
+                        <span class="scanStatus" id="acKarsilamaDurum"></span>
+                    </div>
                 </div>
                 <div id="ticketAutoKutular"></div>
                 <div class="toolbar" style="margin-top:10px;">
