@@ -4036,19 +4036,9 @@ const acNexoraBtn = document.getElementById('acNexoraBtn');
 const acNexoraMsg = document.getElementById('acNexoraMsg');
 const acSsBtn = document.getElementById('acSsBtn');
 const acSsMsg = document.getElementById('acSsMsg');
-const acNexoraSonucId = document.getElementById('acNexoraSonucId');
-const acNexoraSonucBtn = document.getElementById('acNexoraSonucBtn');
-const acNexoraSonucMsg = document.getElementById('acNexoraSonucMsg');
-const acNexoraSonucKutu = document.getElementById('acNexoraSonucKutu');
-const acNexoraApiUrl = document.getElementById('acNexoraApiUrl');
-const acNexoraApiKey = document.getElementById('acNexoraApiKey');
-const acNexoraApiKaydet = document.getElementById('acNexoraApiKaydet');
-const acNexoraApiSil = document.getElementById('acNexoraApiSil');
-const acNexoraApiDurum = document.getElementById('acNexoraApiDurum');
-const acNexoraApiMsg = document.getElementById('acNexoraApiMsg');
-
-// Bu AC'nin kendi Nexora API'si ayarlı mı? Sonucu Getir buna bağlı.
-let acNexoraApiAyarli = false;
+const acNexoraPinBtn = document.getElementById('acNexoraPinBtn');
+const acNexoraPinMsg = document.getElementById('acNexoraPinMsg');
+const acNexoraPinKutu = document.getElementById('acNexoraPinKutu');
 
 // Nexora At menüsündeki hazır SS isteği mesajı. Tek yerden değiştirilsin diye
 // sabit; buton bunu seçili ticket'a AC'nin kendi hesabından gönderir.
@@ -4131,7 +4121,6 @@ async function acDurumYukle() {
             acHesapZaman.textContent = d.baglanmaZamani ? `· ${formatDate(d.baglanmaZamani)}` : '';
             acSayac.textContent = `en fazla ${d.saatlikTavan}/saat · gönderimler arası ${d.kisiAralikSn} sn`;
             acTicketleriYukle();
-            acNexoraApiYukle();
         } else {
             acPanel.style.display = 'none';
             acBagliDegilKart.style.display = '';
@@ -4246,9 +4235,38 @@ document.getElementById('acGateCikis').addEventListener('click', async (e) => {
 // Bir ticket açıldı/kapandı WebSocket olayı geldiğinde listeyi tazele -
 // yalnızca sekme açık ve hesap bağlıysa. Panel açık kalır ve ticket'lar
 // kendiliğinden görünür/kaybolur; AC "Yenile" basmak zorunda değil.
+// Ticket açılınca hoş bir "ding-dong" bildirim sesi (Web Audio - dosya yok).
+// Tarayıcı autoplay için bir kullanıcı etkileşimi ister; AC giriş/token için
+// zaten tıklamış oluyor, o yüzden panel açıkken ses çalabiliyor.
+let acSesCtx = null;
+function acBildirimSesiCal() {
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!acSesCtx) acSesCtx = new AC();
+        if (acSesCtx.state === 'suspended') acSesCtx.resume();
+        const t0 = acSesCtx.currentTime;
+        [[880, 0], [1174.66, 0.15]].forEach(([frek, gecikme]) => {
+            const osc = acSesCtx.createOscillator();
+            const kaz = acSesCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = frek;
+            kaz.gain.setValueAtTime(0.0001, t0 + gecikme);
+            kaz.gain.exponentialRampToValueAtTime(0.28, t0 + gecikme + 0.02);
+            kaz.gain.exponentialRampToValueAtTime(0.0001, t0 + gecikme + 0.35);
+            osc.connect(kaz); kaz.connect(acSesCtx.destination);
+            osc.start(t0 + gecikme); osc.stop(t0 + gecikme + 0.4);
+        });
+    } catch (error) { /* ses yoksa sessizce geç */ }
+}
+
 function acCanliGuncelle(msg) {
-    const sekmeAcik = document.getElementById('tab-ticketmesaj').classList.contains('active');
+    // Yeni ticket açıldıysa bildirim sesi çal - hangi sekmede olursa olsun,
+    // AC panelde bağlıysa haberi olsun.
     const panelAcik = acPanel && acPanel.style.display !== 'none';
+    if (msg && msg.islem === 'acildi' && panelAcik) acBildirimSesiCal();
+
+    const sekmeAcik = document.getElementById('tab-ticketmesaj').classList.contains('active');
     if (!sekmeAcik || !panelAcik) return;
     acTicketleriYukle();
 }
@@ -4297,11 +4315,11 @@ function acTicketleriCiz() {
             acGonderBtn.disabled = false;
             acNexoraBtn.disabled = false;
             acSsBtn.disabled = false;
+            acNexoraPinBtn.disabled = false;
             acGonderMsg.textContent = '';
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
-            acNexoraSonucMsg.textContent = '';
-            acSonucBtnGuncelle();
+            acNexoraPinMsg.textContent = '';
             acTicketleriCiz();
         });
         acTicketListe.appendChild(btn);
@@ -4376,148 +4394,71 @@ acSsBtn.addEventListener('click', async () => {
 // özyinelemeli olarak anahtar/değer satırlarına çeviriyoruz: string/sayı/bool
 // düz yazılır, URL'ler tıklanır link, görsel URL'leri <img>, iç içe nesne/dizi
 // bir alt seviye olarak açılır.
-function nexoraGorselMi(s) {
-    return /^https?:\/\/\S+\.(png|jpe?g|gif|webp|bmp)(\?\S*)?$/i.test(s);
-}
-function nexoraDegerHtml(deger) {
-    if (deger === null || deger === undefined) return '<span class="muted">—</span>';
-    if (typeof deger === 'boolean') return deger ? '✅ true' : '❌ false';
-    if (typeof deger === 'number') return escapeHtml(String(deger));
-    if (typeof deger === 'string') {
-        const s = deger.trim();
-        if (nexoraGorselMi(s)) {
-            return `<div><a href="${escapeHtml(s)}" target="_blank" rel="noopener">${escapeHtml(s)}</a>`
-                + `<br><img src="${escapeHtml(s)}" alt="" style="max-width:100%; max-height:360px; margin-top:6px; border-radius:8px;"></div>`;
-        }
-        if (/^https?:\/\/\S+$/i.test(s)) {
-            return `<a href="${escapeHtml(s)}" target="_blank" rel="noopener">${escapeHtml(s)}</a>`;
-        }
-        return escapeHtml(deger || '—');
-    }
-    if (Array.isArray(deger)) {
-        if (deger.length === 0) return '<span class="muted">[boş]</span>';
-        return `<div style="display:grid; gap:6px;">${deger.map((x, i) =>
-            `<div><b class="muted">#${i + 1}</b> ${nexoraDegerHtml(x)}</div>`).join('')}</div>`;
-    }
-    if (typeof deger === 'object') return nexoraNesneHtml(deger);
-    return escapeHtml(String(deger));
-}
-function nexoraNesneHtml(nesne) {
-    const anahtarlar = Object.keys(nesne);
-    if (anahtarlar.length === 0) return '<span class="muted">{boş}</span>';
-    return `<div style="display:grid; gap:8px;">${anahtarlar.map((k) => `
-        <div style="display:grid; grid-template-columns:minmax(120px,180px) 1fr; gap:10px; align-items:start;">
-            <b style="word-break:break-word;">${escapeHtml(k)}</b>
-            <div style="min-width:0; word-break:break-word;">${nexoraDegerHtml(nesne[k])}</div>
-        </div>`).join('')}</div>`;
-}
-function acNexoraSonucCiz(discordId, sonuc) {
-    const bas = `<div class="scanStatus" style="margin-bottom:8px;">Sorgulanan Discord ID: <b>${escapeHtml(String(discordId))}</b></div>`;
-    let govde;
-    if (sonuc && typeof sonuc === 'object') govde = nexoraNesneHtml(sonuc);
-    else govde = `<pre style="white-space:pre-wrap; margin:0;">${escapeHtml(String(sonuc))}</pre>`;
-    acNexoraSonucKutu.innerHTML = bas + govde;
-    acNexoraSonucKutu.hidden = false;
-}
+// Nexora botunun ticket'a attığı pini (mesaj/embed) güzel şekilde çizer.
+function acNexoraPiniCiz(pin) {
+    const parcalar = [];
+    parcalar.push(`<div class="scanStatus" style="margin-bottom:8px;">`
+        + `Nexora pini${pin.yazar ? ` · <b>${escapeHtml(pin.yazar)}</b>` : ''}`
+        + `${pin.zaman ? ` · ${escapeHtml(formatDate(pin.zaman))}` : ''}`
+        + `${pin.pinli ? ' · 📌 sabitlenmiş' : ''}</div>`);
 
-// Sonucu Getir yalnızca AC kendi API'sini girmişse ve (ticket seçili ya da
-// elle ID varsa) açık olur.
-function acSonucBtnGuncelle() {
-    const hedefVar = Boolean(acSecili) || acNexoraSonucId.value.trim().length > 0;
-    acNexoraSonucBtn.disabled = !(acNexoraApiAyarli && hedefVar);
-}
-acNexoraSonucId.addEventListener('input', acSonucBtnGuncelle);
-
-// AC'nin kendi Nexora API durumunu yükle (panelde bağlı olunca çağrılır).
-async function acNexoraApiYukle() {
-    try {
-        const res = await fetch('/api/ac/nexora-api');
-        if (res.status === 401) { showLogin(); return; }
-        const d = await okuJson(res);
-        if (!d.ok) return;
-        acNexoraApiAyarli = Boolean(d.ayarli) || Boolean(d.genelVar);
-        if (d.ayarli) {
-            acNexoraApiDurum.innerHTML = '<span style="color:var(--ok,#3ba55d)">ayarlı ✓</span>';
-            if (document.activeElement !== acNexoraApiUrl) acNexoraApiUrl.value = d.url || '';
-            acNexoraApiKey.placeholder = 'API key (değiştirmezsen boş bırak)';
-            acNexoraApiSil.hidden = false;
-        } else if (d.genelVar) {
-            acNexoraApiDurum.textContent = 'ortak (varsayılan) API kullanılıyor — istersen kendininkini gir';
-            acNexoraApiSil.hidden = true;
-        } else {
-            acNexoraApiDurum.innerHTML = '<span style="color:var(--attn)">ayarlı değil — API adresini ve key\'ini gir</span>';
-            acNexoraApiSil.hidden = true;
-        }
-        acSonucBtnGuncelle();
-    } catch (error) { /* sessizce geç */ }
-}
-
-acNexoraApiKaydet.addEventListener('click', async () => {
-    const url = acNexoraApiUrl.value.trim();
-    const key = acNexoraApiKey.value.trim();
-    if (!/^https?:\/\/.+/i.test(url)) {
-        acNexoraApiMsg.textContent = 'Geçerli bir API adresi gir (http/https).';
-        return;
+    if (pin.icerik && pin.icerik.trim()) {
+        parcalar.push(`<div style="white-space:pre-wrap; word-break:break-word; margin-bottom:8px;">${escapeHtml(pin.icerik)}</div>`);
     }
-    acNexoraApiKaydet.disabled = true;
-    acNexoraApiMsg.textContent = 'Kaydediliyor...';
-    try {
-        const res = await fetch('/api/ac/nexora-api', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, key }),
+
+    (pin.embedler || []).forEach((e) => {
+        const ic = [];
+        if (e.baslik) {
+            ic.push(e.url
+                ? `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener" style="font-weight:700;">${escapeHtml(e.baslik)}</a>`
+                : `<b>${escapeHtml(e.baslik)}</b>`);
+        }
+        if (e.aciklama) ic.push(`<div style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(e.aciklama)}</div>`);
+        (e.alanlar || []).forEach((f) => {
+            ic.push(`<div style="margin-top:4px;"><b>${escapeHtml(f.ad)}</b><br>`
+                + `<span style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(f.deger)}</span></div>`);
         });
-        if (res.status === 401) { showLogin(); return; }
-        const d = await okuJson(res);
-        if (!d.ok) { acNexoraApiMsg.textContent = d.error; return; }
-        acNexoraApiKey.value = '';   // key ekranda asılı kalmasın
-        acNexoraApiMsg.textContent = 'Kaydedildi ✓';
-        acNexoraApiYukle();
-    } catch (error) {
-        acNexoraApiMsg.textContent = `Hata: ${error.message}`;
-    } finally {
-        acNexoraApiKaydet.disabled = false;
-    }
-});
+        if (e.gorsel) ic.push(`<img src="${escapeHtml(e.gorsel)}" alt="" style="max-width:100%; max-height:400px; margin-top:8px; border-radius:8px;">`);
+        if (e.kucukGorsel) ic.push(`<img src="${escapeHtml(e.kucukGorsel)}" alt="" style="max-height:80px; margin-top:6px; border-radius:6px;">`);
+        parcalar.push(`<div style="border-left:3px solid var(--accent); padding:8px 10px; margin:6px 0; background:rgba(255,255,255,.02); border-radius:6px;">${ic.join('')}</div>`);
+    });
 
-acNexoraApiSil.addEventListener('click', async () => {
-    if (!window.confirm('Kendi Nexora API bilgin silinsin mi?')) return;
+    (pin.ekler || []).forEach((url) => {
+        if (/\.(png|jpe?g|gif|webp|bmp)(\?\S*)?$/i.test(url)) {
+            parcalar.push(`<img src="${escapeHtml(url)}" alt="" style="max-width:100%; max-height:400px; margin-top:6px; border-radius:8px;">`);
+        } else {
+            parcalar.push(`<div><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a></div>`);
+        }
+    });
+
+    if (parcalar.length === 1) parcalar.push('<div class="muted">(Pin boş görünüyor.)</div>');
+    acNexoraPinKutu.innerHTML = parcalar.join('');
+    acNexoraPinKutu.hidden = false;
+}
+
+acNexoraPinBtn.addEventListener('click', async () => {
+    if (!acSecili) { acNexoraPinMsg.textContent = 'Önce bir ticket seç.'; return; }
+    acNexoraPinBtn.disabled = true;
+    acNexoraPinMsg.textContent = 'Nexora pini getiriliyor...';
     try {
-        await fetch('/api/ac/nexora-api', { method: 'DELETE' });
-        acNexoraApiUrl.value = '';
-        acNexoraApiKey.value = '';
-        acNexoraApiMsg.textContent = 'Silindi.';
-        acNexoraApiYukle();
-    } catch (error) {
-        acNexoraApiMsg.textContent = `Hata: ${error.message}`;
-    }
-});
-
-acNexoraSonucBtn.addEventListener('click', async () => {
-    const elleId = acNexoraSonucId.value.trim();
-    if (!elleId && !acSecili) { acNexoraSonucMsg.textContent = 'Ticket seç ya da Discord ID gir.'; return; }
-
-    acNexoraSonucBtn.disabled = true;
-    acNexoraSonucMsg.textContent = 'Nexora sonucu getiriliyor...';
-    try {
-        const res = await fetch('/api/ac/nexora-sonuc', {
+        const res = await fetch('/api/ac/nexora-pin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ kanalId: acSecili ? acSecili.id : '', discordId: elleId }),
+            body: JSON.stringify({ kanalId: acSecili.id }),
         });
         if (res.status === 401) { showLogin(); return; }
         const d = await okuJson(res);
         if (!d.ok) {
-            acNexoraSonucMsg.textContent = d.error;
+            acNexoraPinMsg.textContent = d.error;
             if (/yeniden bağla/i.test(d.error)) acDurumYukle();
             return;
         }
-        acNexoraSonucMsg.textContent = 'Sonuç geldi.';
-        acNexoraSonucCiz(d.discordId, d.sonuc);
+        acNexoraPinMsg.textContent = 'Pin geldi.';
+        acNexoraPiniCiz(d.pin);
     } catch (error) {
-        acNexoraSonucMsg.textContent = `Hata: ${error.message}`;
+        acNexoraPinMsg.textContent = `Hata: ${error.message}`;
     } finally {
-        acNexoraSonucBtn.disabled = false;
+        acNexoraPinBtn.disabled = false;
     }
 });
 

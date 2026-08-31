@@ -251,23 +251,22 @@ kategorisindeki ticket'lara işlem yapması için. Otomatik hiçbir şey **kendi
 başına** olmaz: her işlem bir butona basılarak tetiklenir.
 
 Akış: AC kendi token'ını bir kez bağlar → sekmede kategorideki açık ticket'lar
-listelenir ve **yeni bir ticket açıldığında liste anlık güncellenir** → AC bir
-ticket'ı seçer → **Nexora At** menüsünden işlem yapar. Hepsi AC'nin **kendi
-hesabından** gider:
+listelenir ve **yeni bir ticket açıldığında liste anlık güncellenir**; ayrıca
+panel açıkken **bildirim sesi** (hoş bir "ding-dong", Web Audio ile üretilir,
+dosya yok) çalar → AC bir ticket'ı seçer → **Nexora At** menüsünden işlem yapar.
+Hepsi AC'nin **kendi hesabından** gider:
 
 - **⚡ Nexora At (/nexorapin)** - seçili ticket kanalında, AC'nin kendi
   hesabından `/nexorapin` slash komutunu (`1543548857529401404`) çalıştırır.
   Her AC kendi hesabıyla ayrı ayrı atar; panelin ana botu araya girmez.
 - **📸 SS iste** - altındaki hazır mesajı (*"Uygulamayı çalıştırıp tam ekran ss
   atabilir misin?"*) tek tıkla seçili ticket'a AC'nin kendi hesabından gönderir.
-- **🔎 Sonucu Getir** - seçili ticket'ı açan kişinin (ya da elle girilen bir
-  Discord ID'nin) sonucunu **Nexora API**'sinden çeker ve **tüm cevabı** AC'nin
-  ekranına basar (iç içe alanlar, linkler ve görsel URL'leri dahil). **Her AC
-  KENDİ API'sini** panelden girer (URL + key; herkes ayrı, ortak değil). Key
-  sunucuda token'larla aynı şekilde **şifreli** (`ac-nexora-api.json`) saklanır
-  ve **bir daha ekrana/istemciye gitmez**. Kendi API'sini girmeyen AC için,
-  varsa `config.env`'deki opsiyonel ortak `NEXORA_API_URL`/`NEXORA_API_KEY`
-  fallback olur; o da yoksa buton "önce kendi API'ni gir" der.
+- **🔎 Nexora Pinini Görüntüle** - **Nexora At** ile `/nexorapin` çalıştıktan
+  sonra, Nexora botunun ticket'a attığı **pini** (mesaj/embed) kanaldan çekip
+  AC'nin ekranına basar (içerik, embed başlık/alanlar, görseller). Harici API
+  yok - doğrudan Discord mesajı okunur (panelin ana botu ile). Önce **pinli**
+  mesajlara, sonra son 50 mesaja bakıp Nexora botunun (`1518636692171522209`)
+  en yeni mesajını gösterir.
 - **Mesaj (isteğe bağlı)** - AC serbest bir metin yazıp **Gönder**'e basarsa, o
   metin ticket'a yine kendi hesabından düşer.
 

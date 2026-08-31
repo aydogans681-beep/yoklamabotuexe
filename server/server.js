@@ -2263,6 +2263,52 @@ async function nexoraApiSorgula(discordId, apiUrl, apiKey) {
     return veri;
 }
 
+// Nexora botunun ticket'a attigi PINI kanaldan cekip dondurur. /nexorapin
+// calisinca Nexora botu kanala bir mesaj/embed atiyor (ve pinliyor olabilir);
+// bunu panelin ANA botuyla okuyoruz (ticket kanallarina erisimi var). Once
+// pinli mesajlar, sonra son mesajlar arasinda Nexora botunun mesaji araniyor.
+function nexoraPiniBicimle(mesaj, pinli) {
+    return {
+        yazar: mesaj.author ? (mesaj.author.tag || mesaj.author.username) : null,
+        icerik: mesaj.content || '',
+        zaman: mesaj.createdTimestamp || null,
+        pinli: Boolean(pinli),
+        embedler: (mesaj.embeds || []).map((e) => ({
+            baslik: e.title || '',
+            aciklama: e.description || '',
+            url: e.url || '',
+            alanlar: (e.fields || []).map((f) => ({ ad: f.name, deger: f.value })),
+            gorsel: (e.image && e.image.url) || '',
+            kucukGorsel: (e.thumbnail && e.thumbnail.url) || '',
+        })),
+        ekler: mesaj.attachments ? [...mesaj.attachments.values()].map((a) => a.url) : [],
+    };
+}
+async function nexoraPiniGetir(kanalId) {
+    let kanal = client.channels.cache.get(kanalId);
+    if (!kanal) { try { kanal = await client.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+        throw new Error('Kanal ticket kategorisinde değil.');
+    }
+    const nexoraninMi = (m) => m && m.author && m.author.id === NEXORA_BOT_ID;
+
+    // 1) Pinli mesajlar arasinda Nexora botununki var mi?
+    try {
+        const pinli = await kanal.messages.fetchPinned();
+        const p = [...pinli.values()].filter(nexoraninMi)
+            .sort((a, b) => b.createdTimestamp - a.createdTimestamp)[0];
+        if (p) return nexoraPiniBicimle(p, true);
+    } catch (error) { /* pin okunamadi - son mesajlara bak */ }
+
+    // 2) Son 50 mesaj icinde Nexora botunun en yeni mesaji.
+    const son = await kanal.messages.fetch({ limit: 50 });
+    const m = [...son.values()].filter(nexoraninMi)
+        .sort((a, b) => b.createdTimestamp - a.createdTimestamp)[0];
+    if (m) return nexoraPiniBicimle(m, false);
+
+    throw new Error('Bu ticket\'ta Nexora pini bulunamadı (önce "Nexora At" ile /nexorapin çalıştır).');
+}
+
 
 // ============================================================================
 // --- LOG İŞARETLERİ (Şüpheli Log) ---
@@ -5272,6 +5318,23 @@ app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
     acHizIsle(kullanici);
     addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})${sonuc.yanit ? '' : ' [bot yanıtı yok]'}`, req);
     res.json({ ok: true, kanal: sonuc.kanal, yanit: Boolean(sonuc.yanit) });
+});
+
+// Nexora Pinini Görüntüle: Nexora botunun ticket'a attığı pini kanaldan çekip
+// AC'ye gösterir (API yok - doğrudan Discord mesajı).
+app.post('/api/ac/nexora-pin', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
+    let pin;
+    try {
+        pin = await nexoraPiniGetir(kanalId);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+    addAudit('ac-nexora-pin-goruntule', kullanici, `${kanalId}`, req);
+    res.json({ ok: true, pin });
 });
 
 // Nexora sonucu: seçili ticket'ı açan kişinin (veya elle girilen) Discord ID'si
