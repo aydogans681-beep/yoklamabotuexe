@@ -293,9 +293,10 @@ kendiliğinden üretiliyor.
 
 1. Ayarlar > Panel Hesapları'ndan yeni hesap açarken **tip olarak AC** seç.
    (Yetkili / AC anahtarı formda.) AC hesabı yalnızca **Nexora Panel** ve
-   **Felox** sekmesini görür - yoklama, yetkililer, ayarlar, diğer log
-   kanalları vb. hiçbirine erişemez, izin ayarlamana gerek yok. (Felox
-   sekmesinde yalnızca **Felox** kanalı görünür; Şüpheli Log dahil değildir.)
+   **Felox** sekmesini görür - yoklama, yetkililer, ayarlar, TX/Mute logları
+   vb. hiçbirine erişemez, izin ayarlamana gerek yok. (Felox sekmesinde
+   Connections/Ban/Unban/Weapons/Silent kanalları görünür; **Şüpheli Log dahil
+   değildir**.)
    Her AC'nin **kendi ayrı hesabı** olur ve **kendi token'ını** girer.
 2. AC bu hesapla giriş yapar ve **tam ekran bir "Token Gir" kapısıyla**
    karşılaşır. Token bağlamadan panelde **hiçbir şey yapamaz** - kenar çubuğu,
@@ -486,12 +487,27 @@ aralığı ve kişi başına liste hiçbir ek kod olmadan çalışır.
 ### Mute Logları ve Felox
 
 TX Logs ile **aynı makine**, ayrı sekmeler: Mute Logları (Mute + Unmute) ve
-Felox (Felox + Şüpheli Log). Üç sekme de `createLogTab()` fabrikasından
-üretiliyor, yani sayfalama/arama/canlı güncelleme tek yerde duruyor ve her sekme
-kendi seçimini bağımsız koruyor. Yeni bir grup eklemek `LOG_GROUPS`'a bir satır,
-`LOG_CHANNELS`'a kanal(lar) ve arayüzde bir sekme + bir `createLogTab()` çağrısı
-demek; **var olan bir gruba** kanal eklemek yalnızca `LOG_CHANNELS`'a bir satır -
-menü kendiliğinden çıkıyor.
+Felox. Üç sekme de `createLogTab()` fabrikasından üretiliyor, yani
+sayfalama/arama/canlı güncelleme tek yerde duruyor ve her sekme kendi seçimini
+bağımsız koruyor. Yeni bir grup eklemek `LOG_GROUPS`'a bir satır, `LOG_CHANNELS`'a
+kanal(lar) ve arayüzde bir sekme + bir `createLogTab()` çağrısı demek; **var olan
+bir gruba** kanal eklemek yalnızca `LOG_CHANNELS`'a bir satır - menü kendiliğinden
+çıkıyor.
+
+**Felox alt sekmeleri:** Felox sekmesinde şu kanallar (menüde alt sekme olarak):
+
+| Alt sekme | Kanal | Not |
+|---|---|---|
+| Felox Connections Log | `1513234125337919610` | tam geçmiş |
+| Ban Webhook | `1513234198918598706` | tam geçmiş |
+| Unban Webhook | `1513234220011749607` | tam geçmiş |
+| Weapons Webhook | `1513234241658556702` | tam geçmiş |
+| Silent Log | `1525840429843484802` | **hızlı çekim** (`ilkCekimSiniri: 200`) |
+| Şüpheli Log | `1522577961558085742` | son 100 + işaretleme (AC görmez) |
+
+Silent Log yüksek hacimli olabildiği için geçmişin tamamı inmez: **en yeni 200
+mesaj** hemen gelir (sekme anında açılır), sonrası canlı eklenir. AC hesapları
+Şüpheli Log dışındaki tüm Felox kanallarını görür.
 
 #### Şüpheli Log (Felox sekmesinde)
 

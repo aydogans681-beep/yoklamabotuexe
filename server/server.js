@@ -275,12 +275,16 @@ function kullaniciYetkileri(username) {
             loglar: LOG_CHANNELS.map((c) => c.key),
         };
     }
-    // AC hesabi: dis kisi. YALNIZCA Nexora Panel ve Felox kanalini gorur -
-    // yoklama, yetkililer, ayarlar, diger log kanallari vb. hicbirine erisemez.
+    // AC hesabi: dis kisi. YALNIZCA Nexora Panel ve Felox sekmesini gorur -
+    // yoklama, yetkililer, ayarlar, TX/Mute loglari vb. hicbirine erisemez.
     // Izinleri elle degistirilemez; tip 'ac' oldugu surece sabit.
-    // (Felox sekmesi + yalnizca 'feloxlog' kanali; Supheli Log dahil DEGIL.)
+    // Felox sekmesinde tum Felox anticheat log alt kanallari acik; Supheli Log
+    // (panelin isaretleme araci) AC'ye VERILMEZ.
     if (u.tip === 'ac') {
-        return { admin: false, tip: 'ac', sekmeler: ['ticketmesaj', 'felox'], loglar: ['feloxlog'] };
+        return {
+            admin: false, tip: 'ac', sekmeler: ['ticketmesaj', 'felox'],
+            loglar: ['feloxconn', 'feloxban', 'feloxunban', 'feloxweapons', 'feloxsilent'],
+        };
     }
     return {
         admin: false, tip: 'yetkili',
@@ -476,7 +480,15 @@ const LOG_CHANNELS = [
     { key: 'para', label: 'Para Verme', channelId: '1500941817242452020', group: 'tx' },
     { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute' },
     { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute' },
-    { key: 'feloxlog', label: 'Felox', channelId: '1513234220011749607', group: 'felox' },
+    // Felox alt sekmeleri (hepsi 'felox' grubunda, Felox sekmesinde menü olur).
+    { key: 'feloxconn', label: 'Felox Connections Log', channelId: '1513234125337919610', group: 'felox' },
+    { key: 'feloxban', label: 'Ban Webhook', channelId: '1513234198918598706', group: 'felox' },
+    { key: 'feloxunban', label: 'Unban Webhook', channelId: '1513234220011749607', group: 'felox' },
+    { key: 'feloxweapons', label: 'Weapons Webhook', channelId: '1513234241658556702', group: 'felox' },
+    // Silent Log: cok yuksek hacimli olabilir. "Hizli ceksin" istendi:
+    // gecmisin TAMAMI inmiyor, yalnizca en yeni 200 mesaj hemen geliyor,
+    // sonrasi canli ekleniyor (messageCreate). Boylece sekme aninda aciliyor.
+    { key: 'feloxsilent', label: 'Silent Log', channelId: '1525840429843484802', group: 'felox', ilkCekimSiniri: 200 },
     // Supheli Log: bu kanalda gecmisin TAMAMI inmiyor, yalnizca en yeni 100
     // mesaj. Sonrasi canli ekleniyor (messageCreate). Ek Log ile ayni kalip.
     { key: 'supheli', label: 'Şüpheli Log', channelId: '1522577961558085742', group: 'felox', ilkCekimSiniri: 100, isaretTakibi: true },
