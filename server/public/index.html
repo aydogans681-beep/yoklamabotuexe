@@ -583,6 +583,29 @@
                             </div>
                         </div>
 
+                        <!-- Oyuncuya DM: /dm-player id: message: - AC'nin kendi
+                             hesabından, seçili ticket kanalında çalıştırılır; bot
+                             hedef oyuncuya DM atar. -->
+                        <div class="card" style="margin:0 0 12px;">
+                            <h2>Oyuncuya DM</h2>
+                            <p class="card-desc">
+                                <code>/dm-player</code> ile bir oyuncuya <b>senin hesabından</b> bot
+                                üzerinden DM attırır. Seçili ticket kanalında çalışır.
+                            </p>
+                            <div class="toolbar" style="margin-bottom:8px;">
+                                <input type="text" class="text-search" id="acDmId"
+                                       placeholder="Oyuncu Discord ID (17-20 hane)" spellcheck="false"
+                                       inputmode="numeric" style="max-width:280px;">
+                            </div>
+                            <textarea id="acDmMesaj" class="text-search" rows="3"
+                                      placeholder="Oyuncuya gidecek DM mesajı..."
+                                      style="width:100%; resize:vertical; line-height:1.6;"></textarea>
+                            <div class="toolbar" style="margin-top:11px;">
+                                <button id="acDmBtn" disabled>✉️ DM Gönder</button>
+                                <span class="scanStatus" id="acDmMsg"></span>
+                            </div>
+                        </div>
+
                         <!-- İkincil: serbest metin mesaj (isteğe bağlı). -->
                         <div class="card" style="margin:0;">
                             <h2>Mesaj (isteğe bağlı)</h2>

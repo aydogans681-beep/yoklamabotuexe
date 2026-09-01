@@ -2101,6 +2101,10 @@ const NEXORA_BOT_ID = '1518636692171522209';     // komutun sahibi bot
 // "Kirli" sonucunun yazilacagi SABIT kanal (ticket disinda, merkezi sonuc/log
 // kanali). AC sadece bu kanala yazabilir - keyfi kanal degil (guvenlik).
 const NEXORA_SONUC_KANALI = '1473372352078286951';
+// /dm-player id: message:  -> oyuncuya bot uzerinden DM attiran slash komut.
+// Komut ID verilmedi, ada + bot ID'sine gore cozuluyor.
+const DM_BOT_ID = '1470758770790498377';         // /dm-player komutunun sahibi bot
+const DM_KOMUT_ADI = 'dm-player';
 
 // AC bir ticket'ta bu kelimeyi yazinca otomatik /nexorapin + SS iste tetiklenir.
 const AC_KONTROL_KELIMESI = 'kontrol';
@@ -2290,6 +2294,72 @@ async function acNexoraGonder(username, kanalId) {
 
     console.log(`[Nexora] ${username} → #${kanal.name}: /nexorapin gönderildi.`);
     return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+}
+
+// /dm-player komutunu guild dizininde bulur (ad + bot ID). nexoraKomutunuCoz'un
+// aynisi - ayri onbellek. Komut ID verilmedigi icin yalnizca ada/bota gore.
+let dmKomutCache = null;   // { id, name, application_id, options, zaman }
+async function dmKomutunuCoz(acClient, guildId) {
+    const simdi = Date.now();
+    if (dmKomutCache && simdi - dmKomutCache.zaman < NEXORA_KOMUT_CACHE_MS) {
+        return dmKomutCache;
+    }
+    const data = await acClient.api.guilds[guildId]['application-command-index'].get();
+    const komutlar = (data && data.application_commands) || [];
+    const ham = komutlar.find((c) => c.name === DM_KOMUT_ADI && c.application_id === DM_BOT_ID && c.type === 1)
+        || komutlar.find((c) => c.name === DM_KOMUT_ADI && c.type === 1);
+    if (!ham) {
+        throw new Error(`/${DM_KOMUT_ADI} komutu sunucuda bulunamadı (bot ekli ve komut yayında mı?).`);
+    }
+    dmKomutCache = { id: ham.id, name: ham.name, application_id: ham.application_id, options: ham.options || [], zaman: simdi };
+    return dmKomutCache;
+}
+
+// sendSlash argümanları komut opsiyon SIRASINA göre verilmeli. Komutun opsiyon
+// adlarına bakıp id -> oyuncuId, message -> mesaj eşliyoruz; opsiyon bilgisi
+// yoksa kullanıcının verdiği sıraya (id, message) düşüyoruz.
+function dmArgumanlariKur(komut, oyuncuId, mesaj) {
+    const opts = Array.isArray(komut.options)
+        ? komut.options.filter((o) => o.type !== 1 && o.type !== 2)   // alt komut/grup değil
+        : [];
+    if (!opts.length) return [oyuncuId, mesaj];
+    return opts.map((o) => {
+        const ad = String(o.name || '').toLowerCase();
+        if (ad.includes('id') || ad.includes('user') || ad.includes('oyuncu') || ad.includes('kullan')) return oyuncuId;
+        return mesaj;   // message/mesaj/msg/text vb.
+    });
+}
+
+// AC'nin kendi hesabından seçili ticket kanalında /dm-player id: message:
+// çalıştırır (bot oyuncuya DM atar). acNexoraGonder ile aynı akış, tek fark:
+// iki opsiyonlu komut.
+async function acDmPlayerGonder(username, kanalId, oyuncuId, mesaj) {
+    const acClient = await acGatewayAl(username);
+
+    const guild = acClient.guilds.cache.get(GUILD_ID) || await acClient.guilds.fetch(GUILD_ID);
+    if (!guild) throw new Error('Sunucu AC hesabında görünmüyor (AC sunucuda mı?).');
+
+    let kanal = guild.channels.cache.get(kanalId);
+    if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+        throw new Error('Kanal ticket kategorisinde değil.');
+    }
+
+    const ham = await dmKomutunuCoz(acClient, guild.id);
+    const args = dmArgumanlariKur(ham, oyuncuId, mesaj);
+    console.log(`[DM] ${username} → #${kanal.name}: /${ham.name} id=${oyuncuId} (${args.length} arg)`);
+
+    if (typeof kanal.sendSlash !== 'function') {
+        throw new Error('Bu istemci sürümünde slash komut gönderilemiyor.');
+    }
+    try {
+        await kanal.sendSlash(ham.application_id, ham.name, ...args);
+    } catch (error) {
+        dmKomutCache = null;   // bayat olabilir - yeniden çöz
+        throw new Error(`Komut gönderilemedi: ${error.message}`);
+    }
+    console.log(`[DM] ${username} → #${kanal.name}: /${ham.name} gönderildi.`);
+    return { kanal: kanal.name, oyuncuId, hesap: acClient.user ? acClient.user.tag : null };
 }
 
 // AC kategorisinde ticket acilinca otomatik karsilamayi HANGI AC hesabi atsin?
@@ -5629,6 +5699,37 @@ app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
     acHizIsle(kullanici);
     addAudit('ac-nexora-pin', kullanici, `${sonuc.kanal} (${kanalId})`, req);
     res.json({ ok: true, kanal: sonuc.kanal });
+});
+
+// Oyuncuya DM: seçili ticket kanalında AC'nin kendi hesabından /dm-player
+// id: message: çalıştırır (bot oyuncuya DM atar).
+app.post('/api/ac/dm-player', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    const oyuncuId = String((req.body && req.body.oyuncuId) || '').trim();
+    const mesaj = String((req.body && req.body.mesaj) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket (kanal seç).' });
+    if (!/^\d{17,20}$/.test(oyuncuId)) return res.json({ ok: false, error: 'Geçersiz oyuncu ID (17-20 haneli Discord ID).' });
+    if (!mesaj) return res.json({ ok: false, error: 'Mesaj boş.' });
+    if (mesaj.length > AC_MESAJ_TAVANI) {
+        return res.json({ ok: false, error: `Mesaj çok uzun (en fazla ${AC_MESAJ_TAVANI} karakter).` });
+    }
+
+    const hizHatasi = acHizKontrol(kullanici);
+    if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
+
+    let sonuc;
+    try {
+        sonuc = await acDmPlayerGonder(kullanici, kanalId, oyuncuId, mesaj);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+
+    acHizIsle(kullanici);
+    addAudit('ac-dm-player', kullanici, `oyuncu=${oyuncuId} (#${sonuc.kanal})`, req);
+    res.json({ ok: true, kanal: sonuc.kanal, oyuncuId });
 });
 
 // Gateway'i ONCEDEN isit: AC bir ticket secince frontend bunu cagirir (bekletmeden).

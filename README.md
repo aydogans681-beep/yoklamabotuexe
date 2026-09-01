@@ -269,6 +269,11 @@ Hepsi AC'nin **kendi hesabından** gider:
 - **Ticket Mesajları** - seçili ticket'a gönderilen **son 50 mesajı** panelde
   gösterir (yazar, zaman, içerik ve görsel/GIF ekleri satır içi). Ticket seçilince
   otomatik yüklenir; **↻ Yenile** ile güncellenir. Panelin ana botu okur.
+- **✉️ Oyuncuya DM (/dm-player)** - bir oyuncuya **AC'nin kendi hesabından** bot
+  üzerinden DM attırır. AC, oyuncunun **Discord ID**'sini ve **mesajı** girer;
+  buton seçili ticket kanalında `/dm-player id: message:` slash komutunu
+  (`1470758770790498377` botu) çalıştırır. `/nexorapin` ile aynı gateway akışı;
+  komut opsiyonları (id/message) sunucudan çözülüp doğru sırada gönderilir.
 - **🔎 Nexora Pinini Görüntüle** - **Nexora At** ile `/nexorapin` çalıştıktan
   sonra, Nexora botunun ticket'a attığı **pini** (mesaj/embed) kanaldan çekip
   AC'nin ekranına basar (içerik, embed başlık/alanlar, görseller). Harici API
@@ -854,6 +859,7 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `GET /api/ac/ticketlar` | AC kategorisindeki açık ticket'lar |
 | `POST /api/ac/gonder` | Seçili ticket'a AC'nin kendi hesabından mesaj |
 | `POST /api/ac/nexora` | Seçili ticket'ta AC'nin kendi hesabından `/nexorapin` slash komutu |
+| `POST /api/ac/dm-player` | AC'nin kendi hesabından `/dm-player id: message:` - oyuncuya bot üzerinden DM |
 | `POST /api/ac/hazirla` | Seçili ticket için AC gateway oturumunu önceden ısıtır (hız) |
 | `POST /api/ac/nexora-pin` | Nexora botunun ticket'a attığı pini kanaldan çekip döner |
 | `POST /api/ac/mesajlar` | Seçili ticket'ın son 50 mesajını (yazar/içerik/ek) döner |

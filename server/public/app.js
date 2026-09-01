@@ -4049,6 +4049,10 @@ const acGifBtn = document.getElementById('acGifBtn');
 const acMesajKutu = document.getElementById('acMesajKutu');
 const acMesajYenile = document.getElementById('acMesajYenile');
 const acMesajDurum = document.getElementById('acMesajDurum');
+const acDmId = document.getElementById('acDmId');
+const acDmMesaj = document.getElementById('acDmMesaj');
+const acDmBtn = document.getElementById('acDmBtn');
+const acDmMsg = document.getElementById('acDmMsg');
 const acTetikKelime = document.getElementById('acTetikKelime');
 const acTetikKaydet = document.getElementById('acTetikKaydet');
 const acTetikMsg = document.getElementById('acTetikMsg');
@@ -4419,11 +4423,13 @@ function acTicketleriCiz() {
             if (acKirliBtn) acKirliBtn.disabled = false;
             if (acGifBtn) acGifBtn.disabled = false;
             if (acMesajYenile) acMesajYenile.disabled = false;
+            if (acDmBtn) acDmBtn.disabled = false;
             acGonderMsg.textContent = '';
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
             acNexoraPinMsg.textContent = '';
             if (acSonucMsg) acSonucMsg.textContent = '';
+            if (acDmMsg) acDmMsg.textContent = '';
             acMesajlariYukle();   // seçilen ticket'ın mesajlarını göster
             // Gateway'i şimdiden ısıt: "Nexora At"a basınca "bağlanıyor" beklemesi
             // olmasın (ticket seçimi ile tuşa basma arasına yayılır).
@@ -4676,6 +4682,39 @@ if (acGifBtn) {
             acSsMsg.textContent = `Hata: ${error.message}`;
         } finally {
             acGifBtn.disabled = false;
+        }
+    });
+}
+
+// --- Oyuncuya DM: /dm-player id: message: (seçili ticket kanalında) ---
+if (acDmBtn) {
+    acDmBtn.addEventListener('click', async () => {
+        if (!acSecili) { acDmMsg.textContent = 'Önce bir ticket seç.'; return; }
+        const oyuncuId = acDmId.value.trim();
+        const mesaj = acDmMesaj.value.trim();
+        if (!/^\d{17,20}$/.test(oyuncuId)) { acDmMsg.textContent = 'Geçerli bir oyuncu ID gir (17-20 hane).'; return; }
+        if (!mesaj) { acDmMsg.textContent = 'Mesaj boş.'; return; }
+        acDmBtn.disabled = true;
+        acDmMsg.textContent = 'DM gönderiliyor...';
+        try {
+            const res = await fetch('/api/ac/dm-player', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kanalId: acSecili.id, oyuncuId, mesaj }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) {
+                acDmMsg.textContent = d.error;
+                if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+                return;
+            }
+            acDmMsg.textContent = `✉️ DM gönderildi → ${d.oyuncuId}`;
+            acDmMesaj.value = '';
+        } catch (error) {
+            acDmMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acDmBtn.disabled = false;
         }
     });
 }
