@@ -350,7 +350,28 @@ function requireAdmin(req, res, next) {
 // Message: sendSlashCommand "message instanceof Message" kontrolu yapiyor,
 // bu yuzden komutu ID ile kendimiz gonderirken ayni sinifi kullanmamiz gerek.
 // Paketin disa actigi Message ile ic modulunki ayni referans (dogrulandi).
-const { Client, Message: SlashMesaji } = require('discord.js-selfbot-v13');
+const { Client, Message: SlashMesaji, Options: DjsOptions } = require('discord.js-selfbot-v13');
+
+// AC selfbot'lari icin AGRESIF onbellek siniri. Bir kullanici hesabi 83 sunucuda
+// devasa presence/uye/mesaj verisi biriktiriyor; keepalive ile 15 baglanti acik
+// tutulunca bu bellek 2 GB'i asip "JavaScript heap out of memory" ile cokturuyordu
+// ("site durmadan dusuyor"). AC client YALNIZCA guild+kanal+slash komut icin
+// lazim - agir yoneticiler sifirlaniyor (guild/kanal/rol default kaliyor).
+const AC_CACHE_AYARI = DjsOptions.cacheWithLimits({
+    MessageManager: 0,
+    PresenceManager: 0,
+    GuildMemberManager: { maxSize: 0, keepOverLimit: (m) => m.id === (m.client && m.client.user && m.client.user.id) },
+    UserManager: { maxSize: 0, keepOverLimit: (u) => u.id === (u.client && u.client.user && u.client.user.id) },
+    ThreadManager: 0,
+    VoiceStateManager: 0,
+    ReactionManager: 0,
+    ReactionUserManager: 0,
+    GuildStickerManager: 0,
+    GuildEmojiManager: 0,
+    GuildScheduledEventManager: 0,
+    GuildBanManager: 0,
+    GuildInviteManager: 0,
+});
 
 try {
     // eslint-disable-next-line global-require
@@ -2223,7 +2244,7 @@ async function acGatewayAl(username) {
     const token = acCoz(kayit.paket);
     if (!token) throw new Error('Kayıtlı token çözülemedi, hesabını yeniden bağla.');
 
-    const acClient = new Client({ checkUpdate: false });
+    const acClient = new Client({ checkUpdate: false, makeCache: AC_CACHE_AYARI });
     acClient.on('error', () => {});   // sessiz: hatalar hazirlik promise'inde yakalaniyor
 
     const hazirlik = new Promise((resolve, reject) => {

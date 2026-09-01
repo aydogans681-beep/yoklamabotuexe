@@ -762,6 +762,14 @@ pm2 save
 Belleği yükseltmek taramayı **hızlandırmaz** - yavaşlık üye listesinden
 geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
 
+> **Bellek / "heap out of memory" çökmesi:** AC selfbot bağlantıları eskiden 83
+> sunucunun tüm presence/üye/mesaj verisini önbelleğe alıyor, keepalive ile 15
+> bağlantı açık kalınca bellek 2 GB'ı aşıp `JavaScript heap out of memory` ile
+> çöküyordu. Artık AC client'lar **agresif önbellek sınırıyla** kuruluyor
+> (`AC_CACHE_AYARI` - presence/üye/mesaj önbelleği sıfır, yalnızca guild+kanal).
+> Ana bot etkilenmez. Bellek yine de tavana dayanırsa `ecosystem.config.js`
+> içindeki `--max-old-space-size` değeri yükseltilebilir.
+
 ## Tarih aralığı (Etkinlik ve Aktiflik)
 
 Her iki sekme de tek gün yerine **tarih aralığı** ile çalışabiliyor: aralıktaki
