@@ -1974,6 +1974,39 @@ function acNexoraApiAl(username) {
     }
 }
 
+// --- Per-AC tetik kelimesi ---
+// HER AC kendi otomatik tetik kelimesini belirler (gizli degil, duz saklanir).
+// O AC bir ticket'a bu kelimeyi yazinca (global "kontrol" gibi) otomatik
+// /nexorapin + SS iste calisir.
+const AC_TETIK_PATH = path.join(ROOT_DIR, 'ac-tetik-kelime.json');
+function acTetikleriYukle() {
+    try {
+        const ham = JSON.parse(fs.readFileSync(AC_TETIK_PATH, 'utf8'));
+        return (ham && typeof ham === 'object' && !Array.isArray(ham)) ? ham : {};
+    } catch (error) {
+        return {};
+    }
+}
+const acTetikKelimeleri = acTetikleriYukle();   // { username: 'kelime' }
+function acTetikleriYaz() {
+    try {
+        const gecici = `${AC_TETIK_PATH}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(acTetikKelimeleri));
+        fs.renameSync(gecici, AC_TETIK_PATH);
+    } catch (error) {
+        console.log(`[AC] Tetik kelimesi kaydedilemedi: ${error.message}`);
+    }
+}
+// Mesaji tetik kelimesiyle karsilastirmak icin normalize: bastaki !/. atilir,
+// trim, tr-kucuk harf.
+function acKelimeNormal(s) {
+    return String(s || '').trim().toLocaleLowerCase('tr').replace(/^[!/.]+/, '');
+}
+function acTetikKelimesiAl(username) {
+    const k = acTetikKelimeleri[username];
+    return (typeof k === 'string' && k.trim()) ? acKelimeNormal(k) : null;
+}
+
 // --- Discord REST ---
 // Gateway acmiyoruz; tek istek. Kutuphane de kullanmiyoruz - selfbot
 // kutuphanesi bir istemci nesnesi kurmak isterdi.
@@ -2741,10 +2774,14 @@ client.on('messageCreate', (message) => {
         if (panelSettings.acKontrolOtomatik
             && message.channel && message.channel.parentId === AC_TICKET_KATEGORI
             && message.author && !message.author.bot) {
-            const t = String(message.content || '').trim().toLocaleLowerCase('tr').replace(/^[!/.]+/, '');
-            if (t === AC_KONTROL_KELIMESI) {
-                const acUser = acKimlikBul(message.author.id);
-                if (acUser) acKontrolTetikle(acUser, message.channel).catch(() => {});
+            const acUser = acKimlikBul(message.author.id);   // yazan bagli bir AC mi?
+            if (acUser) {
+                const t = acKelimeNormal(message.content);
+                const ozel = acTetikKelimesiAl(acUser);      // o AC'nin kendi kelimesi
+                // Global "kontrol" ya da AC'nin kendi belirledigi kelime.
+                if (t === AC_KONTROL_KELIMESI || (ozel && t === ozel)) {
+                    acKontrolTetikle(acUser, message.channel).catch(() => {});
+                }
             }
         }
     } catch (error) {
@@ -5388,6 +5425,32 @@ app.post('/api/ac/hazirla', requireIzin('ticketmesaj'), (req, res) => {
         acGatewayAl(kullanici).catch((e) => console.log(`[Nexora] ${kullanici} isitma hatasi: ${e.message}`));
     }
     res.json({ ok: true });
+});
+
+// AC'nin kendi otomatik tetik kelimesi: durum.
+app.get('/api/ac/tetik-kelime', requireIzin('ticketmesaj'), (req, res) => {
+    const k = acTetikKelimeleri[req.session.username];
+    res.json({ ok: true, kelime: (typeof k === 'string' ? k : ''), global: AC_KONTROL_KELIMESI });
+});
+
+// AC kendi tetik kelimesini belirler/siler. Bos = sil (yalnizca global "kontrol"
+// kalir). Kelime tek parca, 2-30 karakter.
+app.post('/api/ac/tetik-kelime', requireIzin('ticketmesaj'), (req, res) => {
+    const kullanici = req.session.username;
+    const kelime = String((req.body && req.body.kelime) || '').trim();
+    if (!kelime) {
+        delete acTetikKelimeleri[kullanici];
+        acTetikleriYaz();
+        addAudit('ac-tetik-kelime', kullanici, '(silindi)', req);
+        return res.json({ ok: true, kelime: '' });
+    }
+    if (/\s/.test(kelime)) return res.json({ ok: false, error: 'Anahtar kelime tek parça olmalı (boşluk olamaz).' });
+    if (kelime.length < 2 || kelime.length > 30) return res.json({ ok: false, error: 'Anahtar kelime 2-30 karakter olmalı.' });
+    // "kontrol" zaten global; ayni kelimeyi ozel olarak yazmak gereksiz ama zararsiz.
+    acTetikKelimeleri[kullanici] = kelime;
+    acTetikleriYaz();
+    addAudit('ac-tetik-kelime', kullanici, kelime, req);
+    res.json({ ok: true, kelime });
 });
 
 // Nexora Pinini Görüntüle: Nexora botunun ticket'a attığı pini kanaldan çekip

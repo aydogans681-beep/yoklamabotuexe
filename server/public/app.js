@@ -4042,6 +4042,39 @@ const acSsMsg = document.getElementById('acSsMsg');
 const acNexoraPinBtn = document.getElementById('acNexoraPinBtn');
 const acNexoraPinMsg = document.getElementById('acNexoraPinMsg');
 const acNexoraPinKutu = document.getElementById('acNexoraPinKutu');
+const acTetikKelime = document.getElementById('acTetikKelime');
+const acTetikKaydet = document.getElementById('acTetikKaydet');
+const acTetikMsg = document.getElementById('acTetikMsg');
+
+async function acTetikKelimeYukle() {
+    try {
+        const res = await fetch('/api/ac/tetik-kelime');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (d.ok && document.activeElement !== acTetikKelime) acTetikKelime.value = d.kelime || '';
+    } catch (error) { /* sessizce geç */ }
+}
+if (acTetikKaydet) {
+    acTetikKaydet.addEventListener('click', async () => {
+        acTetikKaydet.disabled = true;
+        acTetikMsg.textContent = 'Kaydediliyor...';
+        try {
+            const res = await fetch('/api/ac/tetik-kelime', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kelime: acTetikKelime.value.trim() }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) { acTetikMsg.textContent = d.error; return; }
+            acTetikMsg.textContent = d.kelime ? `Kaydedildi: "${d.kelime}"` : 'Silindi (sadece "kontrol").';
+        } catch (error) {
+            acTetikMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acTetikKaydet.disabled = false;
+        }
+    });
+}
 
 // Nexora At menüsündeki hazır SS isteği mesajı. Tek yerden değiştirilsin diye
 // sabit; buton bunu seçili ticket'a AC'nin kendi hesabından gönderir.
@@ -4124,6 +4157,7 @@ async function acDurumYukle() {
             acHesapZaman.textContent = d.baglanmaZamani ? `· ${formatDate(d.baglanmaZamani)}` : '';
             acSayac.textContent = `en fazla ${d.saatlikTavan}/saat · gönderimler arası ${d.kisiAralikSn} sn`;
             acTicketleriYukle();
+            acTetikKelimeYukle();
         } else {
             acPanel.style.display = 'none';
             acBagliDegilKart.style.display = '';

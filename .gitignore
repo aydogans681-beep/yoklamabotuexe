@@ -25,6 +25,8 @@ ac-kilit.json
 ac-anahtar.key
 # GİZLİ: her AC'nin kendi Nexora API'si (URL + key, sifreli saklanir)
 ac-nexora-api.json
+# Her AC'nin kendi belirledigi otomatik tetik kelimesi - sunucuda olusur
+ac-tetik-kelime.json
 
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.

@@ -499,6 +499,22 @@
                                 <button class="secondary" id="acSsBtn" disabled>📸 SS iste</button>
                                 <span class="scanStatus" id="acSsMsg"></span>
                             </div>
+
+                            <!-- 3) Otomatik anahtar kelime: AC bunu bir ticket'a yazınca
+                                 (butona basmadan) otomatik /nexorapin + SS iste çalışır. -->
+                            <p class="card-desc" style="margin:14px 0 6px;">
+                                <b>Otomatik anahtar kelime</b> — bir ticket'a bu kelimeyi yazınca
+                                (kendi hesabından) otomatik <code>/nexorapin</code> + SS iste gider.
+                                <code>kontrol</code> her zaman çalışır; buraya kendi kelimeni de
+                                ekleyebilirsin.
+                            </p>
+                            <div class="toolbar">
+                                <input type="text" class="text-search" id="acTetikKelime"
+                                       placeholder="ör. tara (boş = sadece 'kontrol')" spellcheck="false"
+                                       style="max-width:240px;">
+                                <button class="secondary small" id="acTetikKaydet">Kaydet</button>
+                                <span class="scanStatus" id="acTetikMsg"></span>
+                            </div>
                         </div>
 
                         <!-- Nexora Pini: Nexora At ile /nexorapin çalıştırılınca Nexora
