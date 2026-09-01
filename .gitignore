@@ -29,6 +29,8 @@ ac-nexora-api.json
 ac-tetik-kelime.json
 # Her AC'nin "Kirli" icin belirledigi otomatik kelime - sunucuda olusur
 ac-kirli-kelime.json
+# "GIF gonder" icin diske onbelleklenen hazir GIF (link canliyken bir kez indirilir)
+ac-gif.gif
 
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.

@@ -4045,6 +4045,10 @@ const acNexoraPinKutu = document.getElementById('acNexoraPinKutu');
 const acTemizBtn = document.getElementById('acTemizBtn');
 const acKirliBtn = document.getElementById('acKirliBtn');
 const acSonucMsg = document.getElementById('acSonucMsg');
+const acGifBtn = document.getElementById('acGifBtn');
+const acMesajKutu = document.getElementById('acMesajKutu');
+const acMesajYenile = document.getElementById('acMesajYenile');
+const acMesajDurum = document.getElementById('acMesajDurum');
 const acTetikKelime = document.getElementById('acTetikKelime');
 const acTetikKaydet = document.getElementById('acTetikKaydet');
 const acTetikMsg = document.getElementById('acTetikMsg');
@@ -4413,11 +4417,14 @@ function acTicketleriCiz() {
             acNexoraPinBtn.disabled = false;
             if (acTemizBtn) acTemizBtn.disabled = false;
             if (acKirliBtn) acKirliBtn.disabled = false;
+            if (acGifBtn) acGifBtn.disabled = false;
+            if (acMesajYenile) acMesajYenile.disabled = false;
             acGonderMsg.textContent = '';
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
             acNexoraPinMsg.textContent = '';
             if (acSonucMsg) acSonucMsg.textContent = '';
+            acMesajlariYukle();   // seçilen ticket'ın mesajlarını göster
             // Gateway'i şimdiden ısıt: "Nexora At"a basınca "bağlanıyor" beklemesi
             // olmasın (ticket seçimi ile tuşa basma arasına yayılır).
             fetch('/api/ac/hazirla', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
@@ -4597,6 +4604,78 @@ if (acKirliBtn) {
             acSonucMsg.textContent = `Hata: ${error.message}`;
         } finally {
             acKirliBtn.disabled = false;
+        }
+    });
+}
+
+// --- Ticket Mesajları: seçili ticket'ın son mesajlarını göster ---
+function acMesajlariCiz(mesajlar) {
+    if (!acMesajKutu) return;
+    if (!mesajlar || !mesajlar.length) {
+        acMesajKutu.innerHTML = '<div class="empty-hint">Bu ticket\'ta mesaj yok.</div>';
+        return;
+    }
+    acMesajKutu.innerHTML = mesajlar.map((m) => {
+        const ekler = (m.ekler || []).map((e) => e.gorsel
+            ? `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(e.url)}" alt="${escapeHtml(e.ad)}" style="max-width:220px; max-height:180px; border-radius:8px; margin-top:4px; display:block;"></a>`
+            : `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener" style="font-size:11.5px;">📎 ${escapeHtml(e.ad || e.url)}</a>`).join('');
+        const govde = m.icerik ? `<div style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(m.icerik)}</div>` : '';
+        const embedNot = (m.embedVar && !m.icerik && !ekler) ? '<div style="font-size:11.5px; color:var(--ink-3);">[gömülü içerik]</div>' : '';
+        return `<div style="padding:6px 0; border-bottom:1px solid var(--border);">
+            <div style="font-size:11.5px; color:var(--ink-3); margin-bottom:2px;">
+                <b style="color:var(--ink-2);">${escapeHtml(m.yazar)}</b>${m.bot ? ' <span style="color:var(--accent);">BOT</span>' : ''}
+                ${m.zaman ? `· ${formatDate(m.zaman)}` : ''}
+            </div>${govde}${embedNot}${ekler}</div>`;
+    }).join('');
+    // En yeni mesaj altta - otomatik en alta kaydır.
+    acMesajKutu.scrollTop = acMesajKutu.scrollHeight;
+}
+
+async function acMesajlariYukle() {
+    if (!acSecili || !acMesajKutu) return;
+    if (acMesajDurum) acMesajDurum.textContent = 'Yükleniyor...';
+    try {
+        const res = await fetch('/api/ac/mesajlar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kanalId: acSecili.id }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) { if (acMesajDurum) acMesajDurum.textContent = d.error; return; }
+        acMesajlariCiz(d.mesajlar);
+        if (acMesajDurum) acMesajDurum.textContent = `${(d.mesajlar || []).length} mesaj`;
+    } catch (error) {
+        if (acMesajDurum) acMesajDurum.textContent = `Hata: ${error.message}`;
+    }
+}
+if (acMesajYenile) acMesajYenile.addEventListener('click', acMesajlariYukle);
+
+// --- GIF gönder: hazır GIF'i seçili ticket'a AC'nin kendi hesabından yükler ---
+if (acGifBtn) {
+    acGifBtn.addEventListener('click', async () => {
+        if (!acSecili) { acSsMsg.textContent = 'Önce bir ticket seç.'; return; }
+        acGifBtn.disabled = true;
+        acSsMsg.textContent = 'GIF gönderiliyor...';
+        try {
+            const res = await fetch('/api/ac/gif', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kanalId: acSecili.id }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) {
+                acSsMsg.textContent = d.error;
+                if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+                return;
+            }
+            acSsMsg.textContent = `🎞️ GIF gönderildi → ${d.kanal}`;
+            acMesajlariYukle();   // yeni mesajı listede göster
+        } catch (error) {
+            acSsMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acGifBtn.disabled = false;
         }
     });
 }

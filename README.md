@@ -261,6 +261,14 @@ Hepsi AC'nin **kendi hesabından** gider:
   Her AC kendi hesabıyla ayrı ayrı atar; panelin ana botu araya girmez.
 - **📸 SS iste** - altındaki hazır mesajı (*"Uygulamayı çalıştırıp tam ekran ss
   atabilir misin?"*) tek tıkla seçili ticket'a AC'nin kendi hesabından gönderir.
+- **🎞️ GIF gönder** - hazır bir GIF'i seçili ticket'a AC'nin kendi hesabından
+  **dosya olarak** yükler. GIF'in kaynağı süreli bir Discord CDN linki olduğu
+  için sunucu onu **bir kez indirip diske önbelleğe alır** (`ac-gif.gif`) ve
+  sonrasında hep diskten yükler (link sussuz kalsa bile çalışır). İlk indirme
+  linkin **süresi dolmadan** yapılmalı; süresi dolmuşsa yeni link gerekir.
+- **Ticket Mesajları** - seçili ticket'a gönderilen **son 50 mesajı** panelde
+  gösterir (yazar, zaman, içerik ve görsel/GIF ekleri satır içi). Ticket seçilince
+  otomatik yüklenir; **↻ Yenile** ile güncellenir. Panelin ana botu okur.
 - **🔎 Nexora Pinini Görüntüle** - **Nexora At** ile `/nexorapin` çalıştıktan
   sonra, Nexora botunun ticket'a attığı **pini** (mesaj/embed) kanaldan çekip
   AC'nin ekranına basar (içerik, embed başlık/alanlar, görseller). Harici API
@@ -848,6 +856,8 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `POST /api/ac/nexora` | Seçili ticket'ta AC'nin kendi hesabından `/nexorapin` slash komutu |
 | `POST /api/ac/hazirla` | Seçili ticket için AC gateway oturumunu önceden ısıtır (hız) |
 | `POST /api/ac/nexora-pin` | Nexora botunun ticket'a attığı pini kanaldan çekip döner |
+| `POST /api/ac/mesajlar` | Seçili ticket'ın son 50 mesajını (yazar/içerik/ek) döner |
+| `POST /api/ac/gif` | Hazır GIF'i (diske önbelleklenmiş) AC'nin hesabından ticket'a dosya olarak yükler |
 | `POST /api/ac/kirli` | Pinden kod/hedef/tespit okuyup sabit sonuç kanalına AC'nin hesabından SUSPICIOUS gönderir ("Temiz" istek atmaz) |
 | `GET/POST /api/ac/tetik-kelime` | AC'nin kişiye özel otomatik tetik kelimesini okur/kaydeder |
 | `GET/POST /api/ac/kirli-kelime` | AC'nin "Kirli" için kişiye özel otomatik kelimesini okur/kaydeder |

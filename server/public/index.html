@@ -477,6 +477,22 @@
                             <span class="grow"></span>
                             <span class="scanStatus" id="acSayac"></span>
                         </div>
+
+                        <!-- Ticket Mesajları: seçili ticket'a gönderilen tüm mesajlar
+                             (son 50). Ticket seçilince otomatik yüklenir. -->
+                        <div class="card" style="margin:0 0 12px;">
+                            <div class="toolbar" style="margin-bottom:8px;">
+                                <h2 style="margin:0;">Ticket Mesajları</h2>
+                                <span class="grow"></span>
+                                <button class="secondary small" id="acMesajYenile" disabled>↻ Yenile</button>
+                                <span class="scanStatus" id="acMesajDurum"></span>
+                            </div>
+                            <div id="acMesajKutu"
+                                 style="max-height:340px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; padding:10px;">
+                                <div class="empty-hint">Bir ticket seç.</div>
+                            </div>
+                        </div>
+
                         <!-- Nexora At menüsü: seçili ticket'ta AC'nin KENDİ
                              hesabından iki hazır eylem. İkisi de /nexorapin'i
                              kullanan hesabın (token'ı girilen AC) hesabından gider. -->
@@ -497,6 +513,7 @@
                             </p>
                             <div class="toolbar">
                                 <button class="secondary" id="acSsBtn" disabled>📸 SS iste</button>
+                                <button class="secondary" id="acGifBtn" disabled>🎞️ GIF gönder</button>
                                 <span class="scanStatus" id="acSsMsg"></span>
                             </div>
 

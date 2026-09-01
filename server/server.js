@@ -2110,6 +2110,13 @@ const AC_KIRLI_KELIMESI = 'kirli';
 // Otomatik SS istegi metni (panel arayuzundeki "SS iste" ile ayni).
 const AC_SS_MESAJI = 'Uygulamayı çalıştırıp tam ekran ss atabilir misin?';
 
+// "GIF gönder" butonunun attigi hazir GIF. Discord CDN linkleri IMZALI ve
+// SURELIDIR (ex= parametresi son kullanma zamani) - o yuzden ham link yerine
+// dosyayi bir kez indirip diske onbellege aliyoruz; sonrasi hep diskten yuklenir
+// (link sussuz olsa bile calisir). Ilk indirme, link canliyken yapilmali.
+const AC_GIF_URL = 'https://cdn.discordapp.com/attachments/1438620423959871518/1459629297391370480/ac.gif?ex=6a97cf77&is=6a967df7&hm=a55ec37915a0df70cef45bacd975b4205b0c7ab0a1627ece63bf2dca5384a930&';
+const AC_GIF_PATH = path.join(ROOT_DIR, 'ac-gif.gif');
+
 // Nexora API: bir Discord ID icin sonucu dondurur. AC "Sonucu Getir"e basinca
 // panel bu API'yi sorgular ve tum cevabi AC'nin ekranina basar.
 // URL + KEY config.env'den geliyor (repo'ya girmiyor - key gizli). URL sablonu
@@ -2513,6 +2520,73 @@ async function acNexoraKirliBildir(username, ticketKanalId) {
     if (!kanal) throw new Error('Sonuç kanalı bulunamadı (AC hesabı o kanalı görebiliyor mu?).');
     await kanal.send(metin);
     return { kod: coz.kod, hedefId: coz.hedefId, tespit: coz.tespit, hesap: acClient.user ? acClient.user.tag : null };
+}
+
+// Secili ticket'a gonderilmis TUM mesajlari (son N) panelde gostermek icin
+// kanaldan okur. Panelin ANA botu okur (ticket erisimi var - AC gateway'i
+// bekletmez). En eskiden en yeniye siralar; ek (gorsel/gif) URL'lerini de doner.
+async function ticketMesajlariGetir(kanalId, limit = 50) {
+    let kanal = client.channels.cache.get(kanalId);
+    if (!kanal) { try { kanal = await client.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+        throw new Error('Kanal ticket kategorisinde değil.');
+    }
+    const koleksiyon = await kanal.messages.fetch({ limit: Math.min(Math.max(limit, 1), 100) });
+    return [...koleksiyon.values()]
+        .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+        .map((m) => ({
+            id: m.id,
+            yazar: m.author ? (m.author.username || m.author.tag) : '?',
+            yazarId: m.author ? m.author.id : null,
+            bot: Boolean(m.author && m.author.bot),
+            icerik: m.content || '',
+            zaman: m.createdTimestamp || null,
+            embedVar: Array.isArray(m.embeds) && m.embeds.length > 0,
+            ekler: m.attachments ? [...m.attachments.values()].map((a) => ({
+                url: a.url,
+                ad: a.name || '',
+                gorsel: /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(a.url || '') || /^image\//i.test(a.contentType || ''),
+            })) : [],
+        }));
+}
+
+// "GIF gönder" icin: hazir GIF diskte onbellekte yoksa AC_GIF_URL'den indirip
+// kaydeder, sonra yolu doner. Link SURELI oldugu icin ilk indirme link canliyken
+// yapilmali; bir kez indirildikten sonra hep diskten kullanilir.
+async function acGifDosyasiHazirla() {
+    try {
+        const st = fs.statSync(AC_GIF_PATH);
+        if (st && st.size > 0) return AC_GIF_PATH;
+    } catch (error) { /* yok - indirilecek */ }
+    let cevap;
+    try {
+        cevap = await fetch(AC_GIF_URL);
+    } catch (error) {
+        throw new Error(`GIF indirilemedi (sunucunun internet erişimi var mı?): ${error.message}`);
+    }
+    if (!cevap.ok) {
+        throw new Error(`GIF indirilemedi (HTTP ${cevap.status}) - link süresi dolmuş olabilir, yeni link gerekebilir.`);
+    }
+    const buf = Buffer.from(await cevap.arrayBuffer());
+    if (!buf.length) throw new Error('GIF boş indi.');
+    const gecici = `${AC_GIF_PATH}.tmp`;
+    fs.writeFileSync(gecici, buf);
+    fs.renameSync(gecici, AC_GIF_PATH);
+    console.log(`[AC] GIF diske önbelleğe alındı: ${AC_GIF_PATH} (${buf.length} bayt).`);
+    return AC_GIF_PATH;
+}
+
+// Secili ticket'a hazir GIF'i AC'nin KENDI hesabindan DOSYA olarak yukler.
+async function acGifGonder(username, kanalId) {
+    const dosya = await acGifDosyasiHazirla();
+    const acClient = await acGatewayAl(username);
+    let kanal = acClient.channels.cache.get(kanalId);
+    if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+        throw new Error('Kanal AC ticket kategorisinde değil.');
+    }
+    await kanal.send({ files: [{ attachment: dosya, name: 'ac.gif' }] });
+    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
 }
 
 
@@ -5657,6 +5731,40 @@ app.post('/api/ac/kirli', requireIzin('ticketmesaj'), async (req, res) => {
     acHizIsle(kullanici);
     addAudit('ac-kirli', kullanici, `kod=${sonuc.kod} hedef=${sonuc.hedefId || '?'} tespit=${sonuc.tespit || '?'}`, req);
     res.json({ ok: true, sonuc });
+});
+
+// Seçili ticket'a gönderilmiş tüm mesajları (son 50) panelde göster.
+app.post('/api/ac/mesajlar', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
+    let mesajlar;
+    try {
+        mesajlar = await ticketMesajlariGetir(kanalId, 50);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+    res.json({ ok: true, mesajlar });
+});
+
+// "GIF gönder": hazır GIF'i seçili ticket'a AC'nin kendi hesabından dosya olarak yükler.
+app.post('/api/ac/gif', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
+    const hizHatasi = acHizKontrol(kullanici);
+    if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
+    let sonuc;
+    try {
+        sonuc = await acGifGonder(kullanici, kanalId);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+    acHizIsle(kullanici);
+    addAudit('ac-gif', kullanici, `${sonuc.kanal} (${kanalId})`, req);
+    res.json({ ok: true, kanal: sonuc.kanal });
 });
 
 // Nexora sonucu: seçili ticket'ı açan kişinin (veya elle girilen) Discord ID'si
