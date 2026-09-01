@@ -4117,6 +4117,23 @@ function acGateGizle() {
     if (appWrap.style.display === 'none') appWrap.style.display = 'flex';
 }
 
+// Gateway'i sicak tut: panel bagliyken belirli aralikla /api/ac/hazirla'yi
+// tetikler. Boylece AC ticket'a anahtar kelimesini yazinca gateway zaten hazir
+// olur ve /nexorapin ANINDA gider (soguk baglanti 2-6 sn beklemesi olmaz).
+// Sunucudaki bosta kapanma 12 dk; 8 dk'da bir isitmak sicak tutmaya yeter.
+let acIsitmaTimer = null;
+function acIsitmaGonder() {
+    fetch('/api/ac/hazirla', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+}
+function acIsitmaBaslat() {
+    acIsitmaGonder();                 // hemen bir kez isit
+    if (acIsitmaTimer) return;        // zaten calisiyor
+    acIsitmaTimer = setInterval(acIsitmaGonder, 8 * 60 * 1000);
+}
+function acIsitmaDurdur() {
+    if (acIsitmaTimer) { clearInterval(acIsitmaTimer); acIsitmaTimer = null; }
+}
+
 async function acDurumYukle() {
     try {
         const res = await fetch('/api/ac/durum');
@@ -4129,6 +4146,7 @@ async function acDurumYukle() {
         if (!d.anahtarVar) {
             // Sunucuda sifreleme anahtari yoksa ozellik komple kapali. Bunu
             // acikca soylemek gerekiyor, yoksa "token girdim olmadi" olur.
+            acIsitmaDurdur();
             acPanel.style.display = 'none';
             acBagliDegilKart.style.display = '';
             acTokenSatiri.style.display = 'none';
@@ -4158,7 +4176,9 @@ async function acDurumYukle() {
             acSayac.textContent = `en fazla ${d.saatlikTavan}/saat · gönderimler arası ${d.kisiAralikSn} sn`;
             acTicketleriYukle();
             acTetikKelimeYukle();
+            acIsitmaBaslat();   // gateway'i sicak tut - anahtar kelime aninda tetiklensin
         } else {
+            acIsitmaDurdur();
             acPanel.style.display = 'none';
             acBagliDegilKart.style.display = '';
             acTokenSatiri.style.display = 'flex';

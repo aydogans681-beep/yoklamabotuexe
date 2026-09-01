@@ -2169,6 +2169,32 @@ function acGatewayTemizle(zorla = false) {
 }
 setInterval(() => acGatewayTemizle(false), 60 * 1000);
 
+// /nexorapin komutu (application_id + name + id) sunucu genelinde AYNI - her
+// AC her tetikte yeniden cekmesin diye onbellege aliyoruz. Cozumleme her
+// seferinde bir REST turu (application-command-index) demekti; onbellekle
+// tetikler cok daha hizli. sendSlash patlarsa onbellek dusurulur (asagida).
+let nexoraKomutCache = null;   // { id, name, application_id, zaman }
+const NEXORA_KOMUT_CACHE_MS = 30 * 60 * 1000;
+
+async function nexoraKomutunuCoz(acClient, guildId) {
+    const simdi = Date.now();
+    if (nexoraKomutCache && simdi - nexoraKomutCache.zaman < NEXORA_KOMUT_CACHE_MS) {
+        return nexoraKomutCache;
+    }
+    // Komutu guild dizininde bul: GERCEK application_id ve ad'i buradan aliyoruz
+    // (hardcoded ID'ler yanlissa bile ada gore yakalanir). type===1 -> slash.
+    const data = await acClient.api.guilds[guildId]['application-command-index'].get();
+    const komutlar = (data && data.application_commands) || [];
+    const ham = komutlar.find((c) => c.id === NEXORA_KOMUT_ID && c.type === 1)
+        || komutlar.find((c) => c.name === 'nexorapin' && c.application_id === NEXORA_BOT_ID && c.type === 1)
+        || komutlar.find((c) => c.name === 'nexorapin' && c.type === 1);
+    if (!ham) {
+        throw new Error('/nexorapin komutu sunucuda bulunamadı (Nexora botu ekli ve komut yayında mı?).');
+    }
+    nexoraKomutCache = { id: ham.id, name: ham.name, application_id: ham.application_id, zaman: simdi };
+    return nexoraKomutCache;
+}
+
 // AC'nin kendi client'i uzerinden /nexorapin'i ticket kanalinda calistirir.
 // rolSlashGonder ile ayni akis, tek fark: ana client yerine AC client.
 async function acNexoraGonder(username, kanalId) {
@@ -2183,16 +2209,7 @@ async function acNexoraGonder(username, kanalId) {
         throw new Error('Kanal ticket kategorisinde değil.');
     }
 
-    // Komutu guild dizininde bul: GERCEK application_id ve ad'i buradan aliyoruz
-    // (hardcoded ID'ler yanlissa bile ada gore yakalanir). type===1 -> slash.
-    const data = await acClient.api.guilds[guild.id]['application-command-index'].get();
-    const komutlar = (data && data.application_commands) || [];
-    const ham = komutlar.find((c) => c.id === NEXORA_KOMUT_ID && c.type === 1)
-        || komutlar.find((c) => c.name === 'nexorapin' && c.application_id === NEXORA_BOT_ID && c.type === 1)
-        || komutlar.find((c) => c.name === 'nexorapin' && c.type === 1);
-    if (!ham) {
-        throw new Error('/nexorapin komutu sunucuda bulunamadı (Nexora botu ekli ve komut yayında mı?).');
-    }
+    const ham = await nexoraKomutunuCoz(acClient, guild.id);
     console.log(`[Nexora] ${username} → #${kanal.name}: komut name=${ham.name} id=${ham.id} app=${ham.application_id}`);
 
     // Nexora bot komuttan sonra kanala yazarsa yalnizca LOG'a yaz - ARKA PLANDA,
@@ -2227,6 +2244,7 @@ async function acNexoraGonder(username, kanalId) {
         }
     } catch (error) {
         clearTimeout(zaman); if (dinle) acClient.off('messageCreate', dinle);
+        nexoraKomutCache = null;   // komut degismis/bayat olabilir - bir dahaki sefere yeniden coz
         throw new Error(`Komut gönderilemedi: ${error.message}`);
     }
 
@@ -2362,20 +2380,25 @@ async function nexoraPiniGetir(kanalId) {
         throw new Error('Kanal ticket kategorisinde değil.');
     }
     const nexoraninMi = (m) => m && m.author && m.author.id === NEXORA_BOT_ID;
-
-    // 1) Pinli mesajlar arasinda Nexora botununki var mi?
-    try {
-        const pinli = await kanal.messages.fetchPinned();
-        const p = [...pinli.values()].filter(nexoraninMi)
-            .sort((a, b) => b.createdTimestamp - a.createdTimestamp)[0];
-        if (p) return nexoraPiniBicimle(p, true);
-    } catch (error) { /* pin okunamadi - son mesajlara bak */ }
-
-    // 2) Son 50 mesaj icinde Nexora botunun en yeni mesaji.
-    const son = await kanal.messages.fetch({ limit: 50 });
-    const m = [...son.values()].filter(nexoraninMi)
+    const enYeni = (liste) => [...liste].filter(nexoraninMi)
         .sort((a, b) => b.createdTimestamp - a.createdTimestamp)[0];
-    if (m) return nexoraPiniBicimle(m, false);
+
+    // Pinli mesajlar ve son mesajlar AYNI ANDA cekiliyor (eskiden sirayla iki
+    // REST turu vardi - Nexora pinlemiyorsa hep ikisini de bekliyorduk). Pinli
+    // varsa o oncelikli, yoksa son mesajlar arasindaki en yeni Nexora mesaji.
+    const [pinliSonuc, sonSonuc] = await Promise.allSettled([
+        kanal.messages.fetchPinned(),
+        kanal.messages.fetch({ limit: 50 }),
+    ]);
+
+    if (pinliSonuc.status === 'fulfilled') {
+        const p = enYeni(pinliSonuc.value.values());
+        if (p) return nexoraPiniBicimle(p, true);
+    }
+    if (sonSonuc.status === 'fulfilled') {
+        const m = enYeni(sonSonuc.value.values());
+        if (m) return nexoraPiniBicimle(m, false);
+    }
 
     throw new Error('Bu ticket\'ta Nexora pini bulunamadı (önce "Nexora At" ile /nexorapin çalıştır).');
 }
@@ -2781,6 +2804,9 @@ client.on('messageCreate', (message) => {
                 // Global "kontrol" ya da AC'nin kendi belirledigi kelime.
                 if (t === AC_KONTROL_KELIMESI || (ozel && t === ozel)) {
                     acKontrolTetikle(acUser, message.channel).catch(() => {});
+                    // Tetik kelimesi ticket'ta gorunmesin - ana bot mesaji siler
+                    // (yetki varsa). Musteri ic tetik kelimesini gormez, kanal temiz kalir.
+                    message.delete().catch(() => {});
                 }
             }
         }

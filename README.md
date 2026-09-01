@@ -275,8 +275,10 @@ Hepsi AC'nin **kendi hesabından** gider:
 önce `/nexorapin`, sonra *"Uygulamayı çalıştırıp tam ekran ss atabilir misin?"*
 gider. Panelin ana botu mesajı görüp tetikler; yalnızca **yazan kişi bağlı bir
 AC ise** çalışır (rastgele biri "kontrol" yazınca değil), aynı kanalda 15 sn
-içinde tekrar tetiklenmez. Ayarlar > Yeni Ticket'a Otomatik Mesaj altındaki
-anahtardan (`acKontrolOtomatik`, varsayılan açık) kapatılabilir.
+içinde tekrar tetiklenmez. Tetikledikten sonra **yazdığın tetik kelimesi
+mesajı kanaldan silinir** (ana botun mesaj silme yetkisi varsa) - müşteri iç
+tetik kelimesini görmez, ticket temiz kalır. Ayarlar > Yeni Ticket'a Otomatik
+Mesaj altındaki anahtardan (`acKontrolOtomatik`, varsayılan açık) kapatılabilir.
 
 **Kişiye özel tetik kelimesi:** Global `kontrol`'ün yanında **her AC kendi
 tetik kelimesini** belirleyebilir (Nexora Panel > *Tetik kelimesi* kutusu).
@@ -303,7 +305,7 @@ Token'lar hassas olduğu için özellik birkaç katman üzerine kuruldu:
 |---|---|
 | **Şifreleme** | Token'lar `ac-tokenlari.json`'da AES-256-GCM ile şifreli durur. Anahtar **ilk açılışta otomatik üretilip** `ac-anahtar.key`'e yazılır - elle `config.env` düzenlemek gerekmez. (İstersen `config.env`'e `AC_ANAHTAR` yazabilirsin; o öncelikli olur.) Dosya tek başına sızsa bile içerik okunamaz. |
 | **Sahiplik (ilk token kilitler)** | Bir AC'nin bağladığı **ilk** token, o panel hesabının kimliği olur ve kilitlenir. Sonrasında yalnızca aynı Discord hesabının token'ı kabul edilir - AC sonradan başkasının token'ına geçemez. Kilit token'dan ayrı `ac-kilit.json`'da durur; bağlantı kaldırılsa bile kimlik korunur. (Panel hesabına elle bir Discord ID bağlıysa o bağlayıcı olur; yoksa ilk token kilidi kurar.) |
-| **Gateway istek üzerine** | Düz mesaj tek bir REST isteğiyle gider. Slash komut (`/nexorapin`) ise **canlı bir gateway oturumu** gerektirir; bu yüzden **Nexora At**'e basıldığında o AC için geçici bir selfbot bağlantısı açılır, komut atılır ve bağlantı **12 dk boşta kalınca kendiliğinden kapanır**. Aynı anda en çok 15 AC bağlantısı tutulur. Sürekli açık selfbot yok - kalıcı bağlantı yalnızca panelin kendi botunda. |
+| **Gateway istek üzerine (sıcak tutulur)** | Düz mesaj tek bir REST isteğiyle gider. Slash komut (`/nexorapin`) ise **canlı bir gateway oturumu** gerektirir; bu yüzden **Nexora At**'e basıldığında (ya da ticket seçilince) o AC için geçici bir selfbot bağlantısı açılır. **Hız için:** Nexora Panel açıkken bağlantı ~8 dk'da bir ısıtılıp **sıcak tutulur**, böylece AC ticket'a anahtar kelimesini yazınca `/nexorapin` **anında** gider (soğuk bağlantı beklemesi olmaz). Panel kapanınca bağlantı **12 dk boşta kalınca kendiliğinden kapanır**. `/nexorapin` komutunun kimliği (application_id + ad) 30 dk **önbelleğe** alınır - her tetikte yeniden çözülmez. Aynı anda en çok 15 AC bağlantısı tutulur; kalıcı 7/24 selfbot yok. |
 | **Hız sınırı** | AC başına işlemler arası 5 sn, saatte en fazla 30. Panelin kendi hesabı bu oturumda hızlı DM yüzünden defalarca kilitlendi; aynı hatayı tekrarlamıyoruz. |
 | **Kategori kilidi** | Mesaj ve Nexora yalnızca gerçekten o kategorideki (`1470230380572573706`) bir kanala gidebilir - panel keyfi bir kanala işlem atmanın yolu değil. |
 
