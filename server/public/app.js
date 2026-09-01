@@ -4692,7 +4692,7 @@ if (acDmBtn) {
         if (!acSecili) { acDmMsg.textContent = 'Önce bir ticket seç.'; return; }
         const oyuncuId = acDmId.value.trim();
         const mesaj = acDmMesaj.value.trim();
-        if (!/^\d{17,20}$/.test(oyuncuId)) { acDmMsg.textContent = 'Geçerli bir oyuncu ID gir (17-20 hane).'; return; }
+        if (!/^\d{1,32}$/.test(oyuncuId)) { acDmMsg.textContent = 'Geçerli bir oyuncu ID gir (sadece rakam).'; return; }
         if (!mesaj) { acDmMsg.textContent = 'Mesaj boş.'; return; }
         acDmBtn.disabled = true;
         acDmMsg.textContent = 'DM gönderiliyor...';

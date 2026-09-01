@@ -5711,7 +5711,9 @@ app.post('/api/ac/dm-player', requireIzin('ticketmesaj'), async (req, res) => {
     const oyuncuId = String((req.body && req.body.oyuncuId) || '').trim();
     const mesaj = String((req.body && req.body.mesaj) || '').trim();
     if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket (kanal seç).' });
-    if (!/^\d{17,20}$/.test(oyuncuId)) return res.json({ ok: false, error: 'Geçersiz oyuncu ID (17-20 haneli Discord ID).' });
+    // Oyuncu ID Discord ID DEĞİL - 1'den yukarı herhangi bir numara (oyuncu no).
+    // Sadece rakam, 1-32 hane (pratikte sınırsız).
+    if (!/^\d{1,32}$/.test(oyuncuId)) return res.json({ ok: false, error: 'Geçersiz oyuncu ID (sadece rakam).' });
     if (!mesaj) return res.json({ ok: false, error: 'Mesaj boş.' });
     if (mesaj.length > AC_MESAJ_TAVANI) {
         return res.json({ ok: false, error: `Mesaj çok uzun (en fazla ${AC_MESAJ_TAVANI} karakter).` });
