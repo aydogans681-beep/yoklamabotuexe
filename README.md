@@ -743,13 +743,21 @@ cd server
 npm run start-buyuk          # node --max-old-space-size=4096 server.js
 ```
 
-pm2 ile:
+pm2 ile (depo kökünden, **watch KAPALI** hazır yapılandırmayla):
 
 ```bash
 pm2 delete yoklama
-pm2 start server.js --name yoklama --node-args="--max-old-space-size=4096"
+pm2 start ecosystem.config.js
 pm2 save
 ```
+
+> **ÖNEMLİ - "site durmadan düşüyor" olursa:** neredeyse her zaman sebep pm2'nin
+> **`--watch` açık** çalışmasıdır. Bot durum dosyalarına (`voice-activity.json`,
+> `panel-audit.json`, `log-cache/` ...) sürekli yazar; watch açıkken her yazım
+> botu yeniden başlatır ve sonsuz döngüye girer. `ecosystem.config.js` watch'ı
+> açıkça kapatır - yukarıdaki komutla başlat. Kontrol: `pm2 describe yoklama`
+> çıktısında **watch & reload = disabled** olmalı ve **restarts** sayısı artmayı
+> bırakmalı. (Elle `pm2 start ... --watch` **verme**.)
 
 Belleği yükseltmek taramayı **hızlandırmaz** - yavaşlık üye listesinden
 geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
