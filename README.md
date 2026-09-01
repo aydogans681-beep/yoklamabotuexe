@@ -267,6 +267,21 @@ Hepsi AC'nin **kendi hesabından** gider:
   yok - doğrudan Discord mesajı okunur (panelin ana botu ile). Önce **pinli**
   mesajlara, sonra son 50 mesaja bakıp Nexora botunun (`1518636692171522209`)
   en yeni mesajını gösterir.
+- **✅ Temiz / 🚫 Kirli** - tarama sonucunu işaretler. **Temiz**'e basınca
+  **hiçbir şey gönderilmez** (yalnızca arayüzde onay). **Kirli**'ye basınca bot,
+  ticket'taki Nexora pininden **kod** (scan linkindeki), **hedef ID** ve **tespit
+  sayısını** okur; sonra AC'nin **kendi hesabından** sabit **sonuç kanalına**
+  (`1473372352078286951`) şu biçimde `SUSPICIOUS` sonucu gönderir:
+  ```
+  ℹ️ Tarama Sonucu: SUSPICIOUS
+  https://nexorascanner.ac/dashboard/scan/<KOD>
+  👤 Hedef ID: <ID>
+  🔎 Kod: <KOD>
+  🎯 Tespit Sayısı: <N>
+  ```
+  Kod ticket'ta yoksa (tarama tamamlanmamışsa) uyarı verir. AC yalnızca bu tek
+  sabit kanala yazabilir - keyfi kanal değil (güvenlik). Pini panelin ana botu
+  okur, mesajı AC'nin kendi hesabı atar.
 - **Mesaj (isteğe bağlı)** - AC serbest bir metin yazıp **Gönder**'e basarsa, o
   metin ticket'a yine kendi hesabından düşer.
 
@@ -825,6 +840,7 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `POST /api/ac/nexora` | Seçili ticket'ta AC'nin kendi hesabından `/nexorapin` slash komutu |
 | `POST /api/ac/hazirla` | Seçili ticket için AC gateway oturumunu önceden ısıtır (hız) |
 | `POST /api/ac/nexora-pin` | Nexora botunun ticket'a attığı pini kanaldan çekip döner |
+| `POST /api/ac/kirli` | Pinden kod/hedef/tespit okuyup sabit sonuç kanalına AC'nin hesabından SUSPICIOUS gönderir ("Temiz" istek atmaz) |
 | `GET/POST /api/ac/tetik-kelime` | AC'nin kişiye özel otomatik tetik kelimesini okur/kaydeder |
 | `POST /api/loglar/:key/isaret` | Log kaydını Ban/Şüpheli/Temiz işaretler (yalnızca panelde) |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |

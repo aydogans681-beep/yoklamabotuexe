@@ -4042,6 +4042,9 @@ const acSsMsg = document.getElementById('acSsMsg');
 const acNexoraPinBtn = document.getElementById('acNexoraPinBtn');
 const acNexoraPinMsg = document.getElementById('acNexoraPinMsg');
 const acNexoraPinKutu = document.getElementById('acNexoraPinKutu');
+const acTemizBtn = document.getElementById('acTemizBtn');
+const acKirliBtn = document.getElementById('acKirliBtn');
+const acSonucMsg = document.getElementById('acSonucMsg');
 const acTetikKelime = document.getElementById('acTetikKelime');
 const acTetikKaydet = document.getElementById('acTetikKaydet');
 const acTetikMsg = document.getElementById('acTetikMsg');
@@ -4373,10 +4376,13 @@ function acTicketleriCiz() {
             acNexoraBtn.disabled = false;
             acSsBtn.disabled = false;
             acNexoraPinBtn.disabled = false;
+            if (acTemizBtn) acTemizBtn.disabled = false;
+            if (acKirliBtn) acKirliBtn.disabled = false;
             acGonderMsg.textContent = '';
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
             acNexoraPinMsg.textContent = '';
+            if (acSonucMsg) acSonucMsg.textContent = '';
             // Gateway'i şimdiden ısıt: "Nexora At"a basınca "bağlanıyor" beklemesi
             // olmasın (ticket seçimi ile tuşa basma arasına yayılır).
             fetch('/api/ac/hazirla', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
@@ -4519,6 +4525,46 @@ acNexoraPinBtn.addEventListener('click', async () => {
         acNexoraPinBtn.disabled = false;
     }
 });
+
+// Temiz: sunucuya istek YOK - bir şey gönderilmez, sadece görsel onay.
+if (acTemizBtn) {
+    acTemizBtn.addEventListener('click', () => {
+        if (!acSecili) { acSonucMsg.textContent = 'Önce bir ticket seç.'; return; }
+        acSonucMsg.textContent = '✅ Temiz — herhangi bir şey gönderilmedi.';
+    });
+}
+
+// Kirli: ticket'taki Nexora pininden okunan sonucu (kod/hedef/tespit) sonuç
+// kanalına AC'nin kendi hesabından SUSPICIOUS olarak gönderir.
+if (acKirliBtn) {
+    acKirliBtn.addEventListener('click', async () => {
+        if (!acSecili) { acSonucMsg.textContent = 'Önce bir ticket seç.'; return; }
+        acKirliBtn.disabled = true;
+        acSonucMsg.textContent = 'Sonuç kanalına gönderiliyor...';
+        try {
+            const res = await fetch('/api/ac/kirli', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kanalId: acSecili.id }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) {
+                acSonucMsg.textContent = d.error;
+                if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+                return;
+            }
+            const s = d.sonuc || {};
+            acSonucMsg.textContent = `🚫 Kirli gönderildi — Kod: ${s.kod || '?'}`
+                + `${s.hedefId ? `, Hedef: ${s.hedefId}` : ''}`
+                + `${s.tespit ? `, Tespit: ${s.tespit}` : ''}`;
+        } catch (error) {
+            acSonucMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acKirliBtn.disabled = false;
+        }
+    });
+}
 
 acGonderBtn.addEventListener('click', async () => {
     if (!acSecili) { acGonderMsg.textContent = 'Önce bir ticket seç.'; return; }

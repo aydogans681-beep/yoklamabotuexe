@@ -534,6 +534,23 @@
                                  style="margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; overflow-x:auto;"></div>
                         </div>
 
+                        <!-- Sonuç: Temiz / Kirli. Kirli'ye basınca ticket'taki Nexora
+                             pininden kod/hedef/tespit okunup sonuç kanalına AC'nin kendi
+                             hesabından SUSPICIOUS mesajı gider. Temiz'de bir şey olmaz. -->
+                        <div class="card" style="margin:0 0 12px;">
+                            <h2>Sonuç</h2>
+                            <p class="card-desc">
+                                <b>Kirli</b>: ticket'taki Nexora pininden <b>kod / hedef ID / tespit
+                                sayısı</b> okunur, sonuç kanalına <b>senin hesabından</b> SUSPICIOUS
+                                sonucu gönderilir. <b>Temiz</b>: bir şey gönderilmez.
+                            </p>
+                            <div class="toolbar">
+                                <button class="secondary" id="acTemizBtn" disabled>✅ Temiz</button>
+                                <button id="acKirliBtn" disabled>🚫 Kirli</button>
+                                <span class="scanStatus" id="acSonucMsg"></span>
+                            </div>
+                        </div>
+
                         <!-- İkincil: serbest metin mesaj (isteğe bağlı). -->
                         <div class="card" style="margin:0;">
                             <h2>Mesaj (isteğe bağlı)</h2>

@@ -2071,6 +2071,9 @@ function acHizIsle(username) {
 // ============================================================================
 const NEXORA_KOMUT_ID = '1543548857529401404';   // /nexorapin
 const NEXORA_BOT_ID = '1518636692171522209';     // komutun sahibi bot
+// "Kirli" sonucunun yazilacagi SABIT kanal (ticket disinda, merkezi sonuc/log
+// kanali). AC sadece bu kanala yazabilir - keyfi kanal degil (guvenlik).
+const NEXORA_SONUC_KANALI = '1473372352078286951';
 
 // AC bir ticket'ta bu kelimeyi yazinca otomatik /nexorapin + SS iste tetiklenir.
 const AC_KONTROL_KELIMESI = 'kontrol';
@@ -2401,6 +2404,67 @@ async function nexoraPiniGetir(kanalId) {
     }
 
     throw new Error('Bu ticket\'ta Nexora pini bulunamadı (önce "Nexora At" ile /nexorapin çalıştır).');
+}
+
+// Nexora pininden (icerik + embed metinleri) sonuc alanlarini ayiklar:
+// kod (scan URL'sindeki ya da "Kod:" etiketindeki), hedef Discord ID'si ve
+// tespit sayisi. Egress bu ortamda kapali oldugundan API'ye gidilmez -
+// bilgiler dogrudan ticket'taki Nexora mesajindan okunur.
+function nexoraSonucCoz(pin) {
+    const parcalar = [pin.icerik || ''];
+    for (const e of (pin.embedler || [])) {
+        parcalar.push(e.baslik || '', e.aciklama || '', e.url || '');
+        for (const a of (e.alanlar || [])) parcalar.push(`${a.ad}: ${a.deger}`);
+    }
+    const metin = parcalar.join('\n');
+
+    // Kod: once scan URL'sinden (en guvenilir), sonra "Kod:" etiketinden.
+    let kod = null;
+    const mUrl = metin.match(/nexorascanner\.ac\/dashboard\/scan\/([A-Za-z0-9]+)/i);
+    if (mUrl) kod = mUrl[1];
+    if (!kod) { const mK = metin.match(/Kod\s*[:：]\s*([A-Za-z0-9]{4,})/i); if (mK) kod = mK[1]; }
+
+    // Hedef ID: "Hedef ID: <17-20 hane>" ya da metindeki ilk 17-20 haneli sayi.
+    let hedefId = null;
+    const mH = metin.match(/Hedef\s*ID\s*[:：]?\s*(\d{17,20})/i);
+    if (mH) { hedefId = mH[1]; } else { const mAny = metin.match(/\b(\d{17,20})\b/); if (mAny) hedefId = mAny[1]; }
+
+    // Tespit sayisi.
+    let tespit = null;
+    const mT = metin.match(/Tespit\s*Say[ıi]s[ıi]\s*[:：]?\s*(\d+)/i);
+    if (mT) tespit = mT[1];
+
+    return { kod, hedefId, tespit, link: kod ? `https://nexorascanner.ac/dashboard/scan/${kod}` : null };
+}
+
+// "Kirli" mesajini kullanicinin verdigi ornek bicimde kurar (SUSPICIOUS).
+function nexoraKirliMesaji(coz) {
+    return [
+        'ℹ️ Tarama Sonucu: SUSPICIOUS',
+        `https://nexorascanner.ac/dashboard/scan/${coz.kod}`,
+        `👤 Hedef ID: ${coz.hedefId || '—'}`,
+        `🔎 Kod: ${coz.kod}`,
+        `🎯 Tespit Sayısı: ${coz.tespit || '—'}`,
+    ].join('\n');
+}
+
+// "Kirli": ticket'taki Nexora pininden kod/hedef/tespit okunur, mesaj kurulur ve
+// AC'nin KENDI hesabindan SABIT sonuc kanalina (NEXORA_SONUC_KANALI) gonderilir.
+// Pini ana bot okur (ticket erisimi var), mesaji AC hesabi atar (AC eylemi).
+async function acNexoraKirliBildir(username, ticketKanalId) {
+    const pin = await nexoraPiniGetir(ticketKanalId);   // ana bot ticket'tan okur
+    const coz = nexoraSonucCoz(pin);
+    if (!coz.kod) {
+        throw new Error('Ticket\'ta Nexora kodu bulunamadı (önce "Nexora At" ile /nexorapin çalıştır ve tarama tamamlansın).');
+    }
+    const metin = nexoraKirliMesaji(coz);
+
+    const acClient = await acGatewayAl(username);
+    let kanal = acClient.channels.cache.get(NEXORA_SONUC_KANALI);
+    if (!kanal) { try { kanal = await acClient.channels.fetch(NEXORA_SONUC_KANALI); } catch (e) { kanal = null; } }
+    if (!kanal) throw new Error('Sonuç kanalı bulunamadı (AC hesabı o kanalı görebiliyor mu?).');
+    await kanal.send(metin);
+    return { kod: coz.kod, hedefId: coz.hedefId, tespit: coz.tespit, hesap: acClient.user ? acClient.user.tag : null };
 }
 
 
@@ -5494,6 +5558,28 @@ app.post('/api/ac/nexora-pin', requireIzin('ticketmesaj'), async (req, res) => {
     }
     addAudit('ac-nexora-pin-goruntule', kullanici, `${kanalId}`, req);
     res.json({ ok: true, pin });
+});
+
+// "Kirli": ticket'taki Nexora pininden sonuç okunup SABIT sonuç kanalına AC'nin
+// kendi hesabından SUSPICIOUS mesajı gönderilir. ("Temiz" tarafında sunucuya
+// istek yok - hiçbir şey gönderilmez, sadece arayüzde onay gösterilir.)
+app.post('/api/ac/kirli', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
+    // Gateway üstünden gönderim - mesaj gibi hız sınırına tabi.
+    const hizHatasi = acHizKontrol(kullanici);
+    if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
+    let sonuc;
+    try {
+        sonuc = await acNexoraKirliBildir(kullanici, kanalId);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+    acHizIsle(kullanici);
+    addAudit('ac-kirli', kullanici, `kod=${sonuc.kod} hedef=${sonuc.hedefId || '?'} tespit=${sonuc.tespit || '?'}`, req);
+    res.json({ ok: true, sonuc });
 });
 
 // Nexora sonucu: seçili ticket'ı açan kişinin (veya elle girilen) Discord ID'si
