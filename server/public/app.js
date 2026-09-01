@@ -4697,12 +4697,11 @@ if (acDmBtn) {
         acDmBtn.disabled = true;
         acDmMsg.textContent = 'DM gönderiliyor...';
         try {
-            // Ticket şart değil: seçiliyse kanalId gönderilir, değilse boş (sunucu
-            // sabit sonuç kanalında çalıştırır).
+            // Ticket şart değil: sunucu komutu sabit DM kanalında çalıştırır.
             const res = await fetch('/api/ac/dm-player', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kanalId: acSecili ? acSecili.id : '', oyuncuId, mesaj }),
+                body: JSON.stringify({ oyuncuId, mesaj }),
             });
             if (res.status === 401) { showLogin(); return; }
             const d = await okuJson(res);

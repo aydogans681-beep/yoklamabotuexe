@@ -2105,6 +2105,9 @@ const NEXORA_SONUC_KANALI = '1473372352078286951';
 // Komut ID verilmedi, ada + bot ID'sine gore cozuluyor.
 const DM_BOT_ID = '1470758770790498377';         // /dm-player komutunun sahibi bot
 const DM_KOMUT_ADI = 'dm-player';
+// /dm-player'in HER ZAMAN calistirilacagi SABIT kanal. Ticket'la ilgisi yok -
+// komut yalnizca bir kanal baglami gerektiriyor, hepsi buradan gidiyor.
+const DM_KOMUT_KANALI = '1475520758095544490';
 
 // AC bir ticket'ta bu kelimeyi yazinca otomatik /nexorapin + SS iste tetiklenir.
 const AC_KONTROL_KELIMESI = 'kontrol';
@@ -2331,28 +2334,17 @@ function dmArgumanlariKur(komut, oyuncuId, mesaj) {
 }
 
 // AC'nin kendi hesabından /dm-player id: message: çalıştırır (bot oyuncuya DM
-// atar). TICKET ŞART DEĞİL: kanalId verilirse (ve AC kategorisindeyse) o
-// kanalda, verilmezse SABIT sonuç kanalında (NEXORA_SONUC_KANALI) çalıştırılır -
-// slash komutu için yalnızca bir kanal bağlamı gerekiyor, ticket'la ilgisi yok.
-async function acDmPlayerGonder(username, kanalId, oyuncuId, mesaj) {
+// atar). TICKET ŞART DEĞİL: komut HER ZAMAN sabit DM_KOMUT_KANALI'nda
+// çalıştırılır (slash komutu yalnızca bir kanal bağlamı gerektiriyor).
+async function acDmPlayerGonder(username, oyuncuId, mesaj) {
     const acClient = await acGatewayAl(username);
 
     const guild = acClient.guilds.cache.get(GUILD_ID) || await acClient.guilds.fetch(GUILD_ID);
     if (!guild) throw new Error('Sunucu AC hesabında görünmüyor (AC sunucuda mı?).');
 
-    // Kanal seçimi: geçerli bir ticket verildiyse onu (güvenlik: AC kategorisinde
-    // olmalı), yoksa sabit sonuç kanalı. Böylece ticket seçmeden de çalışır.
-    let kanal = null;
-    if (kanalId && /^\d{17,20}$/.test(kanalId)) {
-        kanal = guild.channels.cache.get(kanalId);
-        if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
-        if (kanal && kanal.parentId !== AC_TICKET_KATEGORI) kanal = null;   // keyfi kanal engeli
-    }
-    if (!kanal) {
-        kanal = acClient.channels.cache.get(NEXORA_SONUC_KANALI);
-        if (!kanal) { try { kanal = await acClient.channels.fetch(NEXORA_SONUC_KANALI); } catch (e) { kanal = null; } }
-    }
-    if (!kanal) throw new Error('DM komutunu çalıştıracak kanal bulunamadı.');
+    let kanal = acClient.channels.cache.get(DM_KOMUT_KANALI);
+    if (!kanal) { try { kanal = await acClient.channels.fetch(DM_KOMUT_KANALI); } catch (e) { kanal = null; } }
+    if (!kanal) throw new Error('DM komut kanalı bulunamadı (AC hesabı o kanalı görebiliyor mu?).');
 
     const ham = await dmKomutunuCoz(acClient, guild.id);
     const args = dmArgumanlariKur(ham, oyuncuId, mesaj);
@@ -5710,14 +5702,12 @@ app.post('/api/ac/nexora', requireIzin('ticketmesaj'), async (req, res) => {
     res.json({ ok: true, kanal: sonuc.kanal });
 });
 
-// Oyuncuya DM: seçili ticket kanalında AC'nin kendi hesabından /dm-player
-// id: message: çalıştırır (bot oyuncuya DM atar).
+// Oyuncuya DM: AC'nin kendi hesabından /dm-player id: message: çalıştırır (bot
+// oyuncuya DM atar). Ticket ŞART DEĞİL - komut sabit DM_KOMUT_KANALI'nda gider.
 app.post('/api/ac/dm-player', requireIzin('ticketmesaj'), async (req, res) => {
     const kullanici = req.session.username;
     if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
 
-    // kanalId OPSİYONEL: ticket seçmeye gerek yok (boşsa sabit sonuç kanalı).
-    const kanalId = String((req.body && req.body.kanalId) || '').trim();
     const oyuncuId = String((req.body && req.body.oyuncuId) || '').trim();
     const mesaj = String((req.body && req.body.mesaj) || '').trim();
     // Oyuncu ID Discord ID DEĞİL - 1'den yukarı herhangi bir numara (oyuncu no).
@@ -5733,7 +5723,7 @@ app.post('/api/ac/dm-player', requireIzin('ticketmesaj'), async (req, res) => {
 
     let sonuc;
     try {
-        sonuc = await acDmPlayerGonder(kullanici, kanalId, oyuncuId, mesaj);
+        sonuc = await acDmPlayerGonder(kullanici, oyuncuId, mesaj);
     } catch (error) {
         return res.json({ ok: false, error: error.message });
     }

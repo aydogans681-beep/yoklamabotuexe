@@ -273,7 +273,7 @@ Hepsi AC'nin **kendi hesabından** gider:
   üzerinden DM attırır. AC, oyuncunun **numarasını** (Discord ID değil - 1'den
   yukarı herhangi bir sayı) ve **mesajı** girer; buton `/dm-player id: message:`
   slash komutunu (`1470758770790498377` botu) çalıştırır. **Ticket seçmek şart
-  değil** - ticket seçiliyse o kanalda, değilse sabit sonuç kanalında çalışır
+  değil** - komut her zaman sabit DM kanalında (`1475520758095544490`) çalışır
   (slash komut için yalnızca bir kanal bağlamı gerekiyor). `/nexorapin` ile aynı
   gateway akışı; komut opsiyonları (id/message) sunucudan çözülüp doğru sırada
   gönderilir.
