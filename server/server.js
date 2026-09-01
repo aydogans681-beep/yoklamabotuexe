@@ -2330,20 +2330,29 @@ function dmArgumanlariKur(komut, oyuncuId, mesaj) {
     });
 }
 
-// AC'nin kendi hesabından seçili ticket kanalında /dm-player id: message:
-// çalıştırır (bot oyuncuya DM atar). acNexoraGonder ile aynı akış, tek fark:
-// iki opsiyonlu komut.
+// AC'nin kendi hesabından /dm-player id: message: çalıştırır (bot oyuncuya DM
+// atar). TICKET ŞART DEĞİL: kanalId verilirse (ve AC kategorisindeyse) o
+// kanalda, verilmezse SABIT sonuç kanalında (NEXORA_SONUC_KANALI) çalıştırılır -
+// slash komutu için yalnızca bir kanal bağlamı gerekiyor, ticket'la ilgisi yok.
 async function acDmPlayerGonder(username, kanalId, oyuncuId, mesaj) {
     const acClient = await acGatewayAl(username);
 
     const guild = acClient.guilds.cache.get(GUILD_ID) || await acClient.guilds.fetch(GUILD_ID);
     if (!guild) throw new Error('Sunucu AC hesabında görünmüyor (AC sunucuda mı?).');
 
-    let kanal = guild.channels.cache.get(kanalId);
-    if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
-    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
-        throw new Error('Kanal ticket kategorisinde değil.');
+    // Kanal seçimi: geçerli bir ticket verildiyse onu (güvenlik: AC kategorisinde
+    // olmalı), yoksa sabit sonuç kanalı. Böylece ticket seçmeden de çalışır.
+    let kanal = null;
+    if (kanalId && /^\d{17,20}$/.test(kanalId)) {
+        kanal = guild.channels.cache.get(kanalId);
+        if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+        if (kanal && kanal.parentId !== AC_TICKET_KATEGORI) kanal = null;   // keyfi kanal engeli
     }
+    if (!kanal) {
+        kanal = acClient.channels.cache.get(NEXORA_SONUC_KANALI);
+        if (!kanal) { try { kanal = await acClient.channels.fetch(NEXORA_SONUC_KANALI); } catch (e) { kanal = null; } }
+    }
+    if (!kanal) throw new Error('DM komutunu çalıştıracak kanal bulunamadı.');
 
     const ham = await dmKomutunuCoz(acClient, guild.id);
     const args = dmArgumanlariKur(ham, oyuncuId, mesaj);
@@ -5707,10 +5716,10 @@ app.post('/api/ac/dm-player', requireIzin('ticketmesaj'), async (req, res) => {
     const kullanici = req.session.username;
     if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
 
+    // kanalId OPSİYONEL: ticket seçmeye gerek yok (boşsa sabit sonuç kanalı).
     const kanalId = String((req.body && req.body.kanalId) || '').trim();
     const oyuncuId = String((req.body && req.body.oyuncuId) || '').trim();
     const mesaj = String((req.body && req.body.mesaj) || '').trim();
-    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket (kanal seç).' });
     // Oyuncu ID Discord ID DEĞİL - 1'den yukarı herhangi bir numara (oyuncu no).
     // Sadece rakam, 1-32 hane (pratikte sınırsız).
     if (!/^\d{1,32}$/.test(oyuncuId)) return res.json({ ok: false, error: 'Geçersiz oyuncu ID (sadece rakam).' });

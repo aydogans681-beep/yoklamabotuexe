@@ -4222,6 +4222,7 @@ async function acDurumYukle() {
             acTicketleriYukle();
             acTetikKelimeYukle();
             acKirliKelimeYukle();
+            if (acDmBtn) acDmBtn.disabled = false;   // DM için ticket şart değil
             acIsitmaBaslat();   // gateway'i sicak tut - anahtar kelime aninda tetiklensin
         } else {
             acIsitmaDurdur();
@@ -4689,7 +4690,6 @@ if (acGifBtn) {
 // --- Oyuncuya DM: /dm-player id: message: (seçili ticket kanalında) ---
 if (acDmBtn) {
     acDmBtn.addEventListener('click', async () => {
-        if (!acSecili) { acDmMsg.textContent = 'Önce bir ticket seç.'; return; }
         const oyuncuId = acDmId.value.trim();
         const mesaj = acDmMesaj.value.trim();
         if (!/^\d{1,32}$/.test(oyuncuId)) { acDmMsg.textContent = 'Geçerli bir oyuncu ID gir (sadece rakam).'; return; }
@@ -4697,10 +4697,12 @@ if (acDmBtn) {
         acDmBtn.disabled = true;
         acDmMsg.textContent = 'DM gönderiliyor...';
         try {
+            // Ticket şart değil: seçiliyse kanalId gönderilir, değilse boş (sunucu
+            // sabit sonuç kanalında çalıştırır).
             const res = await fetch('/api/ac/dm-player', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kanalId: acSecili.id, oyuncuId, mesaj }),
+                body: JSON.stringify({ kanalId: acSecili ? acSecili.id : '', oyuncuId, mesaj }),
             });
             if (res.status === 401) { showLogin(); return; }
             const d = await okuJson(res);

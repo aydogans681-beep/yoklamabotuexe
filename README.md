@@ -270,10 +270,13 @@ Hepsi AC'nin **kendi hesabından** gider:
   gösterir (yazar, zaman, içerik ve görsel/GIF ekleri satır içi). Ticket seçilince
   otomatik yüklenir; **↻ Yenile** ile güncellenir. Panelin ana botu okur.
 - **✉️ Oyuncuya DM (/dm-player)** - bir oyuncuya **AC'nin kendi hesabından** bot
-  üzerinden DM attırır. AC, oyuncunun **Discord ID**'sini ve **mesajı** girer;
-  buton seçili ticket kanalında `/dm-player id: message:` slash komutunu
-  (`1470758770790498377` botu) çalıştırır. `/nexorapin` ile aynı gateway akışı;
-  komut opsiyonları (id/message) sunucudan çözülüp doğru sırada gönderilir.
+  üzerinden DM attırır. AC, oyuncunun **numarasını** (Discord ID değil - 1'den
+  yukarı herhangi bir sayı) ve **mesajı** girer; buton `/dm-player id: message:`
+  slash komutunu (`1470758770790498377` botu) çalıştırır. **Ticket seçmek şart
+  değil** - ticket seçiliyse o kanalda, değilse sabit sonuç kanalında çalışır
+  (slash komut için yalnızca bir kanal bağlamı gerekiyor). `/nexorapin` ile aynı
+  gateway akışı; komut opsiyonları (id/message) sunucudan çözülüp doğru sırada
+  gönderilir.
 - **🔎 Nexora Pinini Görüntüle** - **Nexora At** ile `/nexorapin` çalıştıktan
   sonra, Nexora botunun ticket'a attığı **pini** (mesaj/embed) kanaldan çekip
   AC'nin ekranına basar (içerik, embed başlık/alanlar, görseller). Harici API
