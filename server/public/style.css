@@ -12,13 +12,13 @@
    ========================================================================== */
 
 :root {
-    /* zeminler - katmanli, hafif mavi-siyah yerine sicak koyu */
-    --bg:            #080809;
-    --surface:       #101011;
-    --surface-2:     #161617;
-    --surface-3:     #1f1f21;
-    --border:        #262527;
-    --border-strong: #363537;
+    /* zeminler - saf siyah yerine kirmizi tonlu koyu ("cok siyah" istegi) */
+    --bg:            #0e0809;
+    --surface:       #171011;
+    --surface-2:     #1f1517;
+    --surface-3:     #291b1e;
+    --border:        #37272b;
+    --border-strong: #492f35;
 
     /* yazi */
     --ink:    #f4f4f5;
@@ -60,13 +60,15 @@ body {
     font-size: 13px;
     letter-spacing: -0.006em;
     background-color: var(--bg);
-    /* iki yumusak marka parildamasi - sabit, dikkat dagitmiyor */
-    /* Parildama bilerek zayif: zemin notr kalsin, kirmizi yalnizca eylem ve
-       durum ogelerinde one ciksin. Once daha gucluydu ve tum icerigi
-       kirmiziya yikiyordu. */
+    /* Marka parildamasi - kullanici daha fazla kirmizilik istedi. Ust
+       kosePARILTIlari guclendirildi, ayrica tum sayfaya cok koyu bir kirmizi
+       taban katildi ki zemin "cok siyah" gorunmesin. Metin tokenlari parlak
+       kaldigi icin okunabilirlik korunuyor. */
     background-image:
-        radial-gradient(ellipse 900px 380px at 8% -14%, rgba(255,59,71,.055), transparent 62%),
-        radial-gradient(ellipse 700px 360px at 98% -6%, rgba(255,59,71,.028), transparent 62%);
+        radial-gradient(ellipse 1100px 460px at 8% -14%, rgba(255,59,71,.13), transparent 60%),
+        radial-gradient(ellipse 900px 440px at 98% -6%, rgba(255,59,71,.09), transparent 60%),
+        radial-gradient(ellipse 1400px 900px at 50% 120%, rgba(212,36,47,.07), transparent 70%),
+        linear-gradient(180deg, rgba(158,26,34,.05), rgba(158,26,34,.05));
     background-repeat: no-repeat;
     background-attachment: fixed;
     color: var(--ink);
