@@ -27,6 +27,8 @@ ac-anahtar.key
 ac-nexora-api.json
 # Her AC'nin kendi belirledigi otomatik tetik kelimesi - sunucuda olusur
 ac-tetik-kelime.json
+# Her AC'nin "Kirli" icin belirledigi otomatik kelime - sunucuda olusur
+ac-kirli-kelime.json
 
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.

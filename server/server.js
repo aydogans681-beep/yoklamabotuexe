@@ -2007,6 +2007,33 @@ function acTetikKelimesiAl(username) {
     return (typeof k === 'string' && k.trim()) ? acKelimeNormal(k) : null;
 }
 
+// Aynisi "Kirli" icin: HER AC kendi kelimesini belirler. O AC bir ticket'a bu
+// kelimeyi (ya da global "kirli") yazinca "Kirli" butonuyla ayni islem calisir:
+// ticket'taki pinden sonuc okunup sonuc kanalina SUSPICIOUS gonderilir.
+const AC_KIRLI_KELIME_PATH = path.join(ROOT_DIR, 'ac-kirli-kelime.json');
+function acKirliKelimeleriYukle() {
+    try {
+        const ham = JSON.parse(fs.readFileSync(AC_KIRLI_KELIME_PATH, 'utf8'));
+        return (ham && typeof ham === 'object' && !Array.isArray(ham)) ? ham : {};
+    } catch (error) {
+        return {};
+    }
+}
+const acKirliKelimeleri = acKirliKelimeleriYukle();   // { username: 'kelime' }
+function acKirliKelimeleriYaz() {
+    try {
+        const gecici = `${AC_KIRLI_KELIME_PATH}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(acKirliKelimeleri));
+        fs.renameSync(gecici, AC_KIRLI_KELIME_PATH);
+    } catch (error) {
+        console.log(`[AC] Kirli kelimesi kaydedilemedi: ${error.message}`);
+    }
+}
+function acKirliKelimesiAl(username) {
+    const k = acKirliKelimeleri[username];
+    return (typeof k === 'string' && k.trim()) ? acKelimeNormal(k) : null;
+}
+
 // --- Discord REST ---
 // Gateway acmiyoruz; tek istek. Kutuphane de kullanmiyoruz - selfbot
 // kutuphanesi bir istemci nesnesi kurmak isterdi.
@@ -2077,6 +2104,9 @@ const NEXORA_SONUC_KANALI = '1473372352078286951';
 
 // AC bir ticket'ta bu kelimeyi yazinca otomatik /nexorapin + SS iste tetiklenir.
 const AC_KONTROL_KELIMESI = 'kontrol';
+// AC bir ticket'ta bu kelimeyi yazinca "Kirli" islemi tetiklenir (pinden sonuc
+// okunup sonuc kanalina SUSPICIOUS gonderilir).
+const AC_KIRLI_KELIMESI = 'kirli';
 // Otomatik SS istegi metni (panel arayuzundeki "SS iste" ile ayni).
 const AC_SS_MESAJI = 'Uygulamayı çalıştırıp tam ekran ss atabilir misin?';
 
@@ -2314,6 +2344,24 @@ async function acKontrolTetikle(username, channel) {
     }
     addAudit('ac-kontrol-oto', username, `#${channel.name} (${channel.id})`, null);
     console.log(`[AC-kontrol] ${username} → #${channel.name}: otomatik /nexorapin + SS iste`);
+}
+
+// "kirli" otomasyonu: AC bir ticket'a "kirli" (ya da kendi kelimesini) yazinca
+// "Kirli" butonuyla ayni islem - pinden sonuc okunup sonuc kanalina gonderilir.
+const acKirliSon = new Map();   // kanalId -> zaman (kontrol'den ayri dedup)
+async function acKirliTetikle(username, channel) {
+    const simdi = Date.now();
+    const oncekiler = acKirliSon.get(channel.id) || 0;
+    if (simdi - oncekiler < AC_KONTROL_BEKLEME_MS) return;   // cok yakin - atla
+    acKirliSon.set(channel.id, simdi);
+
+    try {
+        const sonuc = await acNexoraKirliBildir(username, channel.id);
+        addAudit('ac-kirli-oto', username, `kod=${sonuc.kod} hedef=${sonuc.hedefId || '?'} tespit=${sonuc.tespit || '?'}`, null);
+        console.log(`[AC-kirli] ${username} → #${channel.name}: otomatik Kirli (kod=${sonuc.kod})`);
+    } catch (error) {
+        console.log(`[AC-kirli] ${username} Kirli hatasi (#${channel.name}): ${error.message}`);
+    }
 }
 
 // Nexora API'yi bir Discord ID icin sorgular, TUM cevabi dondurur (AC'ye
@@ -2864,12 +2912,16 @@ client.on('messageCreate', (message) => {
             const acUser = acKimlikBul(message.author.id);   // yazan bagli bir AC mi?
             if (acUser) {
                 const t = acKelimeNormal(message.content);
-                const ozel = acTetikKelimesiAl(acUser);      // o AC'nin kendi kelimesi
-                // Global "kontrol" ya da AC'nin kendi belirledigi kelime.
+                const ozel = acTetikKelimesiAl(acUser);       // "kontrol" için özel kelime
+                const ozelKirli = acKirliKelimesiAl(acUser);  // "kirli" için özel kelime
+                // Global "kontrol"/"kirli" ya da AC'nin kendi belirledigi kelimeler.
+                // Tetik kelimesi ticket'ta gorunmesin - ana bot mesaji siler (yetki
+                // varsa); musteri ic kelimeyi gormez, kanal temiz kalir.
                 if (t === AC_KONTROL_KELIMESI || (ozel && t === ozel)) {
                     acKontrolTetikle(acUser, message.channel).catch(() => {});
-                    // Tetik kelimesi ticket'ta gorunmesin - ana bot mesaji siler
-                    // (yetki varsa). Musteri ic tetik kelimesini gormez, kanal temiz kalir.
+                    message.delete().catch(() => {});
+                } else if (t === AC_KIRLI_KELIMESI || (ozelKirli && t === ozelKirli)) {
+                    acKirliTetikle(acUser, message.channel).catch(() => {});
                     message.delete().catch(() => {});
                 }
             }
@@ -5540,6 +5592,31 @@ app.post('/api/ac/tetik-kelime', requireIzin('ticketmesaj'), (req, res) => {
     acTetikKelimeleri[kullanici] = kelime;
     acTetikleriYaz();
     addAudit('ac-tetik-kelime', kullanici, kelime, req);
+    res.json({ ok: true, kelime });
+});
+
+// AC'nin "Kirli" için kendi otomatik kelimesi: durum.
+app.get('/api/ac/kirli-kelime', requireIzin('ticketmesaj'), (req, res) => {
+    const k = acKirliKelimeleri[req.session.username];
+    res.json({ ok: true, kelime: (typeof k === 'string' ? k : ''), global: AC_KIRLI_KELIMESI });
+});
+
+// AC kendi "Kirli" kelimesini belirler/siler. Bos = sil (yalnizca global "kirli"
+// kalir). Kelime tek parca, 2-30 karakter.
+app.post('/api/ac/kirli-kelime', requireIzin('ticketmesaj'), (req, res) => {
+    const kullanici = req.session.username;
+    const kelime = String((req.body && req.body.kelime) || '').trim();
+    if (!kelime) {
+        delete acKirliKelimeleri[kullanici];
+        acKirliKelimeleriYaz();
+        addAudit('ac-kirli-kelime', kullanici, '(silindi)', req);
+        return res.json({ ok: true, kelime: '' });
+    }
+    if (/\s/.test(kelime)) return res.json({ ok: false, error: 'Anahtar kelime tek parça olmalı (boşluk olamaz).' });
+    if (kelime.length < 2 || kelime.length > 30) return res.json({ ok: false, error: 'Anahtar kelime 2-30 karakter olmalı.' });
+    acKirliKelimeleri[kullanici] = kelime;
+    acKirliKelimeleriYaz();
+    addAudit('ac-kirli-kelime', kullanici, kelime, req);
     res.json({ ok: true, kelime });
 });
 

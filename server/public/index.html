@@ -549,6 +549,21 @@
                                 <button id="acKirliBtn" disabled>🚫 Kirli</button>
                                 <span class="scanStatus" id="acSonucMsg"></span>
                             </div>
+
+                            <!-- Otomatik "kirli" kelimesi: AC bunu bir ticket'a yazınca
+                                 (butona basmadan) otomatik Kirli işlemi çalışır. -->
+                            <p class="card-desc" style="margin:14px 0 6px;">
+                                <b>Otomatik kelime</b> — bir ticket'a bu kelimeyi yazınca
+                                (butona basmadan) otomatik <b>Kirli</b> işlenir. <code>kirli</code>
+                                her zaman çalışır; buraya kendi kelimeni de ekleyebilirsin.
+                            </p>
+                            <div class="toolbar">
+                                <input type="text" class="text-search" id="acKirliKelime"
+                                       placeholder="ör. banla (boş = sadece 'kirli')" spellcheck="false"
+                                       style="max-width:240px;">
+                                <button class="secondary small" id="acKirliKaydet">Kaydet</button>
+                                <span class="scanStatus" id="acKirliKelimeMsg"></span>
+                            </div>
                         </div>
 
                         <!-- İkincil: serbest metin mesaj (isteğe bağlı). -->

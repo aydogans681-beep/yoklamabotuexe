@@ -4079,6 +4079,40 @@ if (acTetikKaydet) {
     });
 }
 
+// "Kirli" için AC'nin kendi otomatik kelimesi (yukarıdakinin aynısı).
+const acKirliKelime = document.getElementById('acKirliKelime');
+const acKirliKaydet = document.getElementById('acKirliKaydet');
+const acKirliKelimeMsg = document.getElementById('acKirliKelimeMsg');
+async function acKirliKelimeYukle() {
+    try {
+        const res = await fetch('/api/ac/kirli-kelime');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (d.ok && document.activeElement !== acKirliKelime) acKirliKelime.value = d.kelime || '';
+    } catch (error) { /* sessizce geç */ }
+}
+if (acKirliKaydet) {
+    acKirliKaydet.addEventListener('click', async () => {
+        acKirliKaydet.disabled = true;
+        acKirliKelimeMsg.textContent = 'Kaydediliyor...';
+        try {
+            const res = await fetch('/api/ac/kirli-kelime', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kelime: acKirliKelime.value.trim() }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) { acKirliKelimeMsg.textContent = d.error; return; }
+            acKirliKelimeMsg.textContent = d.kelime ? `Kaydedildi: "${d.kelime}"` : 'Silindi (sadece "kirli").';
+        } catch (error) {
+            acKirliKelimeMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acKirliKaydet.disabled = false;
+        }
+    });
+}
+
 // Nexora At menüsündeki hazır SS isteği mesajı. Tek yerden değiştirilsin diye
 // sabit; buton bunu seçili ticket'a AC'nin kendi hesabından gönderir.
 const AC_SS_MESAJI = 'Uygulamayı çalıştırıp tam ekran ss atabilir misin?';
@@ -4179,6 +4213,7 @@ async function acDurumYukle() {
             acSayac.textContent = `en fazla ${d.saatlikTavan}/saat · gönderimler arası ${d.kisiAralikSn} sn`;
             acTicketleriYukle();
             acTetikKelimeYukle();
+            acKirliKelimeYukle();
             acIsitmaBaslat();   // gateway'i sicak tut - anahtar kelime aninda tetiklensin
         } else {
             acIsitmaDurdur();

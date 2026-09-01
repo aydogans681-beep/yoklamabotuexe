@@ -281,7 +281,9 @@ Hepsi AC'nin **kendi hesabından** gider:
   ```
   Kod ticket'ta yoksa (tarama tamamlanmamışsa) uyarı verir. AC yalnızca bu tek
   sabit kanala yazabilir - keyfi kanal değil (güvenlik). Pini panelin ana botu
-  okur, mesajı AC'nin kendi hesabı atar.
+  okur, mesajı AC'nin kendi hesabı atar. **Otomatik kelimeyle de tetiklenir:** AC
+  bir ticket'a `kirli` (ya da *Sonuç* kartından belirlediği kendi kelimesini)
+  yazınca butona basmadan aynı Kirli işlemi çalışır (kelime mesajı silinir).
 - **Mesaj (isteğe bağlı)** - AC serbest bir metin yazıp **Gönder**'e basarsa, o
   metin ticket'a yine kendi hesabından düşer.
 
@@ -303,6 +305,12 @@ O AC bir ticket'a **kendi kelimesini** yazınca da aynı otomasyon (önce
 kelimesi kendine özeldir - biri "tara", biri "sorgula" belirleyebilir; kutu boş
 bırakılıp kaydedilirse yalnızca global `kontrol` kalır. Kelimeler
 `ac-tetik-kelime.json`'da (AC kullanıcı adı → kelime) tutulur.
+
+Aynı mantık **Kirli** için de var: global `kirli`'nin yanında her AC *Sonuç*
+kartındaki kutudan **kendi Kirli kelimesini** belirleyebilir (ör. "banla").
+Kelimeler `ac-kirli-kelime.json`'da tutulur; aynı doğrulama (tek parça, 2-30
+karakter) ve dedup (aynı kanalda 15 sn) geçerli. "kontrol" ve "kirli"
+otomasyonları birbirinden bağımsız çalışır.
 
 Kim ne zaman hangi ticket'a Nexora attı, SS istedi, pin görüntüledi, "kontrol"
 otomasyonu çalıştı ya da mesaj gönderdi, Hesap Logları'na yazılır.
@@ -842,6 +850,7 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `POST /api/ac/nexora-pin` | Nexora botunun ticket'a attığı pini kanaldan çekip döner |
 | `POST /api/ac/kirli` | Pinden kod/hedef/tespit okuyup sabit sonuç kanalına AC'nin hesabından SUSPICIOUS gönderir ("Temiz" istek atmaz) |
 | `GET/POST /api/ac/tetik-kelime` | AC'nin kişiye özel otomatik tetik kelimesini okur/kaydeder |
+| `GET/POST /api/ac/kirli-kelime` | AC'nin "Kirli" için kişiye özel otomatik kelimesini okur/kaydeder |
 | `POST /api/loglar/:key/isaret` | Log kaydını Ban/Şüpheli/Temiz işaretler (yalnızca panelde) |
 | `GET /api/uyari-gecmisi` | Uyarı geçmişi |
 | `WS /ws` | Canlı durum, log ilerlemesi, toplu işlem ilerlemesi, AC ticket açılış/kapanış (`ac-ticket-degisti`) |
