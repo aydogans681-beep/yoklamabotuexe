@@ -2108,6 +2108,10 @@ const DM_KOMUT_ADI = 'dm-player';
 // /dm-player'in HER ZAMAN calistirilacagi SABIT kanal. Ticket'la ilgisi yok -
 // komut yalnizca bir kanal baglami gerektiriyor, hepsi buradan gidiyor.
 const DM_KOMUT_KANALI = '1475520758095544490';
+// "AC Ticket Aç": AC bir Discord ID girince, bu kanala AC'nin kendi hesabindan
+// "<@girilenId> Ac Ticket Aç <@ac'nin kendi id'si>" mesaji atilir.
+const AC_TICKET_AC_KANALI = '1470230489456578759';
+const AC_TICKET_AC_METNI = 'Ac Ticket Aç';
 
 // AC bir ticket'ta bu kelimeyi yazinca otomatik /nexorapin + SS iste tetiklenir.
 const AC_KONTROL_KELIMESI = 'kontrol';
@@ -2361,6 +2365,26 @@ async function acDmPlayerGonder(username, oyuncuId, mesaj) {
     }
     console.log(`[DM] ${username} → #${kanal.name}: /${ham.name} gönderildi.`);
     return { kanal: kanal.name, oyuncuId, hesap: acClient.user ? acClient.user.tag : null };
+}
+
+// "<@girilen> Ac Ticket Aç <@gonderenAC>" - once girilen kisi, sonra gonderen AC.
+function acTicketAcMetniKur(dcId, selfId) {
+    return `<@${dcId}> ${AC_TICKET_AC_METNI}${selfId ? ` <@${selfId}>` : ''}`;
+}
+
+// "AC Ticket Aç": AC bir Discord ID girince, AC'nin KENDI hesabindan sabit
+// AC_TICKET_AC_KANALI'na yukaridaki mesaji atar. Ticket ŞART DEĞİL.
+async function acTicketAcEtiketle(username, dcId) {
+    const acClient = await acGatewayAl(username);
+    let kanal = acClient.channels.cache.get(AC_TICKET_AC_KANALI);
+    if (!kanal) { try { kanal = await acClient.channels.fetch(AC_TICKET_AC_KANALI); } catch (e) { kanal = null; } }
+    if (!kanal) throw new Error('AC ticket kanalı bulunamadı (AC hesabı o kanalı görebiliyor mu?).');
+
+    const selfId = acClient.user ? acClient.user.id : null;
+    const icerik = acTicketAcMetniKur(dcId, selfId);
+    await kanal.send({ content: icerik, allowedMentions: { parse: ['users'] } });
+    console.log(`[AC-Ticket-Aç] ${username} → #${kanal.name}: ${icerik}`);
+    return { kanal: kanal.name, dcId, hesap: acClient.user ? acClient.user.tag : null };
 }
 
 // AC kategorisinde ticket acilinca otomatik karsilamayi HANGI AC hesabi atsin?
@@ -5733,14 +5757,46 @@ app.post('/api/ac/dm-player', requireIzin('ticketmesaj'), async (req, res) => {
     res.json({ ok: true, kanal: sonuc.kanal, oyuncuId });
 });
 
+// AC Ticket Aç: bir Discord ID girilince sabit kanala AC'nin kendi hesabından
+// "<@id> Ac Ticket Aç <@ac>" mesajı atar (girilen kişi + gönderen AC etiketli).
+app.post('/api/ac/ticket-ac', requireIzin('ticketmesaj'), async (req, res) => {
+    const kullanici = req.session.username;
+    if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
+    const dcId = String((req.body && req.body.dcId) || '').trim();
+    if (!/^\d{17,20}$/.test(dcId)) return res.json({ ok: false, error: 'Geçersiz Discord ID (17-20 haneli).' });
+
+    const hizHatasi = acHizKontrol(kullanici);
+    if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
+
+    let sonuc;
+    try {
+        sonuc = await acTicketAcEtiketle(kullanici, dcId);
+    } catch (error) {
+        return res.json({ ok: false, error: error.message });
+    }
+
+    acHizIsle(kullanici);
+    addAudit('ac-ticket-ac', kullanici, `dc=${dcId} (#${sonuc.kanal})`, req);
+    res.json({ ok: true, kanal: sonuc.kanal, dcId });
+});
+
 // Gateway'i ONCEDEN isit: AC bir ticket secince frontend bunu cagirir (bekletmeden).
 // Boylece "Nexora At"a bastiginda gateway zaten hazir olur - "bağlanıyor" beklemesi
 // kullanicinin ticket'i secip tusa basma arasinda gizlenir.
 app.post('/api/ac/hazirla', requireIzin('ticketmesaj'), (req, res) => {
     const kullanici = req.session.username;
     if (acTokenlari[kullanici]) {
-        // Arka planda ac/hazirla - istegi bekletme.
-        acGatewayAl(kullanici).catch((e) => console.log(`[Nexora] ${kullanici} isitma hatasi: ${e.message}`));
+        // Arka planda ac/hazirla - istegi bekletme. Gateway'in yaninda DM komutunu
+        // ve sık kullanılan kanalları da önceden çözüp önbelleğe alıyoruz ki İLK
+        // DM / ticket-aç isteği REST beklemeden hızlı gitsin (keepalive'da tekrar).
+        acGatewayAl(kullanici).then(async (acClient) => {
+            try {
+                const guild = acClient.guilds.cache.get(GUILD_ID) || await acClient.guilds.fetch(GUILD_ID);
+                if (guild) dmKomutunuCoz(acClient, guild.id).catch(() => {});
+                if (!acClient.channels.cache.get(DM_KOMUT_KANALI)) acClient.channels.fetch(DM_KOMUT_KANALI).catch(() => {});
+                if (!acClient.channels.cache.get(AC_TICKET_AC_KANALI)) acClient.channels.fetch(AC_TICKET_AC_KANALI).catch(() => {});
+            } catch (e) { /* önbellek ısıtma - hata yut */ }
+        }).catch((e) => console.log(`[Nexora] ${kullanici} isitma hatasi: ${e.message}`));
     }
     res.json({ ok: true });
 });

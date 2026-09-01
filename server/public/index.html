@@ -607,6 +607,24 @@
                             </div>
                         </div>
 
+                        <!-- AC Ticket Aç: bir Discord ID girilince, AC'nin kendi
+                             hesabından sabit kanala "<@id> Ac Ticket Aç <@ac>" atar. -->
+                        <div class="card" style="margin:0 0 12px;">
+                            <h2>AC Ticket Aç</h2>
+                            <p class="card-desc">
+                                Bir kişinin <b>Discord ID</b>'sini gir; <b>senin hesabından</b> o
+                                kişiyi etiketleyip <b>"Ac Ticket Aç"</b> yazar, sonra kendini de
+                                etiketler. Ticket seçmene gerek yok.
+                            </p>
+                            <div class="toolbar">
+                                <input type="text" class="text-search" id="acTicketAcId"
+                                       placeholder="Discord ID (17-20 hane)" spellcheck="false"
+                                       inputmode="numeric" style="max-width:280px;">
+                                <button id="acTicketAcBtn" disabled>🎫 AC Ticket Aç</button>
+                                <span class="scanStatus" id="acTicketAcMsg"></span>
+                            </div>
+                        </div>
+
                         <!-- İkincil: serbest metin mesaj (isteğe bağlı). -->
                         <div class="card" style="margin:0;">
                             <h2>Mesaj (isteğe bağlı)</h2>

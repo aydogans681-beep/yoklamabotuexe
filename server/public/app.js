@@ -4053,6 +4053,9 @@ const acDmId = document.getElementById('acDmId');
 const acDmMesaj = document.getElementById('acDmMesaj');
 const acDmBtn = document.getElementById('acDmBtn');
 const acDmMsg = document.getElementById('acDmMsg');
+const acTicketAcId = document.getElementById('acTicketAcId');
+const acTicketAcBtn = document.getElementById('acTicketAcBtn');
+const acTicketAcMsg = document.getElementById('acTicketAcMsg');
 const acTetikKelime = document.getElementById('acTetikKelime');
 const acTetikKaydet = document.getElementById('acTetikKaydet');
 const acTetikMsg = document.getElementById('acTetikMsg');
@@ -4223,6 +4226,7 @@ async function acDurumYukle() {
             acTetikKelimeYukle();
             acKirliKelimeYukle();
             if (acDmBtn) acDmBtn.disabled = false;   // DM için ticket şart değil
+            if (acTicketAcBtn) acTicketAcBtn.disabled = false;   // AC Ticket Aç da ticket istemez
             acIsitmaBaslat();   // gateway'i sicak tut - anahtar kelime aninda tetiklensin
         } else {
             acIsitmaDurdur();
@@ -4716,6 +4720,36 @@ if (acDmBtn) {
             acDmMsg.textContent = `Hata: ${error.message}`;
         } finally {
             acDmBtn.disabled = false;
+        }
+    });
+}
+
+// --- AC Ticket Aç: Discord ID → kişiyi + kendini etiketleyip sabit kanala at ---
+if (acTicketAcBtn) {
+    acTicketAcBtn.addEventListener('click', async () => {
+        const dcId = acTicketAcId.value.trim();
+        if (!/^\d{17,20}$/.test(dcId)) { acTicketAcMsg.textContent = 'Geçerli bir Discord ID gir (17-20 hane).'; return; }
+        acTicketAcBtn.disabled = true;
+        acTicketAcMsg.textContent = 'Gönderiliyor...';
+        try {
+            const res = await fetch('/api/ac/ticket-ac', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dcId }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) {
+                acTicketAcMsg.textContent = d.error;
+                if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+                return;
+            }
+            acTicketAcMsg.textContent = `🎫 Gönderildi → ${d.kanal}`;
+            acTicketAcId.value = '';
+        } catch (error) {
+            acTicketAcMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acTicketAcBtn.disabled = false;
         }
     });
 }
