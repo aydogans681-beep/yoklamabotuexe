@@ -2052,6 +2052,65 @@ async function acDiscordIstek(yol, token, secenek = {}) {
     return { ok: cevap.ok, durum: cevap.status, govde };
 }
 
+// HIZ: Slash komut GEREKMEYEN her AC gönderimi (Kirli sonucu, karşılama, AC
+// Ticket Aç) artık GATEWAY yerine tek REST isteğiyle gidiyor - gateway login
+// beklemesi yok, anında. (Yalnızca /nexorapin ve /dm-player gerçekten gateway
+// istiyor.) Token çözülemez/geçersizse kayıt düşürülür.
+async function acRestMesajGonder(username, kanalId, govde) {
+    const kayit = acTokenlari[username];
+    if (!kayit) throw new Error('Hesap bağlı değil.');
+    const token = acCoz(kayit.paket);
+    if (!token) throw new Error('Kayıtlı token çözülemedi, hesabını yeniden bağla.');
+    const sonuc = await acDiscordIstek(`/channels/${kanalId}/messages`, token, { method: 'POST', body: govde });
+    if (!sonuc.ok) {
+        if (sonuc.durum === 401) {
+            delete acTokenlari[username]; acTokenlariniYaz();
+            throw new Error('Token artık geçerli değil, bağlantı kaldırıldı. Yeniden bağla.');
+        }
+        const detay = (sonuc.govde && sonuc.govde.message) || `HTTP ${sonuc.durum}`;
+        throw new Error(`Discord reddetti: ${detay}`);
+    }
+    return sonuc.govde;
+}
+
+// HIZ: Dosya (GIF) gönderimi de REST multipart ile - gateway yok. Node'un
+// global FormData/Blob'u kullanılıyor; Content-Type'ı fetch (boundary ile)
+// kendi koyar, o yüzden elle Authorization dışında başlık verilmiyor.
+async function acRestDosyaGonder(username, kanalId, dosyaYolu, ad) {
+    const kayit = acTokenlari[username];
+    if (!kayit) throw new Error('Hesap bağlı değil.');
+    const token = acCoz(kayit.paket);
+    if (!token) throw new Error('Kayıtlı token çözülemedi, hesabını yeniden bağla.');
+    const buf = fs.readFileSync(dosyaYolu);
+    const fd = new FormData();
+    fd.append('payload_json', JSON.stringify({ attachments: [{ id: 0, filename: ad }] }));
+    fd.append('files[0]', new Blob([buf]), ad);
+    const cevap = await fetch(`https://discord.com/api/v10/channels/${kanalId}/messages`, {
+        method: 'POST', headers: { Authorization: token }, body: fd,
+    });
+    if (!cevap.ok) {
+        if (cevap.status === 401) {
+            delete acTokenlari[username]; acTokenlariniYaz();
+            throw new Error('Token artık geçerli değil, bağlantı kaldırıldı. Yeniden bağla.');
+        }
+        let detay = `HTTP ${cevap.status}`;
+        try { const j = await cevap.json(); if (j && j.message) detay = j.message; } catch (e) { /* yoksay */ }
+        throw new Error(`Discord reddetti: ${detay}`);
+    }
+    return true;
+}
+
+// Bir kanalın gerçekten AC ticket kategorisinde olup olmadığını ANA bot
+// önbelleğinden doğrular (gateway açmadan, anında) - REST gönderimleri için
+// güvenlik kontrolü.
+function acTicketKanaliDogrula(kanalId) {
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID);
+        const kanal = guild && guild.channels.cache.get(kanalId);
+        return Boolean(kanal && kanal.parentId === AC_TICKET_KATEGORI);
+    } catch (e) { return false; }
+}
+
 // Hiz sinirlari - bellekte, kisi basina.
 const acSonGonderim = new Map();   // username -> ts
 const acSaatlik = new Map();       // username -> [ts, ...]
@@ -2375,16 +2434,12 @@ function acTicketAcMetniKur(dcId, selfId) {
 // "AC Ticket Aç": AC bir Discord ID girince, AC'nin KENDI hesabindan sabit
 // AC_TICKET_AC_KANALI'na yukaridaki mesaji atar. Ticket ŞART DEĞİL.
 async function acTicketAcEtiketle(username, dcId) {
-    const acClient = await acGatewayAl(username);
-    let kanal = acClient.channels.cache.get(AC_TICKET_AC_KANALI);
-    if (!kanal) { try { kanal = await acClient.channels.fetch(AC_TICKET_AC_KANALI); } catch (e) { kanal = null; } }
-    if (!kanal) throw new Error('AC ticket kanalı bulunamadı (AC hesabı o kanalı görebiliyor mu?).');
-
-    const selfId = acClient.user ? acClient.user.id : null;
+    // HIZ: gateway yok - kendi Discord ID'sini kayıttan alıp REST ile atıyoruz.
+    const selfId = (acTokenlari[username] && acTokenlari[username].discordId) || null;
     const icerik = acTicketAcMetniKur(dcId, selfId);
-    await kanal.send({ content: icerik, allowedMentions: { parse: ['users'] } });
-    console.log(`[AC-Ticket-Aç] ${username} → #${kanal.name}: ${icerik}`);
-    return { kanal: kanal.name, dcId, hesap: acClient.user ? acClient.user.tag : null };
+    await acRestMesajGonder(username, AC_TICKET_AC_KANALI, { content: icerik, allowed_mentions: { parse: ['users'] } });
+    console.log(`[AC-Ticket-Aç] ${username} → ${AC_TICKET_AC_KANALI}: ${icerik}`);
+    return { kanal: AC_TICKET_AC_KANALI, dcId, hesap: username };
 }
 
 // AC kategorisinde ticket acilinca otomatik karsilamayi HANGI AC hesabi atsin?
@@ -2400,17 +2455,14 @@ function acKarsilamaHesabiSec() {
 }
 
 // Verilen AC'nin kendi hesabindan bir ticket kanalina DUZ metin yazar (slash
-// degil - karsilama mesaji). acNexoraGonder ile ayni gateway makinesini
-// kullanir, tek fark: komut yerine kanal.send.
+// degil - karsilama mesaji). HIZ: gateway yerine REST - anında. Kategori
+// kontrolu ana bot onbelleginden yapiliyor.
 async function acKarsilamaGonder(username, kanalId, metin) {
-    const acClient = await acGatewayAl(username);
-    let kanal = acClient.channels.cache.get(kanalId);
-    if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
-    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+    if (!acTicketKanaliDogrula(kanalId)) {
         throw new Error('Kanal AC ticket kategorisinde değil.');
     }
-    await kanal.send(metin);
-    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+    await acRestMesajGonder(username, kanalId, { content: metin });
+    return { kanal: kanalId, hesap: username };
 }
 
 // Bir Discord ID'nin hangi AC panel hesabina ait oldugunu bulur (token bagli
@@ -2609,12 +2661,9 @@ async function acNexoraKirliBildir(username, ticketKanalId) {
     }
     const metin = nexoraKirliMesaji(coz);
 
-    const acClient = await acGatewayAl(username);
-    let kanal = acClient.channels.cache.get(NEXORA_SONUC_KANALI);
-    if (!kanal) { try { kanal = await acClient.channels.fetch(NEXORA_SONUC_KANALI); } catch (e) { kanal = null; } }
-    if (!kanal) throw new Error('Sonuç kanalı bulunamadı (AC hesabı o kanalı görebiliyor mu?).');
-    await kanal.send(metin);
-    return { kod: coz.kod, hedefId: coz.hedefId, tespit: coz.tespit, hesap: acClient.user ? acClient.user.tag : null };
+    // HIZ: gateway yerine REST - anında (düz mesaj, slash değil).
+    await acRestMesajGonder(username, NEXORA_SONUC_KANALI, { content: metin });
+    return { kod: coz.kod, hedefId: coz.hedefId, tespit: coz.tespit, hesap: username };
 }
 
 // Secili ticket'a gonderilmis TUM mesajlari (son N) panelde gostermek icin
@@ -2672,16 +2721,14 @@ async function acGifDosyasiHazirla() {
 }
 
 // Secili ticket'a hazir GIF'i AC'nin KENDI hesabindan DOSYA olarak yukler.
+// HIZ: gateway yok - REST multipart. Kategori kontrolu ana bot onbelleginden.
 async function acGifGonder(username, kanalId) {
-    const dosya = await acGifDosyasiHazirla();
-    const acClient = await acGatewayAl(username);
-    let kanal = acClient.channels.cache.get(kanalId);
-    if (!kanal) { try { kanal = await acClient.channels.fetch(kanalId); } catch (e) { kanal = null; } }
-    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+    if (!acTicketKanaliDogrula(kanalId)) {
         throw new Error('Kanal AC ticket kategorisinde değil.');
     }
-    await kanal.send({ files: [{ attachment: dosya, name: 'ac.gif' }] });
-    return { kanal: kanal.name, hesap: acClient.user ? acClient.user.tag : null };
+    const dosya = await acGifDosyasiHazirla();
+    await acRestDosyaGonder(username, kanalId, dosya, 'ac.gif');
+    return { kanal: kanalId, hesap: username };
 }
 
 
