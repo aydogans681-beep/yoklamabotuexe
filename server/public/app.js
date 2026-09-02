@@ -893,7 +893,7 @@ tabButtons.forEach((btn) => {
         if (btn.dataset.tab === 'ticketmesaj') acDurumYukle();
         if (btn.dataset.tab === 'ayarlar') {
             if (currentIsAdmin) refreshAccounts();
-            loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama(); loadPrime();
+            loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama(); loadPrime(); uyariDusurYukle();
         }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
@@ -3978,6 +3978,60 @@ async function loadOtoYoklama() {
     } catch (error) {
         otoYoklamaMsg.textContent = `Hata: ${error.message}`;
     }
+}
+
+// --- Uyarı Süresi: otomatik düşürme ---
+const uyariDusurAcik = document.getElementById('uyariDusurAcik');
+const uyariDusurSimdiBtn = document.getElementById('uyariDusurSimdiBtn');
+const uyariDusurMsg = document.getElementById('uyariDusurMsg');
+const uyariDusurDurum = document.getElementById('uyariDusurDurum');
+
+async function uyariDusurYukle() {
+    if (!uyariDusurAcik) return;
+    try {
+        const res = await fetch('/api/uyari-dusur');
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) return;
+        uyariDusurAcik.checked = d.acik !== false;
+        uyariDusurDurum.textContent = `Süre: ${d.sure} · şu an takip edilen aktif uyarı: ${d.aktifUyariSayisi}`
+            + (d.sonGun ? ` · son günlük kontrol: ${d.sonGun}` : ' · bugün henüz çalışmadı');
+    } catch (error) { /* sessiz */ }
+}
+
+if (uyariDusurAcik) {
+    uyariDusurAcik.addEventListener('change', async () => {
+        uyariDusurMsg.textContent = 'Kaydediliyor...';
+        try {
+            const res = await fetch('/api/uyari-dusur', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ acik: uyariDusurAcik.checked }),
+            });
+            const d = await okuJson(res);
+            uyariDusurMsg.textContent = d.ok ? (d.acik ? 'Açık — her gün kontrol edilir.' : 'Kapatıldı.') : `Hata: ${d.error}`;
+        } catch (error) { uyariDusurMsg.textContent = `Hata: ${error.message}`; }
+    });
+}
+
+if (uyariDusurSimdiBtn) {
+    uyariDusurSimdiBtn.addEventListener('click', async () => {
+        uyariDusurSimdiBtn.disabled = true;
+        uyariDusurMsg.textContent = 'Kontrol ediliyor...';
+        try {
+            const res = await fetch('/api/uyari-dusur/simdi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            const d = await okuJson(res);
+            if (!d.ok) { uyariDusurMsg.textContent = `Hata: ${(d.sonuc && d.sonuc.error) || d.error}`; return; }
+            const s = d.sonuc || {};
+            uyariDusurMsg.textContent = s.dusurulen
+                ? `${s.dusurulen} kişiden 1'er uyarı çekildi.`
+                : 'Süresi dolan uyarı yok — kimseye dokunulmadı.';
+            uyariDusurYukle();
+        } catch (error) {
+            uyariDusurMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            uyariDusurSimdiBtn.disabled = false;
+        }
+    });
 }
 
 document.getElementById('otoYoklamaEkleBtn').addEventListener('click', () => {

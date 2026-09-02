@@ -1185,7 +1185,8 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
         };
     }
 
-    lastGivenRole.set(memberId, { roleId: nextRole.id, label: nextRole.label, tag: member.user.tag });
+    // at: bu uyarinin verildigi an - "1 hafta dolunca otomatik dusur" bunu kullanir.
+    lastGivenRole.set(memberId, { roleId: nextRole.id, label: nextRole.label, tag: member.user.tag, at: Date.now() });
 
     let announceError = null;
     if (reason && announceIndividually) {
@@ -1316,6 +1317,98 @@ async function undoLastWarning(memberId) {
     });
 
     return { ok: true, removedLabel: record.label, botReply, announceError, announceDeleted, announceSkippedShared };
+}
+
+// ============================================================================
+// --- UYARI SÜRESİ: 1 HAFTA DOLUNCA OTOMATİK DÜŞÜR ---
+// Her gün çalışır: aktif uyarısı (lastGivenRole) 1 haftayı dolduran her kişiden
+// 1 uyarı (en üst tier) çekilir - undoLastWarning ile, elle "Geri Al" ile aynı.
+// Uyarısı olmayana dokunulmaz. Çekildikten sonra kişi hâlâ alt tier uyarı
+// tutuyorsa o, KENDİ verildiği zamanla yeniden kaydedilir; böylece o da kendi 1
+// haftasını doldurunca (bir sonraki günlük kontrolde) çekilir.
+const UYARI_SURE_MS = 7 * 24 * 60 * 60 * 1000;   // 1 hafta
+let uyariDusurCalisiyor = false;
+
+// Bir kişinin verilen bir tier'ının, geçmişteki en son "given" kaydından
+// verilme zamanını bulur (yeniden kayıt için taze değil GERÇEK zaman).
+function uyariVerilisZamani(memberId, label) {
+    for (let i = warningHistory.length - 1; i >= 0; i -= 1) {
+        const e = warningHistory[i];
+        if (e && e.type === 'given' && e.memberId === memberId && e.label === label && typeof e.at === 'number') {
+            return e.at;
+        }
+    }
+    return null;
+}
+
+async function uyariSureleriniDusur(tetikleyen) {
+    if (uyariDusurCalisiyor) return { ok: false, error: 'Zaten çalışıyor.' };
+    if (discordStatus !== 'bağlı') return { ok: false, error: 'Discord bağlı değil.' };
+    uyariDusurCalisiyor = true;
+    const simdi = Date.now();
+    try {
+        // 1) Süresi dolan adayları topla (map'i iterasyon sırasında değiştirme).
+        const adaylar = [];
+        let backfill = false;
+        for (const [memberId, record] of lastGivenRole.entries()) {
+            if (!record) continue;
+            let verilis = typeof record.at === 'number' ? record.at : null;
+            if (verilis === null) {
+                // Eski kayıt (at yok): geçmişten bul, yoksa şimdi (taze 1 hafta).
+                const g = uyariVerilisZamani(memberId, record.label);
+                verilis = g !== null ? g : simdi;
+                record.at = verilis;   // birebir doldur
+                backfill = true;
+            }
+            if (simdi - verilis >= UYARI_SURE_MS) adaylar.push(memberId);
+        }
+        if (backfill) persistWarningState();
+        if (adaylar.length === 0) {
+            return { ok: true, dusurulen: 0, liste: [] };
+        }
+
+        // 2) Her adaydan 1 uyarı çek (rol botunu yormamak için aralıklı).
+        const liste = [];
+        for (const memberId of adaylar) {
+            const rec = lastGivenRole.get(memberId);
+            const eskiLabel = rec ? rec.label : null;
+            const eskiTag = rec ? rec.tag : memberId;
+            try {
+                const sonuc = await undoLastWarning(memberId);
+                if (!sonuc || !sonuc.ok) {
+                    console.log(`[UyarıDüşür] ${eskiTag} (${memberId}) çekilemedi: ${(sonuc && sonuc.error) || '?'}`);
+                    continue;
+                }
+                liste.push({ memberId, tag: eskiTag, label: eskiLabel });
+                addAudit('uyari-oto-dusur', 'sistem', `${eskiTag} (${memberId}) - "${eskiLabel}" 1 hafta doldu, çekildi`, null);
+
+                // Kalan alt tier varsa KENDİ verilme zamanıyla yeniden kaydet.
+                try {
+                    const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+                    const member = guild ? await guild.members.fetch(memberId) : null;
+                    const idx = member ? getWarningTierIndex(member) : -1;
+                    if (idx >= 0) {
+                        const role = WARNING_ROLES[idx];
+                        const altZaman = uyariVerilisZamani(memberId, role.label);
+                        lastGivenRole.set(memberId, {
+                            roleId: role.id, label: role.label, tag: member.user.tag,
+                            at: altZaman !== null ? altZaman : simdi,
+                        });
+                        persistWarningState();
+                    }
+                } catch (e) { /* alt tier yeniden kayıt başarısız - yoksay */ }
+            } catch (error) {
+                console.log(`[UyarıDüşür] ${eskiTag} (${memberId}) hata: ${error.message}`);
+            }
+            await new Promise((r) => setTimeout(r, BULK_WARNING_DELAY_MS));
+        }
+
+        console.log(`[UyarıDüşür] ${liste.length}/${adaylar.length} kişiden 1'er uyarı çekildi (${tetikleyen}).`);
+        if (liste.length) wsBroadcast({ type: 'uyari-oto-dusur', liste, at: Date.now() });
+        return { ok: true, dusurulen: liste.length, aday: adaylar.length, liste };
+    } finally {
+        uyariDusurCalisiyor = false;
+    }
 }
 
 function buildWarningAnnounceMessage(warnedMemberIds, reason, verenId) {
@@ -3460,6 +3553,8 @@ if (panelSettings.rolBotId === HATALI_ESKI_ROLE_BOT_ID) {
 }
 if (typeof panelSettings.otoYoklamaAcik !== 'boolean') panelSettings.otoYoklamaAcik = true;
 if (typeof panelSettings.otoYoklamaSaat !== 'string') panelSettings.otoYoklamaSaat = '20:30';
+// Uyari 1 haftasini dolunca otomatik dusme - gunde bir kez calisir (varsayilan acik).
+if (typeof panelSettings.uyariOtoDusur !== 'boolean') panelSettings.uyariOtoDusur = true;
 
 let otoGocGerekli = false;
 // Birden fazla zamanlanmis yoklama. Once tek saat vardi; artik her satirin
@@ -5489,6 +5584,19 @@ setInterval(() => {
     });
 }, 60 * 1000);
 
+// Uyari sure kontrolu: GUNDE BİR KEZ. Yeni gunun ilk cevrimici dakikasinda
+// calisir (sabit saat beklemeden) - "hergun kontrol et" istegi. Ayni gun iki
+// kez calismasini uyariOtoDusurSonGun engelliyor.
+setInterval(() => {
+    if (!panelSettings.uyariOtoDusur) return;
+    if (discordStatus !== 'bağlı') return;
+    const bugun = bugununAnahtari();
+    if (panelSettings.uyariOtoDusurSonGun === bugun) return;   // bugün çalıştı
+    panelSettings.uyariOtoDusurSonGun = bugun;                 // yarışı engelle
+    savePanelSettings();
+    uyariSureleriniDusur('günlük otomatik').catch((e) => console.log(`[UyarıDüşür] Hata: ${e.message}`));
+}, 60 * 1000);
+
 const SAAT_BICIMI = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 app.get('/api/oto-yoklama', requireIzin('ayarlar'), (req, res) => {
@@ -5576,6 +5684,37 @@ app.post('/api/oto-yoklama/simdi', requireIzin('ayarlar'), async (req, res) => {
             ok: true,
             sonuc: await otoYoklamaCalistir(`elle (${req.session.username})`, satir),
         });
+    } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// Uyari süresi otomatik düşürme: durum + aç/kapa.
+app.get('/api/uyari-dusur', requireIzin('ayarlar'), (req, res) => {
+    res.json({
+        ok: true,
+        acik: panelSettings.uyariOtoDusur !== false,
+        sure: '1 hafta',
+        aktifUyariSayisi: lastGivenRole.size,
+        sonGun: panelSettings.uyariOtoDusurSonGun || null,
+        calisiyor: uyariDusurCalisiyor,
+    });
+});
+
+app.post('/api/uyari-dusur', requireIzin('ayarlar'), (req, res) => {
+    if (typeof (req.body && req.body.acik) === 'boolean') {
+        panelSettings.uyariOtoDusur = req.body.acik;
+        savePanelSettings();
+        addAudit('uyari-oto-dusur-ayar', req.session.username, `otomatik düşürme ${req.body.acik ? 'AÇIK' : 'KAPALI'}`, req);
+    }
+    res.json({ ok: true, acik: panelSettings.uyariOtoDusur !== false });
+});
+
+// Elle çalıştır: "şimdi kontrol et" (bir günü beklemeden test/uygulama).
+app.post('/api/uyari-dusur/simdi', requireIzin('ayarlar'), async (req, res) => {
+    try {
+        const sonuc = await uyariSureleriniDusur(`elle (${req.session.username})`);
+        res.json({ ok: sonuc.ok !== false, sonuc });
     } catch (error) {
         res.json({ ok: false, error: error.message });
     }

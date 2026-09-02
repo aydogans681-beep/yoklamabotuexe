@@ -983,6 +983,27 @@
             </div>
 
             <div class="card accent-card">
+                <h2>Uyarı Süresi — Otomatik Düşürme</h2>
+                <p class="card-desc">
+                    Her uyarının <b>1 hafta</b> süresi vardır. Bot <b>her gün</b>
+                    kontrol eder; uyarısının 1 haftası dolan kişilerden <b>1 uyarı
+                    çeker</b> (elle "Geri Al" ile aynı - rol botuna komut atılır).
+                    Üstünde uyarı olmayana dokunmaz. Kişide birden çok uyarı varsa,
+                    her biri kendi 1 haftasını doldurunca çekilir.
+                </p>
+                <div class="toolbar">
+                    <label class="switch-row" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="uyariDusurAcik">
+                        <span>Otomatik düşürme açık</span>
+                    </label>
+                    <span class="sep"></span>
+                    <button class="secondary small" id="uyariDusurSimdiBtn">Şimdi Kontrol Et</button>
+                    <span class="scanStatus" id="uyariDusurMsg"></span>
+                </div>
+                <div class="scanStatus" id="uyariDusurDurum" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card accent-card">
                 <h2>Prime Saat Hatırlatması</h2>
                 <p class="card-desc">
                     Belirtilen saatlerde <b>Discord'da aktif olup seste olmayan</b> yetkililere

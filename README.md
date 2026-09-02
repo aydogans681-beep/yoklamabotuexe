@@ -451,6 +451,15 @@ adı, Yönetici/Yetkili).
   Aynı ID iki hesaba bağlanamaz.
 - **Toplu Uyarı** - elle seçilen kişilere uyarı verme / geri alma.
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
+- **Uyarı süresi (otomatik düşürme)** - her uyarının **1 hafta** süresi vardır.
+  Bot **her gün** (yeni günün ilk çevrimiçi dakikasında, günde bir kez) kontrol
+  eder; aktif uyarısının 1 haftası dolan her kişiden **1 uyarı çeker** ("Geri
+  Al" ile aynı - rol botuna `rol-al` komutu atılır). Üstünde uyarı olmayana
+  dokunmaz. Bir kişide birden çok uyarı varsa her biri **kendi** 1 haftasını
+  doldurunca (günlük kontrollerde birer birer) çekilir. Uyarı verildiği an
+  `warning-history.json`'daki aktif kayda zaman damgası (`at`) yazılır; eski
+  kayıtların zamanı geçmişten doldurulur. Ayarlar > **Uyarı Süresi** kartından
+  açılıp kapatılır ve **Şimdi Kontrol Et** ile elle çalıştırılabilir.
 
 Uyarı merdiveni: `Sözlü Uyarı → 1x → 2x → 3x`. Roller doğrudan verilmez;
 komut kanalına rol botuna slash komut gönderilir.
@@ -870,6 +879,7 @@ hatalar tolere ediliyor, tek bir kaçak hata çalışan botu öldürmesin diye.
 | `POST /api/yoklama/acil-toplanti` | Acil toplantı |
 | `GET /api/yoklama/katilim`, `POST /api/yoklama/katil` | Yoklamaya Katıl |
 | `GET/POST /api/oto-yoklama`, `POST /api/oto-yoklama/simdi` | Otomatik günlük yoklamalar (liste) |
+| `GET/POST /api/uyari-dusur`, `POST /api/uyari-dusur/simdi` | Uyarı 1 haftası dolunca otomatik düşürme (aç/kapa + elle çalıştır) |
 | `GET/POST /api/prime`, `POST /api/prime/simdi` | Prime saat hatırlatması |
 | `POST /api/hesaplar/discord-id` | Bir hesaba Discord ID bağlama *(yönetici)* |
 | `POST /api/hesaplar/izinler`, `GET /api/izin-secenekleri` | Yetki düzenleme *(yönetici)* |
