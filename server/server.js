@@ -1369,10 +1369,37 @@ async function uyariSureleriniDusur(tetikleyen) {
 
         // 2) Her adaydan 1 uyarı çek (rol botunu yormamak için aralıklı).
         const liste = [];
+        const temizlenen = [];   // bayat kayıt: kişi ayrılmış ya da uyarı rolü yok
+        const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
         for (const memberId of adaylar) {
             const rec = lastGivenRole.get(memberId);
-            const eskiLabel = rec ? rec.label : null;
-            const eskiTag = rec ? rec.tag : memberId;
+            if (!rec) continue;
+            const eskiLabel = rec.label;
+            const eskiTag = rec.tag || memberId;
+
+            // ÖN KONTROL: komut atmadan önce üye hâlâ sunucuda mı ve o uyarı rolü
+            // gerçekten üstünde mi? Değilse rol botuna boşuna komut ATMA - bayat
+            // kaydı sessizce temizle. (Uyarı rolü elle kaldırılmış ya da kişi
+            // ayrılmış olabilir; "yetkili değil / uyarısı yok" durumu budur.)
+            let member = null;
+            try {
+                member = guild ? await guild.members.fetch(memberId) : null;
+            } catch (e) { member = null; }
+            if (!member) {
+                lastGivenRole.delete(memberId);
+                persistWarningState();
+                temizlenen.push({ memberId, tag: eskiTag, sebep: 'sunucuda değil' });
+                console.log(`[UyarıDüşür] ${eskiTag} (${memberId}) sunucuda değil - bayat kayıt silindi (komut atılmadı).`);
+                continue;
+            }
+            if (!member.roles.cache.has(rec.roleId)) {
+                lastGivenRole.delete(memberId);
+                persistWarningState();
+                temizlenen.push({ memberId, tag: eskiTag, sebep: 'uyarı rolü yok' });
+                console.log(`[UyarıDüşür] ${eskiTag} (${memberId}) üstünde "${eskiLabel}" rolü yok - bayat kayıt silindi (komut atılmadı).`);
+                continue;
+            }
+
             try {
                 const sonuc = await undoLastWarning(memberId);
                 if (!sonuc || !sonuc.ok) {
@@ -1403,9 +1430,10 @@ async function uyariSureleriniDusur(tetikleyen) {
             await new Promise((r) => setTimeout(r, BULK_WARNING_DELAY_MS));
         }
 
-        console.log(`[UyarıDüşür] ${liste.length}/${adaylar.length} kişiden 1'er uyarı çekildi (${tetikleyen}).`);
-        if (liste.length) wsBroadcast({ type: 'uyari-oto-dusur', liste, at: Date.now() });
-        return { ok: true, dusurulen: liste.length, aday: adaylar.length, liste };
+        console.log(`[UyarıDüşür] ${liste.length}/${adaylar.length} kişiden 1'er uyarı çekildi`
+            + `${temizlenen.length ? `, ${temizlenen.length} bayat kayıt temizlendi (rol yok/ayrılmış)` : ''} (${tetikleyen}).`);
+        if (liste.length || temizlenen.length) wsBroadcast({ type: 'uyari-oto-dusur', liste, temizlenen, at: Date.now() });
+        return { ok: true, dusurulen: liste.length, aday: adaylar.length, temizlenen: temizlenen.length, liste };
     } finally {
         uyariDusurCalisiyor = false;
     }

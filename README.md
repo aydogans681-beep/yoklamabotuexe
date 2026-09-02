@@ -460,6 +460,10 @@ adı, Yönetici/Yetkili).
   `warning-history.json`'daki aktif kayda zaman damgası (`at`) yazılır; eski
   kayıtların zamanı geçmişten doldurulur. Ayarlar > **Uyarı Süresi** kartından
   açılıp kapatılır ve **Şimdi Kontrol Et** ile elle çalıştırılabilir.
+  **Bayat kayıt koruması:** komut atmadan önce kişinin **hâlâ sunucuda** olduğu
+  ve o **uyarı rolünün gerçekten üstünde** olduğu kontrol edilir; değilse
+  (rol elle kaldırılmış / kişi ayrılmış) rol botuna boşuna komut atılmaz, kayıt
+  sessizce temizlenir.
 
 Uyarı merdiveni: `Sözlü Uyarı → 1x → 2x → 3x`. Roller doğrudan verilmez;
 komut kanalına rol botuna slash komut gönderilir.
