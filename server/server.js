@@ -352,16 +352,20 @@ function requireAdmin(req, res, next) {
 // Paketin disa actigi Message ile ic modulunki ayni referans (dogrulandi).
 const { Client, Message: SlashMesaji, Options: DjsOptions } = require('discord.js-selfbot-v13');
 
-// AC selfbot'lari icin AGRESIF onbellek siniri. Bir kullanici hesabi 83 sunucuda
-// devasa presence/uye/mesaj verisi biriktiriyor; keepalive ile 15 baglanti acik
-// tutulunca bu bellek 2 GB'i asip "JavaScript heap out of memory" ile cokturuyordu
-// ("site durmadan dusuyor"). AC client YALNIZCA guild+kanal+slash komut icin
-// lazim - agir yoneticiler sifirlaniyor (guild/kanal/rol default kaliyor).
+// AC selfbot'lari icin onbellek siniri. Bir kullanici hesabi 83 sunucuda devasa
+// PRESENCE verisi (her cevrimici uyenin durumu, surekli guncellenen) biriktiriyor;
+// keepalive ile 15 baglanti acik tutulunca bellek 2 GB'i asip "JavaScript heap
+// out of memory" ile cokturuyordu ("site durmadan dusuyor"). En buyuk sizinti
+// PRESENCE ve MESAJ onbellegi - onlar sifirlaniyor.
+//
+// DIKKAT: GuildMember ve Role onbellegini SIFIRLAMA. sendSlash, kanalda
+// channel.permissionsFor(client.user).toArray() cagiriyor; bu kendi UYENI cache'te
+// arar, yoksa null doner ve ".toArray() of null" ile patlar. O yuzden uye/rol
+// varsayilan kaliyor (kendi uyen cache'te dursun). Uye onbellegi presence'siz
+// zaten kucuk ve buyumuyor.
 const AC_CACHE_AYARI = DjsOptions.cacheWithLimits({
     MessageManager: 0,
     PresenceManager: 0,
-    GuildMemberManager: { maxSize: 0, keepOverLimit: (m) => m.id === (m.client && m.client.user && m.client.user.id) },
-    UserManager: { maxSize: 0, keepOverLimit: (u) => u.id === (u.client && u.client.user && u.client.user.id) },
     ThreadManager: 0,
     VoiceStateManager: 0,
     ReactionManager: 0,
