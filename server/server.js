@@ -1230,6 +1230,10 @@ function formatWarningEndDate() {
     return `${day}.${month}.${year}`;
 }
 
+// Satirda en fazla bu kadar katilan adi yaziliyor, gerisi "+N kisi" oluyor.
+// Kalabalik bir gunde 20 kisi katildim derse satir okunmaz hale geliyordu.
+const UYARI_VEREN_KATILAN_LIMITI = 5;
+
 // "Uyari veren" satirina UC kaynak birden yaziliyor:
 //   1. duyuruyu gonderen ana hesap,
 //   2. yoklamayi panelden alan yetkilinin bagli Discord ID'si (varsa),
@@ -1238,19 +1242,28 @@ function formatWarningEndDate() {
 // tamamen dusuyor, "Yoklamaya Katil" diyen ise hicbir zaman gorunmuyordu.
 // Ayni ID birden fazla kaynaktan gelirse tek sefer yaziliyor; sira sabit
 // (ana hesap -> yoklamayi alan -> katilanlar) ki duyurular birbirine benzesin.
-function uyariVerenIdleri(verenId) {
-    const idler = [];
-    const ekle = (id) => {
-        if (id && !idler.includes(id)) idler.push(id);
-    };
-    ekle(client.user ? client.user.id : null);
-    ekle(verenId);
-    Object.keys(bugunKatilanlar()).forEach(ekle);
-    return idler;
-}
-
+// Limit YALNIZCA katilanlara uygulaniyor: ana hesap ve yoklamayi alan, kac
+// kisi katilirsa katilsin satirdan dusmuyor.
 function uyariVerenMentions(verenId) {
-    return uyariVerenIdleri(verenId).map((id) => `<@${id}>`).join('  ');
+    const gorulen = new Set();
+    const sabit = [];
+    const katilanlar = [];
+    const ekle = (id, hedef) => {
+        if (!id || gorulen.has(id)) return;
+        gorulen.add(id);
+        hedef.push(id);
+    };
+
+    ekle(client.user ? client.user.id : null, sabit);
+    ekle(verenId, sabit);
+    Object.keys(bugunKatilanlar()).forEach((id) => ekle(id, katilanlar));
+
+    const parcalar = sabit
+        .concat(katilanlar.slice(0, UYARI_VEREN_KATILAN_LIMITI))
+        .map((id) => `<@${id}>`);
+    const kalan = katilanlar.length - UYARI_VEREN_KATILAN_LIMITI;
+    if (kalan > 0) parcalar.push(`+${kalan} kişi`);
+    return parcalar.join('  ');
 }
 
 function itirazSatiri() {

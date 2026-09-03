@@ -487,6 +487,11 @@ Aynı ID birden fazla kaynaktan gelirse tek sefer yazılır. Önceden yalnızca
 biri yazılıyordu: bağlı ID varsa ana hesap satırdan tamamen düşüyor,
 "Yoklamaya Katıl" diyen ise hiç görünmüyordu.
 
+Satırda en fazla **5 katılan** adı yazılır, artanı `+3 kişi` diye kısaltılır
+(`UYARI_VEREN_KATILAN_LIMITI`) - kalabalık bir günde 20 kişi katıldım derse
+satır okunmaz hale geliyordu. Limit **yalnızca katılanlara** uygulanır; ana
+hesap ve yoklamayı alan kaç kişi katılırsa katılsın satırda kalır.
+
 Duyurunun en altına **"Uyarı itirazı için : <@599655428984537109> DM'den
 ulaşın"** satırı eklenir; itirazın kime gideceği ayrıca sorulmasın diye. Hem
 tekil hem toplu uyarı duyurusunda, elle ve otomatik yoklamada aynı.
