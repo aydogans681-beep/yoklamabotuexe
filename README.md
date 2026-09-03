@@ -789,6 +789,33 @@ pm2 save
 > çıktısında **watch & reload = disabled** olmalı ve **restarts** sayısı artmayı
 > bırakmalı. (Elle `pm2 start ... --watch` **verme**.)
 
+### 12 saatte bir otomatik yeniden başlatma
+
+`ecosystem.config.js` içindeki `cron_restart: '0 4,16 * * *'` botu günde iki
+kez - **04:00 ve 16:00**, sunucunun saatiyle - kapatıp yeniden açar. Saatler
+bilerek seçildi: 20:00-22:30 arasında yoklama ve prime hatırlatması var,
+00:00'da ise gün anahtarı dönüp günlük uyarı düşürme çalışıyor.
+
+Aynı gün ikinci kez yoklama alınmaz: `otoYoklamaSonGunler` ve
+`uyariOtoDusurSonGun` **`panel-settings.json`'a yazılıyor**, yani yeniden
+başlatma o günün korumasını sıfırlamıyor.
+
+> **Ayarın gerçekten uygulandığından emin ol.** `pm2 restart yoklama` süreci
+> pm2'nin **eski kayıtlı** ayarlarıyla açar ve bu dosyadaki değişikliği
+> görmez - pm2 7.0.4'te denendi, `restart` sonrası `cron_restart` `undefined`
+> kalıyor. Süreç mutlaka dosyadan başlatılmalı:
+>
+> ```bash
+> pm2 startOrRestart ecosystem.config.js --update-env
+> pm2 save
+> ```
+>
+> `guncelle.ps1` artık bunu kendisi yapıyor; pm2 kaydı yokken de
+> `pm2 start server.js` yerine ecosystem dosyasından başlatıyor (eskiden o yol
+> watch/max_restarts/cron_restart ayarlarının **hiçbirini** almıyordu).
+> Kontrol: `pm2 describe yoklama` çıktısında `cron restart` satırı
+> `0 4,16 * * *` görünmeli.
+
 Belleği yükseltmek taramayı **hızlandırmaz** - yavaşlık üye listesinden
 geliyorsa orada bir etkisi olmaz. Önce yukarıdaki süre dökümüne bak.
 

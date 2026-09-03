@@ -95,6 +95,9 @@ if ($LASTEXITCODE -ne 0) { Write-Host "git pull basarisiz oldu." -ForegroundColo
 Write-Host ""
 Write-Host "[2/3] Bagimliliklar kontrol ediliyor..." -ForegroundColor Green
 $sunucuDizini = Join-Path $kok "server"
+# pm2 ayarlarinin (watch=false, max_restarts, min_uptime ve 12 saatlik
+# cron_restart) tek kaynagi. Surec MUTLAKA bu dosyadan baslatilmali.
+$ekosistem = Join-Path $kok "ecosystem.config.js"
 Set-Location $sunucuDizini
 try {
     npm install --no-audit --no-fund
@@ -135,7 +138,20 @@ Write-Host ""
 if ($pm2Kayitli) {
     $eskiEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    & pm2 restart yoklama 2>&1 | Out-Null
+    # DIKKAT: burada "pm2 restart yoklama" KULLANILMIYOR. O komut sureci pm2'nin
+    # ESKI kayitli ayarlariyla acar, ecosystem.config.js'teki degisiklikleri
+    # gormez - 12 saatlik cron_restart bu yuzden hic devreye girmezdi. (pm2
+    # 7.0.4 ile denendi: "restart" sonrasi cron_restart undefined kaliyor,
+    # "startOrRestart <dosya>" sonrasi ayar geliyor.) Dosyadan baslatinca
+    # watch=false, max_restarts, min_uptime ve cron_restart birlikte uygulaniyor.
+    # pm2 save: daemon yeniden dogdugunda ayar kaybolmasin.
+    if (Test-Path $ekosistem) {
+        & pm2 startOrRestart $ekosistem --update-env 2>&1 | Out-Null
+        & pm2 save 2>&1 | Out-Null
+    } else {
+        Write-Host "ecosystem.config.js bulunamadi - eski usul yeniden baslatiliyor." -ForegroundColor Yellow
+        & pm2 restart yoklama 2>&1 | Out-Null
+    }
     $ErrorActionPreference = $eskiEAP
 
     # "pm2 restart" komutu, surec acilir acilmaz olse bile basarili doner.
@@ -207,11 +223,21 @@ if ($pm2Kayitli) {
 
     $eskiEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    Set-Location $sunucuDizini
     try {
-        # --max-old-space-size: log gecmisleri bellekte tutuluyor, varsayilan
-        # heap sinirinda buyuk sunucularda yetmiyor.
-        & pm2 start server.js --name yoklama --node-args="--max-old-space-size=4096" 2>&1 | Out-Null
+        if (Test-Path $ekosistem) {
+            # Ecosystem'den baslat: cron_restart (12 saatte bir), watch=false,
+            # max_restarts, min_uptime ve --max-old-space-size hepsi orada.
+            # Eskiden burada "pm2 start server.js" deniyordu; pm2 kaydini
+            # kaybetmis bir sunucu bu ayarlarin HICBIRI olmadan calismaya
+            # devam ediyordu ve kimse fark etmiyordu.
+            Set-Location $kok
+            & pm2 start $ekosistem 2>&1 | Out-Null
+        } else {
+            # --max-old-space-size: log gecmisleri bellekte tutuluyor, varsayilan
+            # heap sinirinda buyuk sunucularda yetmiyor.
+            Set-Location $sunucuDizini
+            & pm2 start server.js --name yoklama --node-args="--max-old-space-size=4096" 2>&1 | Out-Null
+        }
         & pm2 save 2>&1 | Out-Null
     } catch {
         Write-Host "pm2'ye kaydedilemedi: $($_.Exception.Message)" -ForegroundColor Red
