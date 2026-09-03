@@ -1070,18 +1070,31 @@ function waitForRoleBotReply(timeoutMs = 6000) {
 // olunca "verildi" deniyordu; bu yuzden panel rol vermedigi halde verdim
 // diyordu. Artik uyeyi taze cekip rolun gercekten olustugunu dogruluyoruz.
 async function verifyRoleState(guild, memberId, roleId, beklenen) {
-    const DENEME = 4;
-    const ARALIK_MS = 800;
+    // ~9 sn'lik pencere. Eskiden 4x800ms = 3.2 sn'ydi ve HER turda force-fetch
+    // yapiyordu: rol botu yavas uyguladiginda pencere yetmiyor, ustelik ayni
+    // uyeyi saniyede birkac kez force-fetch etmek rate limit yiyip hep bos
+    // donebiliyordu - rol GERCEKTE verilse bile "dogrulanamadi" diyordu, duyuru
+    // atilmiyor ve kayit tutulmuyordu.
+    const DENEME = 10;
+    const ARALIK_MS = 900;
     for (let i = 0; i < DENEME; i += 1) {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, ARALIK_MS));
-        try {
-            // force: onbellegi atla, Discord'dan taze oku
-            // eslint-disable-next-line no-await-in-loop
-            const taze = await guild.members.fetch({ user: memberId, force: true });
-            if (taze && taze.roles.cache.has(roleId) === beklenen) return true;
-        } catch (error) {
-            // uye cekilemedi - sonraki denemede tekrar bakilir
+        // 1) ONCE ONBELLEK: rol botu rolu ekleyince gateway GUILD_MEMBER_UPDATE
+        //    ile uyenin cache'i guncelleniyor - bedelsiz ve rate limit yok.
+        const onbellek = guild.members.cache.get(memberId);
+        if (onbellek && onbellek.roles.cache.has(roleId) === beklenen) return true;
+        // 2) ARADA BIR taze cek (her turda degil): gateway olayi gelmediyse
+        //    yedek. Uc turda bir, yani en fazla ~3 force-fetch - rate limit'e
+        //    takilmadan.
+        if (i % 3 === 2) {
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                const taze = await guild.members.fetch({ user: memberId, force: true });
+                if (taze && taze.roles.cache.has(roleId) === beklenen) return true;
+            } catch (error) {
+                // uye cekilemedi (rate limit vb.) - sonraki turda onbellekten bakilir
+            }
         }
     }
     return false;

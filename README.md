@@ -622,6 +622,14 @@ tek başına belirlediği için ad tahmin etmeye gerek kalmıyor - komut başka 
 bota ait olsa bile çalışır. ID boş bırakılırsa ada göre aramaya düşülür.
 Komut bulunamazsa hata, dizindeki gerçek komutları ID'leriyle birlikte yazar.
 
+Rol komutu gönderildikten sonra rolün **gerçekten oluştuğu doğrulanır** (yoksa
+duyuru atılmaz). Doğrulama önce üyenin **gateway ile güncellenen önbelleğine**
+bakar, arada bir de taze çeker; pencere ~9 sn. Eskiden yalnızca 3.2 sn'ydi ve
+her turda aynı üyeyi `force`-fetch ediyordu: rol botu **yavaş uyguladığında**
+(ya da art arda force-fetch rate limit yediğinde) rol gerçekte verilse bile
+"rol oluşmadı" deyip **duyuruyu atlıyordu** - artık önbellek öncelikli kontrol
+bunu yakalıyor.
+
 Uyarı duyurusundaki **"Uyarı veren"** satırı üç kaynaktan beslenir, hep bu
 sırayla:
 
