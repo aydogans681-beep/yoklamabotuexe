@@ -32,6 +32,14 @@ ac-kirli-kelime.json
 # "GIF gonder" icin diske onbelleklenen hazir GIF (link canliyken bir kez indirilir)
 ac-gif.gif
 
+# AC masaustu surumu (exe): derleme ciktilari ve derlenmis exe.
+# adres.json exe-yap.ps1'in her calismada yazdigi VARSAYILAN panel adresi -
+# sunucuya ozel, depoda yeri yok. indirmeler/ 100 MB'lik exe'yi tutuyor;
+# her sunucu kendi derliyor, git'e sokmuyoruz.
+ac-masaustu/dist/
+ac-masaustu/adres.json
+indirmeler/
+
 # Log gecmisi onbellegi - her acilista bastan cekmemek icin diskte tutulur.
 # Buyuk olabilir ve tamamen yeniden uretilebilir, depoda yeri yok.
 log-cache/

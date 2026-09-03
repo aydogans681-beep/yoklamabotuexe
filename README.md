@@ -53,9 +53,14 @@ yoklama-katilim.json  "Yoklamaya Katıl" kayıtları (gün gün)
 canli-sahiplenme.json Ticket sahiplenme kayıtları (canlı toplanır)
 log-isaretleri.json   Şüpheli Log işaretleri: Ban/Şüpheli/Temiz (depoda yok)
 log-cache/            Log geçmişi önbelleği (silinebilir, yeniden üretilir)
+indirmeler/           AC masaüstü sürümü (exe) - derlenince oluşur, depoda yok
 server/
   server.js           Backend: Discord istemcisi + HTTP/WebSocket API
   public/             Ön yüz (index.html, app.js, style.css)
+ac-masaustu/          AC masaüstü sürümünün kaynağı (Electron)
+  main.js             Pencere + sunucu adresi yönetimi
+  adres.html          İlk açılıştaki "sunucu adresi" ekranı
+exe-yap.ps1           exe'yi derleyip indirmeler/ altına koyar
 ```
 
 `server/server.js` içindeki `ROOT_DIR`, `server/`'ın **bir üstünü** işaret eder;
@@ -380,6 +385,63 @@ kendiliğinden üretiliyor.
 > otomatik algılar). Bu, kimlik kilidini bozmaz - AC yine yalnızca kendi
 > hesabını bağlayabilir. Anahtar dosyasını yedeklemek istersen `ac-anahtar.key`'i
 > saklaman yeterli.
+
+### Masaüstü sürümü (exe)
+
+AC'ler paneli tarayıcı açmadan da kullanabilsin diye Electron ile paketlenmiş
+bir sürüm var: `ac-masaustu/`. **İsteyen webden, isteyen exe'den** - ikisi de
+aynı paneldir, aynı anda kullanılabilir.
+
+**Ne yapar:** exe panelin **ta kendisini** bir uygulama penceresinde açar.
+Ayrı bir arayüzü, ayrı bir API'si yoktur. Bu yüzden sekme kısıtı da exe'de
+değil, **sunucuda**: AC hesabı `tip: 'ac'` olduğu için Nexora Panel ve Felox
+dışında bir şey göremez (`kullaniciYetkileri`). Kısıtı istemciye koymak
+güvenlik değil süsleme olurdu; ayrıca yetki değişince exe'yi yeniden derlemek
+gerekmez.
+
+**Panelin kendisi değişince exe'yi yeniden derlemek GEREKMEZ** - exe paneli
+uzaktan açıyor, içinde taşımıyor. `guncelle.ps1` yeter.
+
+**Oturum:** giriş çerezi 7 gün ömürlü ve Electron çerezleri diske yazıyor, yani
+AC her açılışta yeniden giriş yapmıyor.
+
+#### Derlemek
+
+```powershell
+.\exe-yap.ps1 -Adres "panel.site.com"
+```
+
+`-Adres` exe'ye **gömülen varsayılan** panel adresidir; AC exe'yi açınca hiçbir
+şey sormadan bağlanır. Vermezsen exe ilk açılışta adresi kendisi sorar. Adres
+sonradan uygulamanın **Panel > Sunucu adresini değiştir** menüsünden de
+değiştirilebilir ve kullanıcının girdiği adres gömülü olanı ezer - panel başka
+bir adrese taşındığında kimsenin exe'yi yeniden indirmesi gerekmesin diye.
+
+Çıktı: `indirmeler\MD-AC-Panel.exe`. İlk derleme electron'u indirdiği için
+uzun sürer (~100 MB). `guncelle.ps1`'e **bilerek eklenmedi**: her güncellemeyi
+dakikalarca bekletirdi, oysa exe nadiren değişiyor.
+
+#### İndirmek
+
+AC (ve yönetici) paneli açtığında iki yerde bir **"Masaüstü sürümü"**
+bağlantısı görür - kenar çubuğunun altında ve **token kapısının üzerinde**.
+Kapı bütün paneli örttüğü için ikincisi şart: yalnızca kenar çubuğuna
+konsaydı, token bağlamamış bir AC exe'ye hiç ulaşamazdı.
+
+Bağlantı dosyanın boyutunu ve derlenme tarihini yazar; exe henüz derlenmemişse
+"henüz hazır değil" der ve **tıklanmaz** (tıklayan kişi ham JSON hata sayfasına
+düşüyordu).
+
+- `GET /api/ac-exe` - durum (hazır mı, boyut, tarih)
+- `GET /api/ac-exe/indir` - dosyanın kendisi; her indirme **Hesap Logları'na**
+  yazılır (`ac-exe-indir`).
+
+İkisi de **yalnızca AC ve yönetici** hesaplarına açık (`requireAcVeyaYonetici`);
+normal yetkili 403 alır. Butonu gizlemek tek savunma değil.
+
+> exe `server/public` altında **durmuyor**: orası girişsiz servis ediliyor,
+> oraya konsa adresi bilen herkes indirebilirdi. `indirmeler/` klasörü
+> `.gitignore`'da - 100 MB'lık dosya depoya girmez, her sunucu kendi derler.
 
 ## Kenar çubuğu
 

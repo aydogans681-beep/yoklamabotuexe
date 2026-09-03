@@ -1,0 +1,23 @@
+{
+  "name": "md-ac-panel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MD PvP AC Paneli - AC hesaplarinin Nexora Panel ve Felox sekmelerini tarayici acmadan kullandigi masaustu surumu. Web panelinin ta kendisini gosterir; sekme kisitini sunucu koyuyor.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "exe": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.mdpvp.acpanel",
+    "productName": "MD AC Panel",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "adres.html", "adres.json"],
+    "win": { "target": [{ "target": "portable", "arch": ["x64"] }] },
+    "portable": { "artifactName": "MD-AC-Panel.exe" }
+  }
+}

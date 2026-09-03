@@ -6307,6 +6307,75 @@ app.delete('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {
     res.json({ ok: true, ayarli: false });
 });
 
+// ============================================================================
+// --- AC MASAUSTU SURUMU (exe) ---
+// AC'ler paneli tarayici acmadan da kullanabilsin diye Electron ile
+// paketlenmis bir surum var (ac-masaustu/). O exe panelin TA KENDISINI
+// aciyor - ayri bir API'si yok, ayri bir yetkisi yok. Sekme kisiti yine
+// sunucuda: tip 'ac' -> ['ticketmesaj','felox'].
+//
+// Dosya server/public ALTINDA DEGIL: orasi girissiz servis ediliyor, exe
+// oraya konsa adresi bilen herkes indirebilirdi. indirmeler/ klasoru
+// .gitignore'da; exe'yi exe-yap.ps1 uretip oraya kopyaliyor.
+// ============================================================================
+const AC_EXE_KLASOR = path.join(ROOT_DIR, 'indirmeler');
+const AC_EXE_AD = 'MD-AC-Panel.exe';
+
+function acExeDurumu() {
+    const yol = path.join(AC_EXE_KLASOR, AC_EXE_AD);
+    try {
+        const st = fs.statSync(yol);
+        if (!st.isFile()) return { hazir: false };
+        return { hazir: true, yol, boyut: st.size, tarih: st.mtimeMs };
+    } catch (error) {
+        return { hazir: false };
+    }
+}
+
+// exe YALNIZCA AC'ler icin. Yonetici de indirebiliyor: dagitmadan once
+// kendi denemesi gerekiyor, "AC'de acilmiyor" demeden once gormeli.
+function requireAcVeyaYonetici(req, res, next) {
+    const session = getSession(req);
+    if (!session) return res.status(401).json({ ok: false, error: 'Giriş yapılmamış.' });
+    const y = kullaniciYetkileri(session.username);
+    if (!y.admin && y.tip !== 'ac') {
+        return res.status(403).json({ ok: false, error: 'Masaüstü sürümü yalnızca AC hesapları içindir.' });
+    }
+    req.session = session;
+    return next();
+}
+
+app.get('/api/ac-exe', requireAcVeyaYonetici, (req, res) => {
+    const d = acExeDurumu();
+    res.json({
+        ok: true,
+        hazir: d.hazir,
+        ad: AC_EXE_AD,
+        boyut: d.hazir ? d.boyut : 0,
+        tarih: d.hazir ? d.tarih : null,
+    });
+});
+
+app.get('/api/ac-exe/indir', requireAcVeyaYonetici, (req, res) => {
+    const d = acExeDurumu();
+    if (!d.hazir) {
+        // 404 metni bilerek acik: sunucuda exe'yi kimin uretecegini soyluyor.
+        // "Indir" bir kez calismadiginda AC'nin sana ne soyleyecegi belli olsun.
+        return res.status(404).json({
+            ok: false,
+            error: 'Masaüstü sürümü sunucuda hazır değil. Yönetici depo kökünde .\\exe-yap.ps1 çalıştırmalı.',
+        });
+    }
+    addAudit('ac-exe-indir', req.session.username, `Masaüstü sürümü indirildi (${AC_EXE_AD})`, req);
+    console.log(`[ACExe] ${req.session.username} masaüstü sürümünü indirdi.`);
+    res.download(d.yol, AC_EXE_AD, (hata) => {
+        // Indirme yarida kesilirse (AC pencereyi kapatti) express buraya
+        // dusuyor. Baslikler coktan gitti, ikinci bir cevap yazamayiz -
+        // yalnizca not duselim ki log "sunucu coktu" gibi gorunmesin.
+        if (hata) console.log(`[ACExe] İndirme tamamlanmadı: ${hata.message}`);
+    });
+});
+
 // --- PRIME SAAT HATIRLATMASI ---
 app.get('/api/prime', requireIzin('ayarlar'), (req, res) => {
     res.json({

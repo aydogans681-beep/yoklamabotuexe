@@ -228,6 +228,13 @@
                         kullanım şartlarına aykırıdır ve hesabın işaretlenebilir — bunu bilerek
                         bağlıyorsun.
                     </p>
+                    <!-- Masaustu surumu kapinin UZERINDE de duruyor. Kapi butun
+                         paneli ortuyor; yalnizca kenar cubuguna koysaydik token
+                         baglamamis bir AC exe'ye hic ulasamazdi. -->
+                    <p class="login-not">
+                        <a href="/api/ac-exe/indir" id="acGateExe">⬇ Masaüstü sürümünü indir</a>
+                        <span id="acGateExeAlt" class="exe-alt"></span>
+                    </p>
                     <p class="login-not">
                         <a href="#" id="acGateCikis">Farklı hesapla giriş yap / Çıkış</a>
                     </p>
@@ -317,6 +324,22 @@
             </button>
 
             <div class="side-foot">
+                <!-- AC masaustu surumu. Yalnizca AC (ve yonetici) hesaplarda
+                     goruluyor - app.js acExeKur() aciyor. Sunucu ucu da ayni
+                     kisiti uyguluyor, yani gizlemek tek savunma degil. -->
+                <a class="side-exe" id="sideExe" href="/api/ac-exe/indir" hidden>
+                    <span class="se-ikon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                             stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>
+                        </svg>
+                    </span>
+                    <span class="se-blok">
+                        <span class="se-bas">Masaüstü sürümü</span>
+                        <span class="se-alt" id="sideExeAlt">durum alınıyor...</span>
+                    </span>
+                </a>
                 <div class="side-status">
                     <span class="status-dot warn" id="statusDot"></span>
                     <span id="statusText">Bağlanıyor...</span>

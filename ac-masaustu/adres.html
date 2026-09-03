@@ -1,0 +1,93 @@
+<meta charset="utf-8">
+<title>Sunucu adresi</title>
+<style>
+    /* Panelin kendi renkleri (style.css :root) - AC iki ekran arasinda
+       gidip gelirken baska bir uygulamaya gecmis gibi hissetmesin. */
+    :root {
+        --bg: #0e0809; --surface: #171011; --surface-2: #1f1517;
+        --border: #37272b; --border-strong: #492f35;
+        --ink: #f4f4f5; --ink-2: #adacae; --ink-3: #78777a;
+        --accent: #ff3b47; --accent-fill: #d4242f; --accent-hover: #e02b38;
+        --hata: #ff6b74;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 26px 28px;
+        background: var(--bg); color: var(--ink);
+        font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+        user-select: none;
+    }
+    h1 { margin: 0 0 4px; font-size: 17px; letter-spacing: .2px; }
+    p.alt { margin: 0 0 20px; color: var(--ink-2); font-size: 13px; }
+    label { display: block; margin-bottom: 7px; font-size: 12px; color: var(--ink-2);
+            text-transform: uppercase; letter-spacing: .6px; }
+    input {
+        width: 100%; padding: 11px 13px;
+        background: var(--surface-2); color: var(--ink);
+        border: 1px solid var(--border-strong); border-radius: 8px;
+        font: inherit; user-select: text;
+    }
+    input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,59,71,.18); }
+    button {
+        margin-top: 18px; width: 100%; padding: 11px;
+        background: var(--accent-fill); color: #fff;
+        border: none; border-radius: 8px;
+        font: 600 14px/1 "Segoe UI", system-ui, sans-serif; cursor: pointer;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:disabled { opacity: .55; cursor: default; }
+    .ornek { margin-top: 9px; color: var(--ink-3); font-size: 12px; }
+    .hata {
+        margin-top: 16px; padding: 10px 12px;
+        background: rgba(255,59,71,.10); border: 1px solid rgba(255,59,71,.28);
+        border-radius: 8px; color: var(--hata); font-size: 13px;
+    }
+    .hata[hidden] { display: none; }
+</style>
+
+<h1>MD AC Paneli</h1>
+<p class="alt">Panelin çalıştığı sunucunun adresini yaz. Bir kez giriyorsun, sonraki açılışlarda hatırlanıyor.</p>
+
+<label for="adres">Sunucu adresi</label>
+<input id="adres" placeholder="panel.site.com  ya da  1.2.3.4:3000" autofocus spellcheck="false">
+<div class="ornek">http:// yazmana gerek yok, kendisi tamamlıyor.</div>
+
+<div class="hata" id="hata" hidden></div>
+
+<button id="kaydet">Bağlan</button>
+
+<script>
+    const params = new URLSearchParams(location.search);
+    const girdi = document.getElementById('adres');
+    const hataKutu = document.getElementById('hata');
+    const dugme = document.getElementById('kaydet');
+
+    girdi.value = params.get('adres') || '';
+    girdi.select();
+    hataGoster(params.get('hata'));
+
+    function hataGoster(metin) {
+        hataKutu.textContent = metin || '';
+        hataKutu.hidden = !metin;
+    }
+
+    async function kaydet() {
+        hataGoster('');
+        dugme.disabled = true;
+        dugme.textContent = 'Bağlanılıyor...';
+        try {
+            const sonuc = await window.acPanel.adresKaydet(girdi.value);
+            // Basarili olursa main süreç bu pencereyi kapatiyor; buraya
+            // yalnizca hatada donuyoruz.
+            if (!sonuc.ok) hataGoster(sonuc.hata);
+        } catch (e) {
+            hataGoster('Beklenmeyen hata: ' + e.message);
+        } finally {
+            dugme.disabled = false;
+            dugme.textContent = 'Bağlan';
+        }
+    }
+
+    dugme.addEventListener('click', kaydet);
+    girdi.addEventListener('keydown', (e) => { if (e.key === 'Enter') kaydet(); });
+</script>

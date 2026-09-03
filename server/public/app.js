@@ -141,6 +141,7 @@ function showApp() {
     document.getElementById('whoRol').textContent =
         currentIsAdmin ? 'Yönetici' : (currentTip === 'ac' ? 'AC' : 'Yetkili');
     applyAdminVisibility();
+    acExeKur();
     sideCanliTazele();
     connectWebSocket();
     refreshLogMenu();
@@ -367,6 +368,72 @@ function formatDate(ts) {
     if (!ts) return '';
     return new Date(ts).toLocaleString('tr-TR');
 }
+
+// --- AC masaustu surumu (exe) ---
+// Buton yalnizca AC ve yonetici hesaplarda gorunuyor. Yonetici de gorsun
+// istiyoruz: dagitmadan once kendi indirip denemesi gerekiyor.
+// Sunucu ucu ayni kisiti uyguluyor (requireAcVeyaYonetici) - burasi gorunum.
+function boyutYaz(bayt) {
+    if (!bayt) return '';
+    const mb = bayt / (1024 * 1024);
+    // Tek ondalik yetiyor: "96.4 MB". Bayt yazsaydik kimse okumazdi.
+    return `${mb.toFixed(1)} MB`;
+}
+
+// Baglanti iki yerde: kenar cubugunun altinda ve AC TOKEN KAPISINDA. Kapi
+// butun paneli ortuyor - yalnizca kenar cubugunda olsaydi token baglamamis
+// bir AC exe'ye hic ulasamazdi.
+const AC_EXE_YERLERI = [
+    { kutu: 'sideExe', alt: 'sideExeAlt' },
+    { kutu: 'acGateExe', alt: 'acGateExeAlt' },
+];
+
+async function acExeKur() {
+    const yerler = AC_EXE_YERLERI
+        .map((y) => ({ kutu: document.getElementById(y.kutu), alt: document.getElementById(y.alt) }))
+        .filter((y) => y.kutu && y.alt);
+    if (yerler.length === 0) return;
+
+    const gorunsun = currentTip === 'ac' || currentIsAdmin;
+    yerler.forEach((y) => { y.kutu.hidden = !gorunsun; });
+    if (!gorunsun) return;
+
+    // "hazir degil" durumunda baglantiyi ACIK birakmiyoruz: tiklayan kisi
+    // ham JSON hata sayfasina dusuyordu ve panelden cikmis oluyordu.
+    const hepsineYaz = (pasif, metin) => {
+        yerler.forEach(({ kutu, alt }) => {
+            kutu.classList.toggle('pasif', pasif);
+            if (pasif) kutu.setAttribute('aria-disabled', 'true');
+            else kutu.removeAttribute('aria-disabled');
+            alt.textContent = metin;
+        });
+    };
+
+    try {
+        const d = await okuJson(await fetch('/api/ac-exe'));
+        if (d.ok && d.hazir) {
+            // Saat degil YALNIZCA tarih: formatDate saati de yaziyor ve
+            // "2.9 MB · 03.09.2026 09:04:21" kenar cubugunda iki satira tasiyor.
+            // Derlemenin hangi gun yapildigi zaten yeterli bilgi.
+            const gun = d.tarih ? new Date(d.tarih).toLocaleDateString('tr-TR') : '';
+            hepsineYaz(false, [boyutYaz(d.boyut), gun].filter(Boolean).join(' · '));
+        } else {
+            hepsineYaz(true, 'henüz hazır değil');
+        }
+    } catch (error) {
+        hepsineYaz(true, 'durum alınamadı');
+    }
+}
+
+// Hazir degilken tiklama engelleniyor. (Betik body'nin sonunda calisiyor,
+// dosyanin geri kalani gibi dogrudan baglaniyoruz - elemanlar hazir.)
+AC_EXE_YERLERI.forEach(({ kutu }) => {
+    const el = document.getElementById(kutu);
+    if (!el) return;
+    el.addEventListener('click', (e) => {
+        if (el.classList.contains('pasif')) e.preventDefault();
+    });
+});
 
 function renderReactions(reactions) {
     if (!reactions || reactions.length === 0) return '<span class="pill muted">Tepki yok</span>';

@@ -194,6 +194,38 @@ button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
 /* --- kenar çubuğu altı: bağlantı + kullanıcı --- */
 .side-foot { display: flex; flex-direction: column; gap: 9px; padding-top: 12px; border-top: 1px solid var(--border); }
 .side-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-2); }
+
+/* AC masaüstü sürümü indirme bağlantısı - yalnızca AC ve yönetici görüyor.
+   .side-canli ile aynı kart dilini kullanıyor ki alt bölge tek parça dursun. */
+/* [hidden] BURADA ONEMLI: yazar kuralindaki "display: flex", tarayicinin
+   hidden ozniteligine verdigi display:none'i eziyor - buton AC olmayan
+   hesaplarda da gorunur kaliyordu. */
+.side-exe[hidden] { display: none; }
+.side-exe {
+    display: flex; align-items: center; gap: 9px; text-decoration: none;
+    padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-s);
+    background: linear-gradient(150deg, var(--surface-3), var(--surface-2));
+    color: var(--ink); transition: border-color .14s, transform .14s;
+}
+.side-exe:hover { border-color: var(--accent-line); transform: translateY(-1px); }
+.side-exe .se-ikon {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 8px;
+    background: var(--accent-soft); color: var(--accent);
+}
+.side-exe .se-blok { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.side-exe .se-bas { font-size: 11.5px; font-weight: 700; }
+.side-exe .se-alt { font-size: 10px; color: var(--ink-3); }
+/* Derlenmemişse: tıklama app.js'te engelleniyor, burada da tıklanabilir
+   görünmesin - kullanıcı boşuna basıp "çalışmıyor" demesin. */
+.side-exe.pasif { opacity: .55; cursor: default; }
+.side-exe.pasif:hover { border-color: var(--border); transform: none; }
+
+/* Aynı indirme bağlantısının token kapısındaki hâli. Kapı bir giriş ekranı,
+   orada kart değil düz bağlantı duruyor - .login-not içindeki diğer
+   bağlantılarla aynı dil. */
+#acGateExe.pasif { opacity: .55; cursor: default; text-decoration: none; }
+.exe-alt { margin-left: 7px; color: var(--ink-3); font-size: 11px; }
 .side-user { display: flex; align-items: center; gap: 8px; }
 .side-user .avatar {
     flex: 0 0 auto; width: 28px; height: 28px; border-radius: 9px;
