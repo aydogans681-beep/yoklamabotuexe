@@ -426,6 +426,9 @@ function rolAlKomutId() {
 }
 const ROLE_COMMAND_CHANNEL_ID = '1504900865507463259';
 const WARNING_ANNOUNCE_CHANNEL_ID = '1483232323674701835';
+// Uyarisina itiraz etmek isteyen yetkilinin DM atacagi hesap. Duyurunun
+// altina yaziliyor - itiraz kime gidecek diye ayrica sormak gerekmesin.
+const UYARI_ITIRAZ_ID = '599655428984537109';
 const BULK_WARNING_DELAY_MS = 1200;
 const EMERGENCY_MEETING_DELAY_MS = 500;
 
@@ -1227,14 +1230,31 @@ function formatWarningEndDate() {
     return `${day}.${month}.${year}`;
 }
 
+// "Uyari veren" satirinda HER IKI hesap birden yaziliyor: duyuruyu gonderen
+// ana hesap ve islemi panelden yapan yetkilinin bagli Discord ID'si. Once
+// yalnizca biri yazilirdi - panel hesabina ID bagliysa ana hesap satirdan
+// tamamen dusuyordu, oysa uyariyi kimin gonderdigi de bilgi.
+// Ikisi ayni hesapsa (ya da bagli ID yoksa) tek sefer yaziliyor.
+function uyariVerenMentions(verenId) {
+    const anaId = client.user ? client.user.id : null;
+    const idler = [];
+    if (anaId) idler.push(anaId);
+    if (verenId && verenId !== anaId) idler.push(verenId);
+    return idler.map((id) => `<@${id}>`).join('  ');
+}
+
+function itirazSatiri() {
+    return `# Uyarı itirazı için : <@${UYARI_ITIRAZ_ID}> DM'den ulaşın`;
+}
+
 function buildSingleWarningAnnounceMessage(memberId, givenRoleId, reason, verenId) {
-    const selfId = verenId || client.user.id;
     return [
         `# Uyarı alan :  <@${memberId}>`,
-        `# Uyarı veren : <@${selfId}>`,
+        `# Uyarı veren : ${uyariVerenMentions(verenId)}`,
         `# Uyarı sebebi : ${reason}`,
         `# Uyarı :  <@&${givenRoleId}>`,
         `# Uyarı bitiş tarihi : ${formatWarningEndDate()}`,
+        itirazSatiri(),
     ].join('\n');
 }
 
@@ -1442,13 +1462,13 @@ async function uyariSureleriniDusur(tetikleyen) {
 function buildWarningAnnounceMessage(warnedMemberIds, reason, verenId) {
     const warnedMentions = warnedMemberIds.map((id) => `<@${id}>`).join('  ');
     const ladderMentions = WARNING_ROLES.map((role) => `<@&${role.id}>`).join(' Olanlara ');
-    const selfId = verenId || client.user.id;
     return [
         `# Uyarı alan :  ${warnedMentions}`,
-        `# Uyarı veren : <@${selfId}>`,
+        `# Uyarı veren : ${uyariVerenMentions(verenId)}`,
         `# Uyarı sebebi : ${reason}`,
         `# Uyarı : ${ladderMentions}`,
         `# Uyarı bitiş tarihi : ${formatWarningEndDate()}`,
+        itirazSatiri(),
     ].join('\n');
 }
 

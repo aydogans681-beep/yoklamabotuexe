@@ -475,9 +475,14 @@ tek başına belirlediği için ad tahmin etmeye gerek kalmıyor - komut başka 
 bota ait olsa bile çalışır. ID boş bırakılırsa ada göre aramaya düşülür.
 Komut bulunamazsa hata, dizindeki gerçek komutları ID'leriyle birlikte yazar.
 
-Uyarı duyurusundaki **"Uyarı veren"** satırında, uyarıyı veren panel
-kullanıcısının Ayarlar'dan bağladığı Discord ID'si görünür. Bağlı ID yoksa
-botun kendi hesabı yazılır.
+Uyarı duyurusundaki **"Uyarı veren"** satırında **iki hesap birden** yazılır:
+duyuruyu gönderen ana hesap ve işlemi panelden yapan yetkilinin Ayarlar'dan
+bağladığı Discord ID'si. Bağlı ID yoksa (ya da işlemi yapan zaten ana hesapsa)
+tek isim yazılır - önceden bağlı ID varsa ana hesap satırdan tamamen düşüyordu.
+
+Duyurunun en altına **"Uyarı itirazı için : <@599655428984537109> DM'den
+ulaşın"** satırı eklenir; itirazın kime gideceği ayrıca sorulmasın diye. Hem
+tekil hem toplu uyarı duyurusunda, elle ve otomatik yoklamada aynı.
 
 ### TX Logs
 
