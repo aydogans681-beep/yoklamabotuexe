@@ -333,6 +333,9 @@ function connectWebSocket() {
             if (msg.type === 'status') applyStatus(msg);
             else if (msg.type === 'yoklama-toplu-uyari-ilerleme') {
                 bulkProgress.textContent = `Toplu uyarı gönderiliyor: ${msg.current}/${msg.total}`;
+            } else if (msg.type === 'yoklama-bireysel-ilerleme') {
+                const bp = document.getElementById('bireyselProgress');
+                if (bp) bp.textContent = `Bireysel uyarı gönderiliyor: ${msg.current}/${msg.total}`;
             } else if (msg.type === 'yoklama-toplu-geri-al-ilerleme') {
                 bulkProgress.textContent = `Toplu geri alma: ${msg.current}/${msg.total}`;
             } else if (msg.type === 'yoklama-acil-toplanti-ilerleme') {
@@ -766,6 +769,145 @@ bulkUndoBtn.addEventListener('click', async () => {
         bulkProgress.textContent = `Hata: ${error.message}`;
     } finally {
         updateSelectedCount();
+    }
+});
+
+// --- Bireysel Uyarı ---
+// Tüm yetkilileri bir tabloda listeler, seçilenlere tek tek uyarı verir.
+// Toplu Uyarı tarama listesinden seçiyor; bu ise tarama gerektirmeden kendi
+// listesini çekiyor ve her kişiye AYRI (tek-format) duyuru gönderiyor.
+const bireyselYukleBtn = document.getElementById('bireyselYukleBtn');
+const bireyselTabloSar = document.getElementById('bireyselTabloSar');
+const bireyselTablo = document.getElementById('bireyselTablo');
+const bireyselAra = document.getElementById('bireyselAra');
+const bireyselSayac = document.getElementById('bireyselSayac');
+const bireyselHepsi = document.getElementById('bireyselHepsi');
+const bireyselTemizle = document.getElementById('bireyselTemizle');
+const bireyselReason = document.getElementById('bireyselReason');
+const bireyselVerBtn = document.getElementById('bireyselVerBtn');
+const bireyselProgress = document.getElementById('bireyselProgress');
+
+let bireyselListe = [];                 // {id, displayName, tag, currentTierLabel, inVoice}
+const bireyselSecili = new Set();       // seçili id'ler
+
+function bireyselSayacGuncelle() {
+    if (bireyselSayac) bireyselSayac.textContent = `${bireyselSecili.size} seçili / ${bireyselListe.length} yetkili`;
+    if (bireyselVerBtn) bireyselVerBtn.disabled = bireyselSecili.size === 0;
+}
+
+function bireyselGorunen() {
+    const q = (bireyselAra && bireyselAra.value || '').trim().toLocaleLowerCase('tr');
+    if (!q) return bireyselListe;
+    return bireyselListe.filter((m) => (m.displayName + ' ' + m.tag).toLocaleLowerCase('tr').includes(q));
+}
+
+function bireyselTabloCiz() {
+    if (!bireyselTablo) return;
+    const gorunen = bireyselGorunen();
+    if (gorunen.length === 0) {
+        bireyselTablo.innerHTML = '<tbody><tr><td class="muted" style="padding:10px;">Eşleşen yetkili yok.</td></tr></tbody>';
+        return;
+    }
+    const satirlar = gorunen.map((m) => {
+        const secili = bireyselSecili.has(m.id);
+        const kademe = m.currentTierLabel
+            ? `<span class="pill" style="font-size:10px;">${escapeHtml(m.currentTierLabel)}</span>`
+            : '<span class="muted" style="font-size:11px;">uyarı yok</span>';
+        const ses = m.inVoice ? '<span class="pill ok" style="font-size:10px;">seste</span>' : '';
+        return `<tr data-id="${escapeHtml(m.id)}" class="${secili ? 'secili' : ''}">
+            <td style="width:34px; text-align:center;"><input type="checkbox" class="bireysel-cb" ${secili ? 'checked' : ''}></td>
+            <td>${escapeHtml(m.displayName)}<br><span class="muted" style="font-size:11px;">${escapeHtml(m.tag)}</span></td>
+            <td style="text-align:right; white-space:nowrap;">${ses} ${kademe}</td>
+        </tr>`;
+    });
+    bireyselTablo.innerHTML = `<tbody>${satirlar.join('')}</tbody>`;
+    bireyselTablo.querySelectorAll('tr[data-id]').forEach((tr) => {
+        tr.addEventListener('click', (e) => {
+            // Kutuya doğrudan tıklama iki kez tetiklemesin.
+            if (e.target && e.target.classList && e.target.classList.contains('bireysel-cb')) return;
+            bireyselSecimDegistir(tr.dataset.id);
+        });
+        const cb = tr.querySelector('.bireysel-cb');
+        if (cb) cb.addEventListener('change', () => bireyselSecimDegistir(tr.dataset.id));
+    });
+}
+
+function bireyselSecimDegistir(id) {
+    if (bireyselSecili.has(id)) bireyselSecili.delete(id);
+    else bireyselSecili.add(id);
+    bireyselTabloCiz();
+    bireyselSayacGuncelle();
+}
+
+// sessiz=true: bireyselProgress'e dokunmuyor. Uyarı verildikten sonra listeyi
+// tazelerken kullanılıyor - yoksa "Tamamlandı" mesajını hemen silerdi.
+async function bireyselListeYukle(sessiz) {
+    if (!bireyselYukleBtn) return;
+    bireyselYukleBtn.disabled = true;
+    if (!sessiz) bireyselProgress.textContent = 'Yetkililer getiriliyor...';
+    try {
+        const d = await okuJson(await fetch('/api/yoklama/yetkililer'));
+        if (!d.ok) { if (!sessiz) bireyselProgress.textContent = `Hata: ${d.error}`; return; }
+        bireyselListe = d.members || [];
+        // Yeniden yüklerken artık listede olmayan seçimleri düşür.
+        const idler = new Set(bireyselListe.map((m) => m.id));
+        [...bireyselSecili].forEach((id) => { if (!idler.has(id)) bireyselSecili.delete(id); });
+        bireyselTabloSar.hidden = false;
+        bireyselAra.hidden = false;
+        bireyselHepsi.hidden = false;
+        bireyselTemizle.hidden = false;
+        bireyselTabloCiz();
+        bireyselSayacGuncelle();
+        if (!sessiz) bireyselProgress.textContent = '';
+    } catch (error) {
+        if (!sessiz) bireyselProgress.textContent = `Hata: ${error.message}`;
+    } finally {
+        bireyselYukleBtn.disabled = false;
+        bireyselYukleBtn.textContent = 'Listeyi Yenile';
+    }
+}
+
+// Ok fonksiyonuyla sarıyoruz: doğrudan bağlarsak click olayı ilk argüman olur
+// ve "sessiz" sanılırdı.
+if (bireyselYukleBtn) bireyselYukleBtn.addEventListener('click', () => bireyselListeYukle());
+if (bireyselAra) bireyselAra.addEventListener('input', bireyselTabloCiz);
+if (bireyselHepsi) bireyselHepsi.addEventListener('click', () => {
+    bireyselGorunen().forEach((m) => bireyselSecili.add(m.id));   // yalnızca görüneni seç
+    bireyselTabloCiz(); bireyselSayacGuncelle();
+});
+if (bireyselTemizle) bireyselTemizle.addEventListener('click', () => {
+    bireyselSecili.clear(); bireyselTabloCiz(); bireyselSayacGuncelle();
+});
+
+if (bireyselVerBtn) bireyselVerBtn.addEventListener('click', async () => {
+    const reason = (bireyselReason.value || '').trim();
+    if (bireyselSecili.size === 0) { bireyselProgress.textContent = 'En az bir yetkili seç.'; return; }
+    if (!reason) { bireyselProgress.textContent = 'Uyarı sebebi boş olamaz.'; return; }
+    if (!confirm(`${bireyselSecili.size} kişiye "${reason}" sebebiyle uyarı verilecek. Onaylıyor musun?`)) return;
+    bireyselVerBtn.disabled = true;
+    bireyselProgress.textContent = 'Başlıyor...';
+    try {
+        const res = await fetch('/api/yoklama/bireysel-uyari', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ memberIds: [...bireyselSecili], reason }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const result = await okuJson(res);
+        if (!result.ok) { bireyselProgress.textContent = `Hata: ${result.error}`; return; }
+        bireyselProgress.innerHTML = `Tamamlandı: <b>${result.warned.length}</b> kişiye verildi, `
+            + `${result.skipped.length} atlandı (maks kademe), `
+            + `<b${result.failed.length ? ' style="color:var(--accent)"' : ''}>${result.failed.length} hata</b>.`
+            + (result.failed.length ? `<br><span style="color:var(--attn)">${escapeHtml(result.failed[0].error || '')}</span>` : '');
+        // Uyarı verilenlerin seçimini kaldır; listeyi tazele ki kademeler güncellensin.
+        result.warned.forEach((w) => bireyselSecili.delete(w.id));
+        bireyselReason.value = '';
+        bireyselListeYukle(true);   // sessiz: "Tamamlandı" mesajı kalsın
+    } catch (error) {
+        bireyselProgress.textContent = `Hata: ${error.message}`;
+    } finally {
+        bireyselVerBtn.disabled = false;
+        bireyselSayacGuncelle();
     }
 });
 

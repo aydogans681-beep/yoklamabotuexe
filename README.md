@@ -576,7 +576,27 @@ adı, Yönetici/Yetkili).
   düğmesiyle mevcut hesaplara da ID atayabilir - önceden ID yalnızca hesap
   açılırken girilebiliyordu, daha önce açılmış hesaplarda bu düğme çalışmıyordu.
   Aynı ID iki hesaba bağlanamaz.
-- **Toplu Uyarı** - elle seçilen kişilere uyarı verme / geri alma.
+- **Toplu Uyarı** - tarama listesinden **+** ile seçilen kişilere uyarı verme /
+  geri alma. Duyuru **tek mesajda** herkesi birlikte listeler.
+- **Bireysel Uyarı** - taramaya gerek yok: **"Listeyi Getir"** ile **tüm
+  yetkililer** bir tabloda gelir (mevcut kademe ve "seste" rozetiyle), arama +
+  Tümünü Seç / Temizle var. Seçilenlere **tek tek** (her biri **kendi
+  duyurusuyla**) uyarı verilir; süre otomatik **1 hafta**. Duyuru biçimi:
+
+  ```
+  # Uyarı alan :  @<kişi>
+  # Uyarı veren : @<uyarıyı yazan panel hesabının Discord ID'si>
+  # Uyarı sebebi : <yazılan sebep>
+  # Uyarı :  @<sıradaki uyarı rolü>
+  # Uyarı bitiş tarihi : <bugün + 7 gün>
+  ```
+
+  Toplu/yoklama duyurusundan **bilerek farklı**: "Uyarı veren" satırında
+  **yalnızca uyarıyı yazan** vardır (ana hesap, yoklamaya katılanlar ve itiraz
+  satırı **yok**). Bağlı ID yoksa botun kendi hesabı yazılır. Uç
+  `POST /api/yoklama/bireysel-uyari`; liste `GET /api/yoklama/yetkililer`
+  (Yoklama sekmesinde olduğu için **yoklama** izniyle erişilir - Yetkililer
+  sekmesinin iznini gerektirmez).
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
 - **Uyarı süresi (otomatik düşürme)** - her uyarının **1 hafta** süresi vardır.
   Bot **her gün** (yeni günün ilk çevrimiçi dakikasında, günde bir kez) kontrol

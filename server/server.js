@@ -1176,7 +1176,7 @@ function addAudit(type, actor, detail, req) {
     return entry;
 }
 
-async function giveNextWarningRole(memberId, reason, announceIndividually = true, verenId = null) {
+async function giveNextWarningRole(memberId, reason, announceIndividually = true, verenId = null, opts = {}) {
     const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
     if (!guild) throw new Error('Sunucu bulunamadı, GUILD_ID hatalı olabilir.');
     if (!(await waitForGuildShard(guild))) {
@@ -1237,7 +1237,10 @@ async function giveNextWarningRole(memberId, reason, announceIndividually = true
         try {
             const channel = await client.channels.fetch(WARNING_ANNOUNCE_CHANNEL_ID);
             if (!channel) throw new Error('Uyarı kanalı bulunamadı, WARNING_ANNOUNCE_CHANNEL_ID hatalı olabilir.');
-            const announceMessage = await channel.send(buildSingleWarningAnnounceMessage(memberId, nextRole.id, reason, verenId));
+            const mesajKurucu = opts.bireysel
+                ? buildBireyselUyariAnnounceMessage
+                : buildSingleWarningAnnounceMessage;
+            const announceMessage = await channel.send(mesajKurucu(memberId, nextRole.id, reason, verenId));
             const record = lastGivenRole.get(memberId);
             if (record) {
                 record.announceChannelId = WARNING_ANNOUNCE_CHANNEL_ID;
@@ -1319,6 +1322,22 @@ function buildSingleWarningAnnounceMessage(memberId, givenRoleId, reason, verenI
         `# Uyarı :  <@&${givenRoleId}>`,
         `# Uyarı bitiş tarihi : ${formatWarningEndDate()}`,
         itirazSatiri(),
+    ].join('\n');
+}
+
+// BIREYSEL uyari duyurusu (Yoklama > Bireysel Uyarı menüsü). Yoklama
+// duyurusundan FARKLI, bilerek: "Uyarı veren" satırında YALNIZCA uyarıyı
+// panelden yazan yetkili (bağlı Discord ID'si) var - ana hesap, yoklamaya
+// katılanlar ve itiraz satırı YOK. Bu, kullanıcının istediği birebir biçim.
+// Bağlı ID yoksa botun kendi hesabı yazılır. Süre yine 1 hafta (ortak).
+function buildBireyselUyariAnnounceMessage(memberId, givenRoleId, reason, verenId) {
+    const selfId = verenId || (client.user ? client.user.id : null);
+    return [
+        `# Uyarı alan :  <@${memberId}>`,
+        `# Uyarı veren : ${selfId ? `<@${selfId}>` : '(bot)'}`,
+        `# Uyarı sebebi : ${reason}`,
+        `# Uyarı :  <@&${givenRoleId}>`,
+        `# Uyarı bitiş tarihi : ${formatWarningEndDate()}`,
     ].join('\n');
 }
 
@@ -1606,6 +1625,52 @@ async function giveBulkWarning(memberIds, reason, verenId = null, duyuruKanalId 
     }
 
     return { warned, skipped, failed, announceError };
+}
+
+// BIREYSEL uyari: secilen HER kisiye AYRI, kendi tek-format duyurusuyla uyari
+// verir (giveBulkWarning tek bir toplu mesaj atar - fark bu). Rol botunu
+// bunaltmamak icin araya BULK_WARNING_DELAY_MS koyuyoruz, ilerlemeyi WS ile
+// bildiriyoruz. Sure otomatik 1 hafta (giveNextWarningRole `at` yaziyor,
+// mevcut otomatik dusurme onu kullaniyor).
+async function giveBireyselWarnings(memberIds, reason, verenId = null) {
+    const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+    if (!guild) throw new Error('Sunucu bulunamadı, GUILD_ID hatalı olabilir.');
+    if (!(await waitForGuildShard(guild))) {
+        throw new Error('Bu sunucu için gateway bağlantısı (shard) uzun süredir hazır değil.');
+    }
+
+    const warned = [];
+    const skipped = [];
+    const failed = [];
+
+    for (let i = 0; i < memberIds.length; i += 1) {
+        const memberId = memberIds[i];
+        wsBroadcast({ type: 'yoklama-bireysel-ilerleme', current: i + 1, total: memberIds.length });
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const result = await giveNextWarningRole(memberId, reason, true, verenId, { bireysel: true });
+            if (result.ok) {
+                warned.push({ id: memberId, givenLabel: result.givenLabel });
+            } else if (result.reason === 'max') {
+                let tag = memberId;
+                try {
+                    // eslint-disable-next-line no-await-in-loop
+                    const member = await guild.members.fetch(memberId);
+                    tag = member.user.tag;
+                } catch (error) { /* tag alınamazsa ID ile */ }
+                skipped.push({ id: memberId, tag });
+            } else {
+                failed.push({ id: memberId, error: result.error || 'Rol verilemedi.' });
+            }
+        } catch (error) {
+            failed.push({ id: memberId, error: error.message });
+        }
+        if (i < memberIds.length - 1) {
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => setTimeout(resolve, BULK_WARNING_DELAY_MS));
+        }
+    }
+    return { warned, skipped, failed };
 }
 
 async function bulkUndoWarning(memberIds) {
@@ -4315,6 +4380,47 @@ app.post('/api/yoklama/rol-geri-al', requireIzin('yoklama'), async (req, res) =>
         res.json(sonuc);
     } catch (error) {
         console.log(`[Yoklama] Geri alma hatası (${memberId}): ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// Bireysel Uyarı menüsü için tüm yetkili listesi. /api/yetkililer 'yetkililer'
+// izni istiyor; bu menü Yoklama sekmesinde olduğu için 'yoklama' izniyle
+// erişilebilir olmalı - ayrı, sadeleştirilmiş bir uç.
+app.get('/api/yoklama/yetkililer', requireIzin('yoklama'), async (req, res) => {
+    try {
+        const { members, total } = await listStaff(null);
+        // Tabloya yetecek kadar alan: id, ad, etiket, mevcut kademe, seste mi.
+        res.json({
+            ok: true,
+            total,
+            members: members.map((m) => ({
+                id: m.id,
+                displayName: m.displayName,
+                tag: m.tag,
+                avatarURL: m.avatarURL,
+                currentTierLabel: m.currentTierLabel,
+                inVoice: m.inVoice,
+            })),
+        });
+    } catch (error) {
+        console.log(`[Yoklama] Yetkili listesi hatası: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/yoklama/bireysel-uyari', requireIzin('yoklama'), async (req, res) => {
+    const memberIds = Array.isArray(req.body && req.body.memberIds) ? req.body.memberIds : [];
+    const reason = String((req.body && req.body.reason) || '').trim();
+    if (memberIds.length === 0) return res.json({ ok: false, error: 'En az bir yetkili seç.' });
+    if (!reason) return res.json({ ok: false, error: 'Uyarı sebebi boş olamaz.' });
+    try {
+        const sonuc = await giveBireyselWarnings(memberIds, reason, panelUserDiscordId(req.session.username));
+        addAudit('uyari-ver', req.session.username,
+            `Bireysel uyarı: ${sonuc.warned.length} kişiye verildi, ${sonuc.skipped.length} atlandı, ${sonuc.failed.length} hata (${reason})`, req);
+        res.json({ ok: true, ...sonuc });
+    } catch (error) {
+        console.log(`[Yoklama] Bireysel uyarı hatası: ${error.message}`);
         res.json({ ok: false, error: error.message });
     }
 });

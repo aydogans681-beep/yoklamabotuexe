@@ -446,6 +446,36 @@
                     </div>
                     <div class="scanStatus" id="bulkProgress" style="margin-top:8px;"></div>
                 </div>
+
+                <!-- Bireysel Uyarı: tarama gerektirmeden TÜM yetkilileri bir
+                     tabloda listeler, seçilenlere tek tek (kendi duyurusuyla)
+                     uyarı verir. Süre otomatik 1 hafta. "Uyarı veren" = işlemi
+                     yapan panel hesabının Ayarlar'daki Discord ID'si. -->
+                <div class="card">
+                    <h2>Bireysel Uyarı</h2>
+                    <p class="card-desc">
+                        Tüm yetkililer listelenir; seçtiklerine <b>tek tek</b> uyarı verir
+                        (her biri kendi duyurusuyla). Süre otomatik <b>1 hafta</b>.
+                        "Uyarı veren" senin Ayarlar'daki Discord ID'nle etiketlenir.
+                    </p>
+                    <div class="toolbar" style="margin-bottom:9px;">
+                        <button class="secondary small" id="bireyselYukleBtn" type="button">Listeyi Getir</button>
+                        <span class="scanStatus" id="bireyselSayac">—</span>
+                        <button class="ghost small" id="bireyselHepsi" type="button" hidden>Tümünü Seç</button>
+                        <button class="ghost small" id="bireyselTemizle" type="button" hidden>Temizle</button>
+                    </div>
+                    <input type="text" class="text-search" id="bireyselAra"
+                           placeholder="İsim veya etiket ara..." hidden style="margin-bottom:8px;">
+                    <div id="bireyselTabloSar" hidden
+                         style="max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:10px; margin-bottom:9px;">
+                        <table class="bireysel-tablo" id="bireyselTablo"></table>
+                    </div>
+                    <div class="toolbar">
+                        <input type="text" class="text-search" id="bireyselReason" placeholder="Uyarı sebebi...">
+                        <button id="bireyselVerBtn" disabled>Uyarı Ver</button>
+                    </div>
+                    <div class="scanStatus" id="bireyselProgress" style="margin-top:8px;"></div>
+                </div>
             </div>
 
             <div class="filter-row" style="margin-top:12px;">

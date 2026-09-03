@@ -416,7 +416,17 @@ button.ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--i
     background: var(--surface-3); border: 1px solid var(--border-strong); color: var(--ink-2);
 }
 .pill.muted { color: var(--ink-3); }
+.pill.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
 .muted { color: var(--ink-3); }
+
+/* Bireysel Uyarı tablosu */
+.bireysel-tablo { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.bireysel-tablo td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.bireysel-tablo tr[data-id] { cursor: pointer; }
+.bireysel-tablo tr[data-id]:hover { background: var(--surface-2); }
+.bireysel-tablo tr.secili { background: var(--accent-soft); }
+.bireysel-tablo tr:last-child td { border-bottom: none; }
+.bireysel-tablo input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent-fill); cursor: pointer; }
 
 .tier { display: flex; align-items: center; gap: 6px; margin-top: 9px; }
 .tier-static-label { font-size: 10.5px; color: var(--ink-3); }
