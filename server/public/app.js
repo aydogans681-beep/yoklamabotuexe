@@ -412,12 +412,14 @@ async function acExeKur() {
 
     // "hazir degil" durumunda baglantiyi ACIK birakmiyoruz: tiklayan kisi
     // ham JSON hata sayfasina dusuyordu ve panelden cikmis oluyordu.
-    const hepsineYaz = (pasif, metin) => {
+    const hepsineYaz = (pasif, metin, ipucu) => {
         yerler.forEach(({ kutu, alt }) => {
             kutu.classList.toggle('pasif', pasif);
             if (pasif) kutu.setAttribute('aria-disabled', 'true');
             else kutu.removeAttribute('aria-disabled');
             alt.textContent = metin;
+            // Menude yer dar; tam aciklama fare ustune gelince goruluyor.
+            kutu.title = ipucu || '';
         });
     };
 
@@ -433,7 +435,13 @@ async function acExeKur() {
             hepsineYaz(true, 'henüz hazır değil');
         }
     } catch (error) {
-        hepsineYaz(true, 'durum alınamadı');
+        // okuJson, sunucu HTML donduruyorsa bunu ACIKCA soyluyor: "bot yeniden
+        // baslatilmamis olabilir". O mesaji yutup "durum alinamadi" yazmak
+        // kullaniciyi hicbir yere goturmuyordu - guncellemeden sonra en sik
+        // sebep tam olarak bu (on yuz diskten aninda gelir, server.js
+        // calisan surecte kalir).
+        const eskiKod = /tanımıyor/.test(error.message || '');
+        hepsineYaz(true, eskiKod ? 'bot yeniden başlatılmalı' : 'durum alınamadı', error.message);
     }
 }
 
