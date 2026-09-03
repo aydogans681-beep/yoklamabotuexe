@@ -285,6 +285,7 @@ const IZIN_SEKMELERI = [
     { key: 'yoklama', label: 'Yoklama' },
     { key: 'yetkililer', label: 'Yetkililer' },
     { key: 'roller', label: 'Rol Ver/Al' },
+    { key: 'yetkilialim', label: 'Yetkili Alım' },
     { key: 'aktiflik', label: 'Aktiflik' },
     { key: 'etkinlik', label: 'Etkinlik' },
     { key: 'loglar', label: 'TX Logs' },
@@ -2118,6 +2119,11 @@ function logCacheHepsiniYaz() {
 //    ne zaman baglandi" gosteriyor.
 // ============================================================================
 const AC_TICKET_KATEGORI = '1470230380572573706';
+// Yetkili Alım (mülakat başvuruları) kategorisi: bu kategori altında açılan
+// ticket'lar "Yetkili Alım" sekmesinde listelenir; yetkili onay/red verir.
+const YETKILI_ALIM_KATEGORI = '1470230416395866278';
+// Onay mesajında verilen mülakat kanalı linki.
+const YETKILI_MULAKAT_URL = 'https://discord.com/channels/1469033815518482445/1470230625759002729';
 const AC_TOKEN_PATH = path.join(ROOT_DIR, 'ac-tokenlari.json');
 
 // Gonderim hiz siniri: kisi basina ve panel genelinde.
@@ -3017,10 +3023,10 @@ async function acNexoraKirliBildir(username, ticketKanalId) {
 // Secili ticket'a gonderilmis TUM mesajlari (son N) panelde gostermek icin
 // kanaldan okur. Panelin ANA botu okur (ticket erisimi var - AC gateway'i
 // bekletmez). En eskiden en yeniye siralar; ek (gorsel/gif) URL'lerini de doner.
-async function ticketMesajlariGetir(kanalId, limit = 50) {
+async function ticketMesajlariGetir(kanalId, limit = 50, kategoriId = AC_TICKET_KATEGORI) {
     let kanal = client.channels.cache.get(kanalId);
     if (!kanal) { try { kanal = await client.channels.fetch(kanalId); } catch (e) { kanal = null; } }
-    if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
+    if (!kanal || kanal.parentId !== kategoriId) {
         throw new Error('Kanal ticket kategorisinde değil.');
     }
     const koleksiyon = await kanal.messages.fetch({ limit: Math.min(Math.max(limit, 1), 100) });
@@ -3887,6 +3893,9 @@ client.on('channelDelete', (channel) => {
         if (channel && channel.parentId === AC_TICKET_KATEGORI) {
             wsBroadcast({ type: 'ac-ticket-degisti', islem: 'kapandi', id: channel.id });
         }
+        if (channel && channel.parentId === YETKILI_ALIM_KATEGORI) {
+            wsBroadcast({ type: 'yetkili-alim-ticket-degisti', islem: 'kapandi', id: channel.id });
+        }
     } catch (error) { /* sessizce gec */ }
 });
 
@@ -3896,6 +3905,10 @@ client.on('channelCreate', async (channel) => {
     try {
         if (channel && channel.parentId === AC_TICKET_KATEGORI) {
             wsBroadcast({ type: 'ac-ticket-degisti', islem: 'acildi',
+                id: channel.id, ad: channel.name });
+        }
+        if (channel && channel.parentId === YETKILI_ALIM_KATEGORI) {
+            wsBroadcast({ type: 'yetkili-alim-ticket-degisti', islem: 'acildi',
                 id: channel.id, ad: channel.name });
         }
     } catch (error) { /* yayin kozmetik - sessizce gec */ }
@@ -6180,6 +6193,97 @@ app.get('/api/ac/ticketlar', requireIzin('ticketmesaj'), async (req, res) => {
             .map((k) => ({ id: k.id, ad: k.name, acilis: k.createdTimestamp || null }));
         res.json({ ok: true, kategori: AC_TICKET_KATEGORI, ticketlar });
     } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// ============================================================================
+// --- YETKILI ALIM (mülakat başvuruları) ---
+// YETKILI_ALIM_KATEGORI altındaki ticket'lar listelenir, mesajları görüntülenir;
+// yetkili Onay/Red verir. Mesajlar panelin ANA hesabından gönderilir (AC token'ı
+// gerekmez - bu bir yetkili işlemi). 'yetkilialim' izni gerekiyor.
+// ============================================================================
+app.get('/api/yetkili-alim/ticketlar', requireIzin('yetkilialim'), async (req, res) => {
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+        if (!guild) return res.json({ ok: false, error: 'Sunucu bulunamadı.' });
+        const ticketlar = [...guild.channels.cache.values()]
+            .filter((k) => k.parentId === YETKILI_ALIM_KATEGORI && typeof k.send === 'function')
+            .sort((a, b) => (b.createdTimestamp || 0) - (a.createdTimestamp || 0))
+            .map((k) => ({ id: k.id, ad: k.name, acilis: k.createdTimestamp || null }));
+        res.json({ ok: true, kategori: YETKILI_ALIM_KATEGORI, ticketlar });
+    } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/yetkili-alim/mesajlar', requireIzin('yetkilialim'), async (req, res) => {
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
+    try {
+        const mesajlar = await ticketMesajlariGetir(kanalId, 50, YETKILI_ALIM_KATEGORI);
+        res.json({ ok: true, mesajlar });
+    } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// Onay mesajı: kullanıcının istediği birebir metin. Emoji shortcode DEĞİL,
+// gerçek Unicode ✅ - selfbot API'sinden shortcode düz metin gider, emojiye
+// dönmezdi. Başvuran (sahipId) EN SONA etikleniyor; bulunamazsa etiketsiz.
+function yetkiliAlimOnayMesaji(sahipId) {
+    return 'Başvurunuz Onaylandı ✅  En Kısa Sürede Yetkili Mülakat Kanalına '
+        + `Geçmeniz Bekleniyor ${YETKILI_MULAKAT_URL}`
+        + (sahipId ? `  <@${sahipId}>` : '');
+}
+
+function yetkiliAlimRedMesaji() {
+    return 'Başvurunuz (Yetersiz Yaş/Saat/Uygunsuz) Sebebiyle Red ❌ Yemiştir İyi Günler Dileriz !';
+}
+
+// Onay/Red mesajını ana hesaptan gönderen ortak yardımcı. Kanalı doğrular,
+// (onayda) ticket'ı açanı bulup en sona etiketler.
+async function yetkiliAlimKarar(kanalId, tur, actor) {
+    if (!/^\d{17,20}$/.test(kanalId)) throw new Error('Geçersiz ticket.');
+    let kanal = client.channels.cache.get(kanalId);
+    if (!kanal) { try { kanal = await client.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+    if (!kanal || kanal.parentId !== YETKILI_ALIM_KATEGORI) {
+        throw new Error('Kanal Yetkili Alım kategorisinde değil.');
+    }
+
+    let mesaj;
+    let sahipId = null;
+    if (tur === 'onay') {
+        // Ticket'ı açanı bul (etiket için). Bulunamazsa mesaj yine gider, etiketsiz.
+        sahipId = await findTicketOpener(kanal).catch(() => null);
+        mesaj = yetkiliAlimOnayMesaji(sahipId);
+    } else {
+        mesaj = yetkiliAlimRedMesaji();
+    }
+
+    await kanal.send(mesaj);
+    addAudit('yetkili-alim', actor, `${tur === 'onay' ? 'ONAY' : 'RED'} - #${kanal.name} (${kanalId})`, null);
+    return { kanal: kanal.name, sahipId };
+}
+
+app.post('/api/yetkili-alim/onay', requireIzin('yetkilialim'), async (req, res) => {
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    try {
+        const sonuc = await yetkiliAlimKarar(kanalId, 'onay', req.session.username);
+        res.json({ ok: true, ...sonuc });
+    } catch (error) {
+        console.log(`[YetkiliAlim] Onay hatası: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/yetkili-alim/red', requireIzin('yetkilialim'), async (req, res) => {
+    const kanalId = String((req.body && req.body.kanalId) || '').trim();
+    try {
+        const sonuc = await yetkiliAlimKarar(kanalId, 'red', req.session.username);
+        res.json({ ok: true, ...sonuc });
+    } catch (error) {
+        console.log(`[YetkiliAlim] Red hatası: ${error.message}`);
         res.json({ ok: false, error: error.message });
     }
 });

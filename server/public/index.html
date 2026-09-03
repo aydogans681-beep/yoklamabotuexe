@@ -298,6 +298,7 @@
                     <button class="tab-btn active" data-tab="yoklama"><span class="ico"><svg><use href="#i-yoklama"/></svg></span><span class="etiket">Yoklama</span></button>
                     <button class="tab-btn" data-tab="yetkililer"><span class="ico"><svg><use href="#i-yetkililer"/></svg></span><span class="etiket">Yetkililer</span></button>
                     <button class="tab-btn" data-tab="roller"><span class="ico"><svg><use href="#i-roller"/></svg></span><span class="etiket">Rol Ver/Al</span></button>
+                    <button class="tab-btn" data-tab="yetkilialim"><span class="ico"><svg><use href="#i-yetkililer"/></svg></span><span class="etiket">Yetkili Alım</span></button>
                 </div>
 
                 <div class="nav-grup">
@@ -490,6 +491,53 @@
             <div id="listWrap">
                 <div class="empty-hint" id="emptyState">Taramayı başlat, sonuçlar burada listelenecek.</div>
                 <div id="list"></div>
+            </div>
+        </div>
+
+        <!-- ================= YETKILI ALIM ================= -->
+        <!-- Mülakat başvuru kategorisindeki ticket'lar listelenir, mesajları
+             görüntülenir; yetkili Onay/Red verir. Mesajlar panelin ana
+             hesabından gönderilir. -->
+        <div class="tab-panel" id="tab-yetkilialim">
+            <div class="logs-layout">
+                <div class="activity-side">
+                    <div class="toolbar" style="margin-bottom:8px;">
+                        <input type="text" class="text-search" id="yaAra" placeholder="Başvuru ara...">
+                        <button class="secondary small" id="yaYenileBtn">↻</button>
+                    </div>
+                    <div class="activity-list" id="yaTicketListe">
+                        <div class="empty-hint">Yükleniyor...</div>
+                    </div>
+                </div>
+                <div class="logs-main">
+                    <div class="toolbar logs-toolbar">
+                        <span class="logs-title" id="yaSeciliTicket">Soldan bir başvuru seç</span>
+                        <span class="grow"></span>
+                        <button class="secondary small" id="yaMesajYenile" disabled>↻ Yenile</button>
+                    </div>
+
+                    <div class="card" style="margin:0 0 12px;">
+                        <div id="yaMesajKutu"
+                             style="max-height:360px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; padding:10px;">
+                            <div class="empty-hint">Bir başvuru seç.</div>
+                        </div>
+                    </div>
+
+                    <!-- Karar: Onay yeşil, Red kırmızı. Onayda ticket'ı açan
+                         kişi etiketlenir, mülakat kanalı linki verilir. -->
+                    <div class="card accent-card" style="margin:0;">
+                        <h2>Karar</h2>
+                        <p class="card-desc">
+                            <b>Onayla</b>: başvuru onay mesajı + mülakat kanalı linki gider,
+                            başvuran etiketlenir. <b>Reddet</b>: red mesajı gider.
+                        </p>
+                        <div class="toolbar">
+                            <button id="yaOnayBtn" class="ya-onay" disabled>✅ Onayla</button>
+                            <button id="yaRedBtn" class="ya-red" disabled>❌ Reddet</button>
+                            <span class="scanStatus" id="yaKararMsg"></span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

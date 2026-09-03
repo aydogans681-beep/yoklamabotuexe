@@ -428,6 +428,13 @@ button.ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--i
 .bireysel-tablo tr:last-child td { border-bottom: none; }
 .bireysel-tablo input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent-fill); cursor: pointer; }
 
+/* Yetkili Alım karar butonları: Onay yeşil, Red kırmızı (durum paleti). */
+#yaOnayBtn { background: var(--ok); color: #06210f; border: none; }
+#yaOnayBtn:hover:not(:disabled) { filter: brightness(1.08); }
+#yaRedBtn { background: var(--accent-fill); color: #fff; border: none; }
+#yaRedBtn:hover:not(:disabled) { background: var(--accent-hover); }
+#yaOnayBtn:disabled, #yaRedBtn:disabled { opacity: .5; cursor: default; }
+
 .tier { display: flex; align-items: center; gap: 6px; margin-top: 9px; }
 .tier-static-label { font-size: 10.5px; color: var(--ink-3); }
 .tier-badge {

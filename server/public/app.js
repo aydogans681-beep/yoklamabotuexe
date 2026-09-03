@@ -363,6 +363,11 @@ function connectWebSocket() {
                 // AC ticket kategorisinde ticket açıldı/kapandı - liste canlı
                 // güncellensin (yalnızca sekme açık ve bağlıysa).
                 if (typeof acCanliGuncelle === 'function') acCanliGuncelle(msg);
+            } else if (msg.type === 'yetkili-alim-ticket-degisti') {
+                // Yetkili Alım kategorisinde başvuru açıldı/kapandı - sekme
+                // açıksa listeyi tazele.
+                const panel = document.getElementById('tab-yetkilialim');
+                if (panel && panel.classList.contains('active')) yaTicketleriYukle();
             } else if (msg.type === 'yoklama-katilim') {
                 // Baska bir panel kullanicisi katildi - sayac anlik guncellensin.
                 loadKatilim();
@@ -946,6 +951,170 @@ emergencyBtn.addEventListener('click', async () => {
     }
 });
 
+// ============================================================================
+// --- YETKILI ALIM (mülakat başvuruları) ---
+// Kategorideki başvuru ticket'larını listeler, mesajlarını canlı gösterir
+// (açıkken periyodik yeniler), yetkili Onay/Red verir. AC ticket görüntüleyici
+// ile aynı iskelet; mesajları ana hesap gönderiyor.
+// ============================================================================
+const yaTicketListe = document.getElementById('yaTicketListe');
+const yaAra = document.getElementById('yaAra');
+const yaYenileBtn = document.getElementById('yaYenileBtn');
+const yaSeciliTicket = document.getElementById('yaSeciliTicket');
+const yaMesajKutu = document.getElementById('yaMesajKutu');
+const yaMesajYenile = document.getElementById('yaMesajYenile');
+const yaOnayBtn = document.getElementById('yaOnayBtn');
+const yaRedBtn = document.getElementById('yaRedBtn');
+const yaKararMsg = document.getElementById('yaKararMsg');
+
+let yaTicketler = [];
+let yaSecili = null;
+let yaMesajTimer = null;   // seçili başvurunun mesajlarını canlı tutan poll
+
+function stopYetkiliAlimPolling() {
+    if (yaMesajTimer) { clearInterval(yaMesajTimer); yaMesajTimer = null; }
+}
+
+async function initYetkiliAlim() {
+    await yaTicketleriYukle();
+}
+
+async function yaTicketleriYukle() {
+    if (!yaTicketListe) return;
+    yaTicketListe.innerHTML = '<div class="iskelet">' + '<div class="iskelet-satir"></div>'.repeat(5) + '</div>';
+    try {
+        const d = await okuJson(await fetch('/api/yetkili-alim/ticketlar'));
+        if (d.status === 401) { showLogin(); return; }
+        if (!d.ok) { yaTicketListe.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(d.error)}</div>`; return; }
+        yaTicketler = d.ticketlar || [];
+        // Seçili ticket kapanmışsa seçimi düşür.
+        if (yaSecili && !yaTicketler.some((t) => t.id === yaSecili.id)) yaSeciminiTemizle();
+        yaTicketleriCiz();
+    } catch (error) {
+        yaTicketListe.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function yaSeciminiTemizle() {
+    yaSecili = null;
+    stopYetkiliAlimPolling();
+    if (yaSeciliTicket) yaSeciliTicket.textContent = 'Soldan bir başvuru seç';
+    if (yaMesajKutu) yaMesajKutu.innerHTML = '<div class="empty-hint">Bir başvuru seç.</div>';
+    if (yaMesajYenile) yaMesajYenile.disabled = true;
+    if (yaOnayBtn) yaOnayBtn.disabled = true;
+    if (yaRedBtn) yaRedBtn.disabled = true;
+    if (yaKararMsg) yaKararMsg.textContent = '';
+}
+
+function yaTicketleriCiz() {
+    const terim = (yaAra && yaAra.value || '').trim().toLocaleLowerCase('tr');
+    const liste = terim
+        ? yaTicketler.filter((t) => t.ad.toLocaleLowerCase('tr').includes(terim))
+        : yaTicketler;
+    yaTicketListe.innerHTML = '';
+    if (liste.length === 0) {
+        yaTicketListe.innerHTML = `<div class="empty-hint">${terim
+            ? 'Aramaya uyan başvuru yok.' : 'Bu kategoride açık başvuru yok.'}</div>`;
+        return;
+    }
+    liste.forEach((t) => {
+        const btn = document.createElement('button');
+        btn.className = 'act-row' + (yaSecili && yaSecili.id === t.id ? ' active' : '');
+        btn.innerHTML = `
+            <span class="act-body">
+                <span class="act-name">${escapeHtml(t.ad)}</span>
+                <span class="act-last">${t.acilis ? `açıldı: ${formatDate(t.acilis)}` : ''}</span>
+            </span>`;
+        btn.addEventListener('click', () => yaTicketSec(t));
+        yaTicketListe.appendChild(btn);
+    });
+}
+
+function yaTicketSec(t) {
+    yaSecili = t;
+    if (yaSeciliTicket) yaSeciliTicket.textContent = t.ad;
+    if (yaMesajYenile) yaMesajYenile.disabled = false;
+    if (yaOnayBtn) yaOnayBtn.disabled = false;
+    if (yaRedBtn) yaRedBtn.disabled = false;
+    if (yaKararMsg) yaKararMsg.textContent = '';
+    yaTicketleriCiz();
+    yaMesajlariYukle();
+    // Canlı: seçili başvurunun mesajlarını 5 sn'de bir yenile.
+    stopYetkiliAlimPolling();
+    yaMesajTimer = setInterval(() => { if (yaSecili) yaMesajlariYukle(true); }, 5000);
+}
+
+function yaMesajlariCiz(mesajlar) {
+    if (!yaMesajKutu) return;
+    if (!mesajlar || !mesajlar.length) {
+        yaMesajKutu.innerHTML = '<div class="empty-hint">Bu başvuruda mesaj yok.</div>';
+        return;
+    }
+    yaMesajKutu.innerHTML = mesajlar.map((m) => {
+        const ekler = (m.ekler || []).map((e) => e.gorsel
+            ? `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(e.url)}" alt="${escapeHtml(e.ad)}" style="max-width:220px; max-height:180px; border-radius:8px; margin-top:4px; display:block;"></a>`
+            : `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener" style="font-size:11.5px;">📎 ${escapeHtml(e.ad || e.url)}</a>`).join('');
+        const govde = m.icerik ? `<div style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(m.icerik)}</div>` : '';
+        const embedNot = (m.embedVar && !m.icerik && !ekler) ? '<div style="font-size:11.5px; color:var(--ink-3);">[gömülü içerik]</div>' : '';
+        return `<div style="padding:6px 0; border-bottom:1px solid var(--border);">
+            <div style="font-size:11.5px; color:var(--ink-3); margin-bottom:2px;">
+                <b style="color:var(--ink-2);">${escapeHtml(m.yazar)}</b>${m.bot ? ' <span style="color:var(--accent);">BOT</span>' : ''}
+                ${m.zaman ? `· ${formatDate(m.zaman)}` : ''}
+            </div>${govde}${embedNot}${ekler}</div>`;
+    }).join('');
+    yaMesajKutu.scrollTop = yaMesajKutu.scrollHeight;
+}
+
+async function yaMesajlariYukle(sessiz) {
+    if (!yaSecili || !yaMesajKutu) return;
+    if (!sessiz) yaMesajKutu.innerHTML = '<div class="empty-hint">Yükleniyor...</div>';
+    try {
+        const res = await fetch('/api/yetkili-alim/mesajlar', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kanalId: yaSecili.id }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) { if (!sessiz) yaMesajKutu.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(d.error)}</div>`; return; }
+        yaMesajlariCiz(d.mesajlar);
+    } catch (error) {
+        if (!sessiz) yaMesajKutu.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+async function yaKararVer(tur) {
+    if (!yaSecili) return;
+    const soru = tur === 'onay'
+        ? `"${yaSecili.ad}" başvurusu ONAYLANACAK. Onay mesajı gönderilsin mi?`
+        : `"${yaSecili.ad}" başvurusu REDDEDİLECEK. Red mesajı gönderilsin mi?`;
+    if (!confirm(soru)) return;
+    yaOnayBtn.disabled = true; yaRedBtn.disabled = true;
+    yaKararMsg.textContent = 'Gönderiliyor...';
+    try {
+        const res = await fetch(`/api/yetkili-alim/${tur}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kanalId: yaSecili.id }),
+        });
+        if (res.status === 401) { showLogin(); return; }
+        const d = await okuJson(res);
+        if (!d.ok) { yaKararMsg.textContent = `Hata: ${d.error}`; return; }
+        yaKararMsg.textContent = tur === 'onay'
+            ? (d.sahipId ? '✅ Onaylandı, başvuran etiketlendi.' : '✅ Onaylandı (başvuran bulunamadı, etiketsiz).')
+            : '❌ Reddedildi.';
+        yaMesajlariYukle(true);   // gönderilen mesaj listede görünsün
+    } catch (error) {
+        yaKararMsg.textContent = `Hata: ${error.message}`;
+    } finally {
+        if (yaSecili) { yaOnayBtn.disabled = false; yaRedBtn.disabled = false; }
+    }
+}
+
+if (yaYenileBtn) yaYenileBtn.addEventListener('click', yaTicketleriYukle);
+if (yaAra) yaAra.addEventListener('input', yaTicketleriCiz);
+if (yaMesajYenile) yaMesajYenile.addEventListener('click', () => yaMesajlariYukle());
+if (yaOnayBtn) yaOnayBtn.addEventListener('click', () => yaKararVer('onay'));
+if (yaRedBtn) yaRedBtn.addEventListener('click', () => yaKararVer('red'));
+
 function renderResults(data) {
     lastResults = data.members;
     copyReportBtn.disabled = data.members.length === 0;
@@ -1147,6 +1316,7 @@ const SEKME_BASLIKLARI = {
     yoklama:      ['i-yoklama',      'Yoklama',        'Yetkili taraması, uyarı merdiveni ve acil toplantı.'],
     yetkililer:   ['i-yetkililer',   'Yetkililer',     'Rol bazlı yetkili listesi ve satır içi rol işlemleri.'],
     roller:       ['i-roller',       'Rol Ver / Al',   'Seçtiğin kişiye rol ver ya da geri al.'],
+    yetkilialim:  ['i-yetkililer',   'Yetkili Alım',   'Mülakat başvuru ticket\'larını gör, onayla ya da reddet.'],
     aktiflik:     ['i-aktiflik',     'Aktiflik',       'Kim ne kadar süre seste kaldı, gün gün.'],
     etkinlik:     ['i-etkinlik',     'Etkinlik',       'Kanal bazlı mesaj sayıları ve ticket sahiplenme.'],
     loglar:       ['i-loglar',       'TX Logs',        'Ban, unban, kick, warn, DM ve diğer log kanalları.'],
@@ -1190,6 +1360,7 @@ tabButtons.forEach((btn) => {
             loadTicketAuto(); loadRolKomutlari(false); loadOtoYoklama(); loadPrime(); uyariDusurYukle();
         }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
+        if (btn.dataset.tab === 'yetkilialim') initYetkiliAlim(); else stopYetkiliAlimPolling();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
         if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
         if (btn.dataset.tab === 'etkinlik') initActivityTab();

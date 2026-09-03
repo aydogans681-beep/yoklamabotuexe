@@ -607,6 +607,25 @@ adı, Yönetici/Yetkili).
   bilgisi sorun değil: gerçek uyarı verilirken üye zaten taze çekilip
   doğrulanıyor.
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
+
+### Yetkili Alım
+
+Mülakat başvuru kategorisindeki (`1470230416395866278`) ticket'ları ayrı bir
+sekmede yönetir. Sol tarafta açık başvurular listelenir (arama + canlı: başvuru
+açılınca/kapanınca liste kendini yeniler), sağda seçilen başvurunun mesajları
+görüntülenir (seçiliyken 5 sn'de bir tazelenir). Altta iki karar butonu:
+
+- **✅ Onayla** → ticket'a şu mesaj gider ve **başvuran en sona etiketlenir**:
+  `Başvurunuz Onaylandı ✅ En Kısa Sürede Yetkili Mülakat Kanalına Geçmeniz
+  Bekleniyor <mülakat kanalı linki> @başvuran`
+- **❌ Reddet** → `Başvurunuz (Yetersiz Yaş/Saat/Uygunsuz) Sebebiyle Red ❌
+  Yemiştir İyi Günler Dileriz !`
+
+Mesajlar panelin **ana hesabından** gönderilir (AC token'ı gerekmez). Emojiler
+gerçek Unicode (✅/❌) - selfbot API'sinden `:shortcode:` düz metin giderdi.
+Uçlar: `GET /api/yetkili-alim/ticketlar`, `POST /api/yetkili-alim/mesajlar`,
+`POST /api/yetkili-alim/onay`, `POST /api/yetkili-alim/red` - hepsi **yetkilialim**
+izniyle (AC hesapları göremez).
 - **Uyarı süresi (otomatik düşürme)** - her uyarının **1 hafta** süresi vardır.
   Bot **her gün** (yeni günün ilk çevrimiçi dakikasında, günde bir kez) kontrol
   eder; aktif uyarısının 1 haftası dolan her kişiden **1 uyarı çeker** ("Geri
