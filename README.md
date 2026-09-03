@@ -382,6 +382,35 @@ Token'lar hassas olduğu için özellik birkaç katman üzerine kuruldu:
 Token **bir daha ekrana yazılmaz**; panel yalnızca hangi hesabın bağlı olduğunu
 ve ne zaman bağlandığını gösterir.
 
+### Nexora Sonucu (API)
+
+"Nexora Pinini Görüntüle" ticket'taki **ham** mesajı gösterir; **Nexora Sonucu
+(API)** ise Nexora'nın resmi REST API'sinden **yapılandırılmış** sonucu çeker
+(verdict: `CLEAN` / `WARNING` / `CHEATING` / `pending`).
+
+- **Base URL:** `https://nexorascanner.ac/api/v1`, tarama **6 haneli PIN** ile
+  bulunuyor: `GET /api/v1/scans/{PIN}`. Auth `Authorization: Bearer <nxr_...>`.
+  (Docs'ta ayrıca `x-api-key` yedeği de gönderiliyor.) Bu API **Professional**
+  ve üzeri planlarda açık.
+- **AC yalnızca API anahtarını girer** (`nxr_...`), URL girmesine gerek yok -
+  varsayılan olarak yukarıdaki adres kullanılır (`NEXORA_VARSAYILAN_API_URL`).
+  Anahtar, token'larla aynı şekilde **şifreli** saklanır (`ac-nexora-api.json`)
+  ve bir daha ekrana dönmez. Özel bir kurulum için AC kendi URL'sini girip
+  varsayılanı ezebilir (`{id}` = PIN, isteğe bağlı `{key}`).
+- **PIN nereden gelir:** "Sonucu Getir" seçili ticket'taki Nexora pininden
+  kodu (`nexoraSonucCoz`) okuyup onu sorgular - AC PIN'i elle yazmaz. (Sunucu
+  ucu `pin` alanıyla elle PIN de kabul eder.)
+- **Rate limit:** docs 5/10sn · 60/dk diyor. `429` gelince Nexora'nın önerdiği
+  **üstel bekleme** uygulanır (2^deneme sn, 30 sn tavan, en fazla 5 deneme;
+  `Retry-After` başlığı varsa ona uyulur). `401/403` "anahtar reddedildi",
+  `404` "PIN bulunamadı" diye okunur hataya çevrilir.
+- **Cevabın şekli belgelenmediği için** panel JSON'u **olduğu gibi** çizer:
+  anahtar/değer satırları, `verdict` için renkli rozet, URL'ler link, görseller
+  gömülü, iç içe alanlar açılır (derinlik ve XSS'e karşı korumalı).
+
+> Bu API'siz de panel çalışır: "Nexora Pinini Görüntüle" + Temiz/Kirli akışı
+> hiçbir anahtar gerektirmez. API, sonucu yapılandırılmış görmek isteyenler için.
+
 ### Açmak için
 
 Elle hiçbir dosya düzenlemek gerekmiyor. Şifreleme anahtarı ilk açılışta

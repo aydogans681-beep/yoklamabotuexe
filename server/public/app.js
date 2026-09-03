@@ -4414,6 +4414,7 @@ async function acDurumYukle() {
             acTicketleriYukle();
             acTetikKelimeYukle();
             acKirliKelimeYukle();
+            acApiDurumYukle();   // Nexora API anahtarı kayıtlı mı göster
             if (acDmBtn) acDmBtn.disabled = false;   // DM için ticket şart değil
             if (acTicketAcBtn) acTicketAcBtn.disabled = false;   // AC Ticket Aç da ticket istemez
             acIsitmaBaslat();   // gateway'i sicak tut - anahtar kelime aninda tetiklensin
@@ -4613,6 +4614,7 @@ function acTicketleriCiz() {
             acNexoraBtn.disabled = false;
             acSsBtn.disabled = false;
             acNexoraPinBtn.disabled = false;
+            if (acNexoraSonucBtn) acNexoraSonucBtn.disabled = false;
             if (acTemizBtn) acTemizBtn.disabled = false;
             if (acKirliBtn) acKirliBtn.disabled = false;
             if (acGifBtn) acGifBtn.disabled = false;
@@ -4622,6 +4624,7 @@ function acTicketleriCiz() {
             acNexoraMsg.textContent = '';
             acSsMsg.textContent = '';
             acNexoraPinMsg.textContent = '';
+            if (acNexoraSonucMsg) acNexoraSonucMsg.textContent = '';
             if (acSonucMsg) acSonucMsg.textContent = '';
             if (acDmMsg) acDmMsg.textContent = '';
             acMesajlariYukle();   // seçilen ticket'ın mesajlarını göster
@@ -4767,6 +4770,138 @@ acNexoraPinBtn.addEventListener('click', async () => {
         acNexoraPinBtn.disabled = false;
     }
 });
+
+// --- Nexora Sonucu (API) ---
+// AC'nin nxr_ anahtarıyla, seçili ticket'ın PIN'inden Nexora API'sinden
+// yapılandırılmış sonucu çeker. Anahtar bir kez kaydedilir (şifreli, sunucuda).
+const acApiKey = document.getElementById('acApiKey');
+const acApiKaydet = document.getElementById('acApiKaydet');
+const acApiMsg = document.getElementById('acApiMsg');
+const acNexoraSonucBtn = document.getElementById('acNexoraSonucBtn');
+const acNexoraSonucMsg = document.getElementById('acNexoraSonucMsg');
+const acNexoraSonucKutu = document.getElementById('acNexoraSonucKutu');
+
+// Anahtarın kayıtlı olup olmadığını göster (anahtar ASLA geri gelmez, yalnızca
+// "kayıtlı mı" bilgisi). Panel açılınca bir kez çağrılıyor.
+async function acApiDurumYukle() {
+    if (!acApiKey) return;
+    try {
+        const d = await okuJson(await fetch('/api/ac/nexora-api'));
+        if (d.ok && d.keyVar) {
+            acApiKey.placeholder = 'nxr_•••• (kayıtlı — değiştirmek için yeni anahtar yaz)';
+            if (acApiMsg) acApiMsg.textContent = 'Anahtar kayıtlı.';
+        } else {
+            acApiKey.placeholder = 'nxr_...';
+        }
+    } catch (error) { /* durum alınamadıysa alan yine çalışır */ }
+}
+
+if (acApiKaydet) {
+    acApiKaydet.addEventListener('click', async () => {
+        const key = (acApiKey.value || '').trim();
+        if (!key) { acApiMsg.textContent = 'Anahtarı gir (nxr_ ile başlar).'; return; }
+        acApiKaydet.disabled = true;
+        acApiMsg.textContent = 'Kaydediliyor...';
+        try {
+            // URL göndermiyoruz - sunucu varsayılan Nexora adresini kullanıyor.
+            const res = await fetch('/api/ac/nexora-api', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) { acApiMsg.textContent = d.error || 'Kaydedilemedi.'; return; }
+            acApiKey.value = '';   // anahtar ekranda asılı kalmasın
+            acApiKey.placeholder = 'nxr_•••• (kayıtlı)';
+            acApiMsg.textContent = '✅ Anahtar kaydedildi.';
+        } catch (error) {
+            acApiMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acApiKaydet.disabled = false;
+        }
+    });
+}
+
+if (acNexoraSonucBtn) {
+    acNexoraSonucBtn.addEventListener('click', async () => {
+        if (!acSecili) { acNexoraSonucMsg.textContent = 'Önce bir ticket seç.'; return; }
+        acNexoraSonucBtn.disabled = true;
+        acNexoraSonucMsg.textContent = 'Nexora API sorgulanıyor...';
+        try {
+            const res = await fetch('/api/ac/nexora-sonuc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kanalId: acSecili.id }),
+            });
+            if (res.status === 401) { showLogin(); return; }
+            const d = await okuJson(res);
+            if (!d.ok) {
+                acNexoraSonucMsg.textContent = d.error;
+                if (/yeniden bağla/i.test(d.error)) acDurumYukle();
+                return;
+            }
+            acNexoraSonucMsg.textContent = d.pin ? `PIN ${d.pin}` : 'Sonuç geldi.';
+            acNexoraSonucKutu.innerHTML = acJsonCiz(d.sonuc);
+            acNexoraSonucKutu.hidden = false;
+        } catch (error) {
+            acNexoraSonucMsg.textContent = `Hata: ${error.message}`;
+        } finally {
+            acNexoraSonucBtn.disabled = false;
+        }
+    });
+}
+
+// Cevabın kesin şeklini bilmiyoruz (docs alanları saymıyor) - "hepsini göster".
+// JSON'u özyinelemeli anahtar/değer satırlarına çeviriyoruz: verdict için renkli
+// rozet, URL'ler link, görseller <img>, iç içe nesne/dizi bir alt seviye.
+function acVerdictRozet(v) {
+    const s = String(v).toLowerCase();
+    let renk = 'var(--ink-2)';
+    if (s === 'cheating' || s === 'severe') renk = '#ff5370';
+    else if (s === 'warning' || s === 'warn') renk = '#ffcb6b';
+    else if (s === 'clean') renk = '#89ddff';
+    return `<span style="display:inline-block; padding:2px 8px; border-radius:6px; font-weight:700;`
+        + ` background:${renk}22; color:${renk}; border:1px solid ${renk}55;">${escapeHtml(String(v))}</span>`;
+}
+
+function acDegerCiz(anahtar, deger, derinlik) {
+    if (deger === null || deger === undefined) return `<span class="muted">—</span>`;
+    if (typeof deger === 'object') return acJsonCiz(deger, derinlik + 1);
+
+    const s = String(deger);
+    if (/^(verdict|result|status|severity)$/i.test(anahtar) && /^(clean|warning|warn|cheating|pending|severe)$/i.test(s)) {
+        return acVerdictRozet(s);
+    }
+    if (/^https?:\/\//i.test(s)) {
+        if (/\.(png|jpe?g|gif|webp|bmp)(\?\S*)?$/i.test(s)) {
+            return `<img src="${escapeHtml(s)}" alt="" style="max-width:100%; max-height:360px; border-radius:8px;">`;
+        }
+        return `<a href="${escapeHtml(s)}" target="_blank" rel="noopener">${escapeHtml(s)}</a>`;
+    }
+    return `<span style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(s)}</span>`;
+}
+
+function acJsonCiz(veri, derinlik = 0) {
+    if (veri === null || veri === undefined) return '<span class="muted">(boş)</span>';
+    if (typeof veri !== 'object') return acDegerCiz('', veri, derinlik);
+    // Çok derine inmeyi kes (kötü niyetli/dev cevaba karşı).
+    if (derinlik > 6) return `<span class="muted">…</span>`;
+
+    const girisler = Array.isArray(veri)
+        ? veri.map((v, i) => [String(i), v])
+        : Object.entries(veri);
+    if (girisler.length === 0) return '<span class="muted">(boş)</span>';
+
+    const satirlar = girisler.map(([ad, deger]) => `
+        <div style="display:flex; gap:8px; padding:3px 0; ${derinlik === 0 ? 'border-bottom:1px solid var(--border);' : ''}">
+            <div style="min-width:120px; flex:0 0 auto; color:var(--ink-3); font-weight:600;">${escapeHtml(ad)}</div>
+            <div style="flex:1; min-width:0;">${acDegerCiz(ad, deger, derinlik)}</div>
+        </div>`);
+    const ic = satirlar.join('');
+    return derinlik === 0 ? ic
+        : `<div style="border-left:2px solid var(--border); padding-left:10px; margin:2px 0;">${ic}</div>`;
+}
 
 // Temiz: sunucuya istek YOK - bir şey gönderilmez, sadece görsel onay.
 if (acTemizBtn) {

@@ -2427,6 +2427,24 @@ const NEXORA_API_URL = (process.env.NEXORA_API_URL || '').trim();
 const NEXORA_API_KEY = (process.env.NEXORA_API_KEY || '').trim();
 const NEXORA_API_ZAMANASIMI = 15000;
 
+// Nexora'nin resmi REST API'si (docs): base https://nexorascanner.ac/api/v1,
+// bir tarama 6 haneli PIN ile bulunuyor, auth "Authorization: Bearer <key>".
+// Bunu VARSAYILAN yapiyoruz ki AC yalnizca API key'ini girsin - URL'yi elle
+// yazmasi gerekmesin. {id} yer tutucusuna PIN konuyor. Ozel bir kurulum
+// gerekiyorsa AC kendi URL'sini girip bunu ezebilir.
+const NEXORA_VARSAYILAN_API_URL = 'https://nexorascanner.ac/api/v1/scans/{id}';
+
+// Rate limit: docs 5/10sn · 60/dk diyor; 429 gelince Nexora'nin onerdigi ustel
+// bekleme (2^deneme sn, 30 sn tavan, en fazla 5 deneme). Test icin degistirile-
+// bilsin diye ayri fonksiyon.
+const NEXORA_MAKS_DENEME = 5;
+function nexoraBeklemeMs(deneme) {
+    return Math.min(2 ** deneme * 1000, 30000);
+}
+function nexoraUyku(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+
 const AC_GATEWAY_BOSTA_MS = 12 * 60 * 1000;      // 12 dk kullanilmazsa kapat (uzun: sicak kalsin)
 const AC_GATEWAY_TAVANI = 15;                     // ayni anda en fazla acik baglanti
 const AC_GATEWAY_HAZIR_ZAMANASIMI = 22000;        // ready gelmezse vazgec
@@ -2752,35 +2770,57 @@ async function acKirliTetikle(username, channel) {
 // oldugu gibi gosterilecek). apiUrl/apiKey CAGIRANDAN gelir - her AC kendi
 // API'sini girdigi icin global degil, o AC'nin kayitli degerleri. Panelin ana
 // botunu/AC gateway'ini kullanmaz - dogrudan HTTP. Key sunucuda kalir.
-async function nexoraApiSorgula(discordId, apiUrl, apiKey) {
-    apiUrl = String(apiUrl || '').trim();
+// deger: sorgulanacak tanimlayici. Nexora API'sinde bu bir PIN (6 hane);
+// ozel bir kurulumda Discord ID de olabilir - fonksiyon farketmez, {id} yer
+// tutucusuna oldugu gibi koyar. apiUrl bos gelirse Nexora'nin resmi URL'sine
+// dusuyor, yani AC yalnizca key girmis olsa da calisir.
+async function nexoraApiSorgula(deger, apiUrl, apiKey) {
+    apiUrl = String(apiUrl || '').trim() || NEXORA_VARSAYILAN_API_URL;
     apiKey = String(apiKey || '').trim();
-    if (!apiUrl) {
-        throw new Error('Nexora API ayarlı değil. Nexora Sonucu bölümünden kendi API adresini ve key\'ini gir.');
-    }
-    let url = apiUrl.replace(/\{id\}/g, encodeURIComponent(discordId));
-    // URL'de {id} yer tutucusu yoksa Discord ID'yi sorgu parametresi olarak ekle.
-    if (!/\{id\}/.test(apiUrl) && !url.includes(discordId)) {
-        url += (url.includes('?') ? '&' : '?') + 'discordId=' + encodeURIComponent(discordId);
+    deger = String(deger || '').trim();
+    if (!deger) throw new Error('Sorgulanacak bir PIN ya da ID yok.');
+
+    let url = apiUrl.replace(/\{id\}/g, encodeURIComponent(deger));
+    // URL'de {id} yer tutucusu yoksa tanimlayiciyi sorgu parametresi olarak ekle.
+    if (!/\{id\}/.test(apiUrl) && !url.includes(deger)) {
+        url += (url.includes('?') ? '&' : '?') + 'id=' + encodeURIComponent(deger);
     }
     if (apiKey) url = url.replace(/\{key\}/g, encodeURIComponent(apiKey));
 
-    const headers = { Accept: 'application/json' };
+    const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
     if (apiKey) {
-        headers.Authorization = `Bearer ${apiKey}`;
-        headers['x-api-key'] = apiKey;
+        headers.Authorization = `Bearer ${apiKey}`;   // docs'un istedigi yontem
+        headers['x-api-key'] = apiKey;                 // yedek: bazi kurulumlar bunu bekler
     }
 
+    // 429 (rate limit) gelirse ustel bekleyip yeniden deniyoruz (docs'un
+    // onerdigi bicimde). Diger hatalarda ya da basarida ilk turda cikiyoruz.
     let cevap;
-    try {
-        cevap = await fetch(url, { headers, signal: AbortSignal.timeout(NEXORA_API_ZAMANASIMI) });
-    } catch (error) {
-        throw new Error(`Nexora API'ye ulaşılamadı: ${error.message}`);
+    for (let deneme = 0; ; deneme++) {
+        try {
+            cevap = await fetch(url, { headers, signal: AbortSignal.timeout(NEXORA_API_ZAMANASIMI) });
+        } catch (error) {
+            throw new Error(`Nexora API'ye ulaşılamadı: ${error.message}`);
+        }
+        if (cevap.status !== 429 || deneme >= NEXORA_MAKS_DENEME) break;
+        // Retry-After (saniye) varsa ona uy, yoksa ustel bekleme.
+        const ra = Number(cevap.headers && cevap.headers.get && cevap.headers.get('retry-after'));
+        await nexoraUyku(ra > 0 ? Math.min(ra * 1000, 30000) : nexoraBeklemeMs(deneme));
     }
+
     const ham = await cevap.text();
     let veri;
     try { veri = JSON.parse(ham); } catch (e) { veri = ham; }   // JSON degilse duz metin
     if (!cevap.ok) {
+        if (cevap.status === 429) {
+            throw new Error('Nexora API çok yoğun (429) - biraz sonra tekrar dene.');
+        }
+        if (cevap.status === 401 || cevap.status === 403) {
+            throw new Error(`Nexora API anahtarı reddedildi (${cevap.status}) - key yanlış ya da planın bu erişime kapalı.`);
+        }
+        if (cevap.status === 404) {
+            throw new Error('Nexora bu PIN için sonuç bulamadı (404) - PIN yanlış ya da tarama silinmiş olabilir.');
+        }
         const kisa = typeof veri === 'string' ? veri.slice(0, 300) : JSON.stringify(veri).slice(0, 300);
         throw new Error(`Nexora API hata döndü (${cevap.status}): ${kisa}`);
     }
@@ -6264,68 +6304,91 @@ app.post('/api/ac/nexora-sonuc', requireIzin('ticketmesaj'), async (req, res) =>
     const kullanici = req.session.username;
     if (!acTokenlari[kullanici]) return res.json({ ok: false, error: 'Önce hesabını bağla.' });
 
-    // Her AC KENDI API'sini kullanır. Kendi kaydı yoksa global config'e düşülür
-    // (config.env - opsiyonel varsayılan); o da yoksa uyarı.
-    const acApi = acNexoraApiAl(kullanici) || (NEXORA_API_URL ? { url: NEXORA_API_URL, key: NEXORA_API_KEY } : null);
-    if (!acApi || !acApi.url) {
-        return res.json({ ok: false, error: 'Önce kendi Nexora API\'ni gir (Nexora Sonucu bölümü).' });
+    // Her AC KENDI API'sini kullanır. URL girmemişse Nexora'nın resmi URL'sine
+    // düşüyoruz (yalnızca key yeter). Key hem kendi kaydından hem global
+    // config'ten gelebilir.
+    const acKayit = acNexoraApiAl(kullanici);
+    const apiUrl = (acKayit && acKayit.url) || NEXORA_API_URL || NEXORA_VARSAYILAN_API_URL;
+    const apiKey = (acKayit && acKayit.key) || NEXORA_API_KEY || '';
+    if (!apiKey) {
+        return res.json({ ok: false, error: 'Önce Nexora API anahtarını gir (Nexora Sonucu bölümü).' });
     }
 
-    // Discord ID: elle girildiyse onu kullan; yoksa ticket'ı açanı otomatik bul.
-    let discordId = String((req.body && req.body.discordId) || '').trim();
+    // Nexora API taramayı PIN ile buluyor. PIN kaynağı, öncelik sırasıyla:
+    //   1. elle girilen pin,
+    //   2. seçili ticket'taki Nexora pininden okunan kod (nexoraSonucCoz),
+    //   3. (özel kurulum) elle girilen Discord ID - kendi {id} URL'si olanlar için.
+    let pin = String((req.body && req.body.pin) || '').trim();
     const kanalId = String((req.body && req.body.kanalId) || '').trim();
-    if (!discordId) {
+    let discordId = String((req.body && req.body.discordId) || '').trim();
+    let kaynak = pin ? 'elle-pin' : '';
+
+    if (!pin && kanalId) {
         if (!/^\d{17,20}$/.test(kanalId)) {
-            return res.json({ ok: false, error: 'Ticket seç ya da bir Discord ID gir.' });
+            return res.json({ ok: false, error: 'Geçersiz ticket kanalı.' });
         }
-        let kanal = client.channels.cache.get(kanalId);
-        if (!kanal) { try { kanal = await client.channels.fetch(kanalId); } catch (e) { kanal = null; } }
-        if (!kanal || kanal.parentId !== AC_TICKET_KATEGORI) {
-            return res.json({ ok: false, error: 'Kanal ticket kategorisinde değil.' });
-        }
-        discordId = await findTicketOpener(kanal).catch(() => null);
-        if (!discordId) {
-            return res.json({ ok: false, error: 'Ticket\'ı açan kişinin Discord ID\'si bulunamadı; elle gir.' });
-        }
+        try {
+            const pinObj = await nexoraPiniGetir(kanalId);
+            const coz = nexoraSonucCoz(pinObj);
+            if (coz.kod) { pin = coz.kod; kaynak = 'ticket'; }
+        } catch (e) { /* pin ticket'ta yoksa aşağıda uygun hata döner */ }
     }
-    if (!/^\d{17,20}$/.test(discordId)) return res.json({ ok: false, error: 'Geçersiz Discord ID.' });
+
+    // Sorgulanacak değer: PIN varsa PIN, yoksa (özel URL için) Discord ID.
+    const deger = pin || discordId;
+    if (!deger) {
+        return res.json({
+            ok: false,
+            error: 'Sorgulanacak PIN yok. Ticket\'ta önce "Nexora At" ile /nexorapin çalıştır, ya da PIN\'i elle gir.',
+        });
+    }
+    // PIN biçimi kaba kontrol: harf/rakam 4-12; Discord ID ise 17-20 hane.
+    if (pin && !/^[A-Za-z0-9]{4,12}$/.test(pin)) {
+        return res.json({ ok: false, error: 'PIN biçimi geçersiz.' });
+    }
+    if (!pin && !/^\d{17,20}$/.test(discordId)) {
+        return res.json({ ok: false, error: 'Geçersiz Discord ID.' });
+    }
 
     const hizHatasi = acHizKontrol(kullanici);
     if (hizHatasi) return res.json({ ok: false, error: hizHatasi });
 
     let sonuc;
     try {
-        sonuc = await nexoraApiSorgula(discordId, acApi.url, acApi.key);
+        sonuc = await nexoraApiSorgula(deger, apiUrl, apiKey);
     } catch (error) {
         return res.json({ ok: false, error: error.message });
     }
 
     acHizIsle(kullanici);
-    addAudit('ac-nexora-sonuc', kullanici, `Discord ${discordId}`, req);
-    res.json({ ok: true, discordId, sonuc });
+    addAudit('ac-nexora-sonuc', kullanici, `${pin ? 'PIN ' + pin : 'Discord ' + discordId} (${kaynak || 'elle'})`, req);
+    res.json({ ok: true, pin: pin || null, discordId: pin ? null : discordId, sonuc });
 });
 
 // AC'nin KENDI Nexora API'si: durum (url görünür, key ASLA dönmez).
 app.get('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {
     const api = acNexoraApiAl(req.session.username);
+    // Key varsa "ayarlı" say: URL girilmese de varsayılan URL ile çalışır.
     res.json({
         ok: true,
-        ayarli: Boolean(api && api.url),
-        url: api ? api.url : '',
+        ayarli: Boolean(api && api.key),
+        url: (api && api.url) || '',
         keyVar: Boolean(api && api.key),
-        // Kendi kaydı yoksa global fallback var mı (yalnızca bilgi).
+        varsayilanUrl: NEXORA_VARSAYILAN_API_URL,   // AC URL girmezse bu kullanılır
         genelVar: Boolean(NEXORA_API_URL),
     });
 });
 
-// AC kendi Nexora API'sini kaydeder. Key boş bırakılırsa mevcut key korunur
-// (URL'i değiştirip key'i yeniden yazmak zorunda kalmasın).
+// AC kendi Nexora API'sini kaydeder. URL BOŞ bırakılabilir: o zaman Nexora'nın
+// resmi URL'si (varsayılan) kullanılır, AC yalnızca key girer. Key boş
+// bırakılırsa mevcut key korunur.
 app.post('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {
     const kullanici = req.session.username;
     const url = String((req.body && req.body.url) || '').trim();
     let key = String((req.body && req.body.key) || '').trim();
-    if (!/^https?:\/\/.+/i.test(url)) {
-        return res.json({ ok: false, error: 'Geçerli bir API adresi gir (http:// veya https:// ile başlamalı).' });
+    // URL opsiyonel; verilirse geçerli olmalı. Boşsa varsayılana düşülür.
+    if (url && !/^https?:\/\/.+/i.test(url)) {
+        return res.json({ ok: false, error: 'API adresi http:// veya https:// ile başlamalı (ya da boş bırak, varsayılan kullanılır).' });
     }
     if (url.length > 500 || key.length > 300) {
         return res.json({ ok: false, error: 'API adresi/anahtarı çok uzun.' });
@@ -6338,14 +6401,17 @@ app.post('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {
         const eski = acNexoraApiAl(kullanici);
         if (eski && eski.key) key = eski.key;
     }
+    if (!key) {
+        return res.json({ ok: false, error: 'API anahtarını gir (nxr_ ile başlayan key).' });
+    }
     try {
         acNexoraApilari[kullanici] = { paket: acSifrele(JSON.stringify({ url, key })), at: Date.now() };
         acNexoraApilariniYaz();
     } catch (error) {
         return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
     }
-    addAudit('ac-nexora-api-kaydet', kullanici, url, req);
-    res.json({ ok: true, ayarli: true, url, keyVar: Boolean(key) });
+    addAudit('ac-nexora-api-kaydet', kullanici, url || '(varsayılan URL)', req);
+    res.json({ ok: true, ayarli: true, url, keyVar: true });
 });
 
 app.delete('/api/ac/nexora-api', requireIzin('ticketmesaj'), (req, res) => {

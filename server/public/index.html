@@ -585,6 +585,32 @@
                                  style="margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; overflow-x:auto;"></div>
                         </div>
 
+                        <!-- Nexora Sonucu (API): AC'nin kendi nxr_ anahtarıyla, seçili
+                             ticket'ın PIN'inden Nexora'nın resmi API'sinden YAPILANDIRILMIŞ
+                             sonucu (CLEAN/WARNING/CHEATING) çeker. Pin görüntüleme ham mesajı,
+                             bu ise API'nin JSON çıktısını verir. Anahtar bir kez girilir,
+                             şifreli saklanır; URL girmeye gerek yok (varsayılan Nexora adresi). -->
+                        <div class="card" style="margin:0 0 12px;">
+                            <h2>Nexora Sonucu (API)</h2>
+                            <p class="card-desc">
+                                Nexora API anahtarınla (<code>nxr_...</code>) seçili ticket'ın
+                                tarama sonucunu doğrudan API'den çeker. Anahtarı <b>bir kez</b>
+                                gir — URL gerekmez, varsayılan Nexora adresi kullanılır.
+                            </p>
+                            <div class="toolbar">
+                                <input type="password" class="text-search" id="acApiKey"
+                                       placeholder="nxr_..." spellcheck="false" style="max-width:280px;">
+                                <button class="secondary small" id="acApiKaydet">Anahtarı Kaydet</button>
+                                <span class="scanStatus" id="acApiMsg"></span>
+                            </div>
+                            <div class="toolbar" style="margin-top:8px;">
+                                <button class="secondary" id="acNexoraSonucBtn" disabled>📊 Sonucu Getir (API)</button>
+                                <span class="scanStatus" id="acNexoraSonucMsg"></span>
+                            </div>
+                            <div id="acNexoraSonucKutu" hidden
+                                 style="margin-top:12px; border:1px solid var(--border); border-radius:10px; padding:12px; overflow-x:auto;"></div>
+                        </div>
+
                         <!-- Sonuç: Temiz / Kirli. Kirli'ye basınca ticket'taki Nexora
                              pininden kod/hedef/tespit okunup sonuç kanalına AC'nin kendi
                              hesabından SUSPICIOUS mesajı gider. Temiz'de bir şey olmaz. -->
