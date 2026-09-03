@@ -336,6 +336,10 @@ function connectWebSocket() {
             } else if (msg.type === 'yoklama-bireysel-ilerleme') {
                 const bp = document.getElementById('bireyselProgress');
                 if (bp) bp.textContent = `Bireysel uyarı gönderiliyor: ${msg.current}/${msg.total}`;
+            } else if (msg.type === 'yoklama-yetkili-liste') {
+                // Arka planda tazelenen yetkili listesi geldi - tablo açıksa
+                // seçimi koruyarak canlı güncelle.
+                bireyselListeyiUygula(msg.members, true);
             } else if (msg.type === 'yoklama-toplu-geri-al-ilerleme') {
                 bulkProgress.textContent = `Toplu geri alma: ${msg.current}/${msg.total}`;
             } else if (msg.type === 'yoklama-acil-toplanti-ilerleme') {
@@ -839,26 +843,37 @@ function bireyselSecimDegistir(id) {
     bireyselSayacGuncelle();
 }
 
-// sessiz=true: bireyselProgress'e dokunmuyor. Uyarı verildikten sonra listeyi
-// tazelerken kullanılıyor - yoksa "Tamamlandı" mesajını hemen silerdi.
-async function bireyselListeYukle(sessiz) {
+// Gelen listeyi tabloya uygular, seçimi korur. sadeceAcikken=true ise tablo
+// kapalıyken hiçbir şey yapmaz (arka plan WS güncellemesi için).
+function bireyselListeyiUygula(members, sadeceAcikken) {
+    if (sadeceAcikken && (!bireyselTabloSar || bireyselTabloSar.hidden)) return;
+    bireyselListe = members || [];
+    // Artık listede olmayan seçimleri düşür.
+    const idler = new Set(bireyselListe.map((m) => m.id));
+    [...bireyselSecili].forEach((id) => { if (!idler.has(id)) bireyselSecili.delete(id); });
+    if (bireyselTabloSar) bireyselTabloSar.hidden = false;
+    if (bireyselAra) bireyselAra.hidden = false;
+    if (bireyselHepsi) bireyselHepsi.hidden = false;
+    if (bireyselTemizle) bireyselTemizle.hidden = false;
+    bireyselTabloCiz();
+    bireyselSayacGuncelle();
+}
+
+// sessiz=true: bireyselProgress'e dokunmuyor (uyarı sonrası tazeleme).
+// taze=true: sunucudan TAZE veri iste ve bekle ("Listeyi Yenile").
+async function bireyselListeYukle(sessiz, taze) {
     if (!bireyselYukleBtn) return;
     bireyselYukleBtn.disabled = true;
-    if (!sessiz) bireyselProgress.textContent = 'Yetkililer getiriliyor...';
+    if (!sessiz) bireyselProgress.textContent = taze ? 'Liste tazeleniyor...' : 'Yetkililer getiriliyor...';
     try {
-        const d = await okuJson(await fetch('/api/yoklama/yetkililer'));
+        const d = await okuJson(await fetch('/api/yoklama/yetkililer' + (taze ? '?taze=1' : '')));
         if (!d.ok) { if (!sessiz) bireyselProgress.textContent = `Hata: ${d.error}`; return; }
-        bireyselListe = d.members || [];
-        // Yeniden yüklerken artık listede olmayan seçimleri düşür.
-        const idler = new Set(bireyselListe.map((m) => m.id));
-        [...bireyselSecili].forEach((id) => { if (!idler.has(id)) bireyselSecili.delete(id); });
-        bireyselTabloSar.hidden = false;
-        bireyselAra.hidden = false;
-        bireyselHepsi.hidden = false;
-        bireyselTemizle.hidden = false;
-        bireyselTabloCiz();
-        bireyselSayacGuncelle();
-        if (!sessiz) bireyselProgress.textContent = '';
+        bireyselListeyiUygula(d.members);
+        if (!sessiz) {
+            // Önbellekten geldi ve bayatsa arka planda tazeleniyor - kullanıcı
+            // beklemesin, güncel liste gelince WS ile kendiliğinden yenilenir.
+            bireyselProgress.textContent = d.guncel === false ? 'Liste gösterildi (arka planda güncelleniyor)...' : '';
+        }
     } catch (error) {
         if (!sessiz) bireyselProgress.textContent = `Hata: ${error.message}`;
     } finally {
@@ -867,9 +882,9 @@ async function bireyselListeYukle(sessiz) {
     }
 }
 
-// Ok fonksiyonuyla sarıyoruz: doğrudan bağlarsak click olayı ilk argüman olur
-// ve "sessiz" sanılırdı.
-if (bireyselYukleBtn) bireyselYukleBtn.addEventListener('click', () => bireyselListeYukle());
+// Ok fonksiyonuyla sarıyoruz: doğrudan bağlarsak click olayı ilk argüman olur.
+// "Listeyi Yenile" tıklaması TAZE veri istiyor (kademeler güncellensin).
+if (bireyselYukleBtn) bireyselYukleBtn.addEventListener('click', () => bireyselListeYukle(false, true));
 if (bireyselAra) bireyselAra.addEventListener('input', bireyselTabloCiz);
 if (bireyselHepsi) bireyselHepsi.addEventListener('click', () => {
     bireyselGorunen().forEach((m) => bireyselSecili.add(m.id));   // yalnızca görüneni seç
@@ -902,7 +917,9 @@ if (bireyselVerBtn) bireyselVerBtn.addEventListener('click', async () => {
         // Uyarı verilenlerin seçimini kaldır; listeyi tazele ki kademeler güncellensin.
         result.warned.forEach((w) => bireyselSecili.delete(w.id));
         bireyselReason.value = '';
-        bireyselListeYukle(true);   // sessiz: "Tamamlandı" mesajı kalsın
+        // sessiz + taze: "Tamamlandı" mesajı kalsın, kademeler güncellensin
+        // (üye önbelleği sıcakken bu hızlıdır).
+        bireyselListeYukle(true, true);
     } catch (error) {
         bireyselProgress.textContent = `Hata: ${error.message}`;
     } finally {

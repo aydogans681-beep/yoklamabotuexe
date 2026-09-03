@@ -597,6 +597,15 @@ adı, Yönetici/Yetkili).
   `POST /api/yoklama/bireysel-uyari`; liste `GET /api/yoklama/yetkililer`
   (Yoklama sekmesinde olduğu için **yoklama** izniyle erişilir - Yetkililer
   sekmesinin iznini gerektirmez).
+
+  **Hız:** `guild.members.fetch()` koca sunucuda tüm üyeleri indirdiği için
+  (özellikle bot yeni açıldığında) dakikalar sürebiliyordu. Liste artık
+  **diske önbelleklenir** (`yetkili-listesi.json`): "Listeyi Getir" son bilinen
+  listeyi **anında** gösterir, gerekiyorsa arka planda tazeleyip WS ile canlı
+  günceller. İlk üretimden sonra - **yeniden başlatma dahil** - liste anında
+  gelir. "Listeyi Yenile" (`?taze=1`) taze veri isteyip bekler. Bayat kademe/ses
+  bilgisi sorun değil: gerçek uyarı verilirken üye zaten taze çekilip
+  doğrulanıyor.
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
 - **Uyarı süresi (otomatik düşürme)** - her uyarının **1 hafta** süresi vardır.
   Bot **her gün** (yeni günün ilk çevrimiçi dakikasında, günde bir kez) kontrol

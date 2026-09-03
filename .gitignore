@@ -11,6 +11,9 @@ config.env.yedek
 panel-auth.json
 # Açık oturum token'ları - yeniden başlatmada herkes düşmesin diye diskte
 panel-oturumlar.json
+# Bireysel Uyarı yetkili listesi önbelleği - hızlı açılış için diskte tutulur,
+# sunucuda üretilir, tamamen yeniden üretilebilir
+yetkili-listesi.json
 warning-history.json
 panel-audit.json
 panel-settings.json

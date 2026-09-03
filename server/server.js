@@ -4400,24 +4400,79 @@ app.post('/api/yoklama/rol-geri-al', requireIzin('yoklama'), async (req, res) =>
 // Bireysel Uyarı menüsü için tüm yetkili listesi. /api/yetkililer 'yetkililer'
 // izni istiyor; bu menü Yoklama sekmesinde olduğu için 'yoklama' izniyle
 // erişilebilir olmalı - ayrı, sadeleştirilmiş bir uç.
-app.get('/api/yoklama/yetkililer', requireIzin('yoklama'), async (req, res) => {
+//
+// HIZ: guild.members.fetch() koca sunucuda tum uyeleri indiriyor ve ozellikle
+// bot yeni acildiginda dakikalar surebiliyor. Bu yuzden yetkili listesini
+// DISKE onbellekliyoruz: istek anında son bilinen liste HEMEN donuyor, gerekirse
+// arka planda tazelenip WS ile guncelleniyor. Ilk seferden sonra (yeniden
+// baslatma dahil) liste aninda geliyor. Bayat kademe/ses bilgisi sorun degil:
+// gercek uyari verilirken uye zaten taze cekilip dogrulaniyor.
+const YETKILI_CACHE_PATH = path.join(ROOT_DIR, 'yetkili-listesi.json');
+const YETKILI_BAYAT_MS = 5 * 60 * 1000;   // 5 dk'dan eskiyse arka planda tazele
+
+function yetkiliCacheYukle() {
     try {
-        const { members, total } = await listStaff(null);
-        // Tabloya yetecek kadar alan: id, ad, etiket, mevcut kademe, seste mi.
-        res.json({
-            ok: true,
-            total,
-            members: members.map((m) => ({
-                id: m.id,
-                displayName: m.displayName,
-                tag: m.tag,
-                avatarURL: m.avatarURL,
-                currentTierLabel: m.currentTierLabel,
-                inVoice: m.inVoice,
-            })),
+        const d = JSON.parse(fs.readFileSync(YETKILI_CACHE_PATH, 'utf8'));
+        if (d && Array.isArray(d.members) && Number(d.at)) return { at: Number(d.at), members: d.members };
+    } catch (error) { /* yok/bozuk - önbelleksiz başla */ }
+    return null;
+}
+let yetkiliCache = yetkiliCacheYukle();
+
+function yetkiliCacheYaz() {
+    try {
+        fs.writeFileSync(YETKILI_CACHE_PATH, JSON.stringify(yetkiliCache));
+    } catch (error) {
+        console.log(`[Yoklama] Yetkili önbelleği yazılamadı: ${error.message}`);
+    }
+}
+
+let yetkiliYenilemePromise = null;
+// Listeyi gercekten uretip onbellege yazar (ve WS ile yayar). Ayni anda birden
+// cok tetiklenirse tek fetch paylasilir.
+function yetkiliListesiYenile() {
+    if (yetkiliYenilemePromise) return yetkiliYenilemePromise;
+    yetkiliYenilemePromise = (async () => {
+        const { members } = await listStaff(null);
+        const sade = members.map((m) => ({
+            id: m.id, displayName: m.displayName, tag: m.tag,
+            avatarURL: m.avatarURL, currentTierLabel: m.currentTierLabel, inVoice: m.inVoice,
+        }));
+        yetkiliCache = { at: Date.now(), members: sade };
+        yetkiliCacheYaz();
+        wsBroadcast({ type: 'yoklama-yetkili-liste', at: yetkiliCache.at, members: sade });
+        return yetkiliCache;
+    })().finally(() => { yetkiliYenilemePromise = null; });
+    return yetkiliYenilemePromise;
+}
+
+app.get('/api/yoklama/yetkililer', requireIzin('yoklama'), async (req, res) => {
+    const taze = req.query.taze === '1';   // "Listeyi Yenile" -> taze veri bekle
+    const varMi = yetkiliCache && Array.isArray(yetkiliCache.members);
+    const bayat = !varMi || (Date.now() - yetkiliCache.at > YETKILI_BAYAT_MS);
+
+    // Önbellek varsa ve taze istenmediyse: HEMEN dön, bayatsa arka planda tazele.
+    if (varMi && !taze) {
+        if (bayat) yetkiliListesiYenile().catch((e) => console.log(`[Yoklama] Arka plan yenileme hatası: ${e.message}`));
+        return res.json({
+            ok: true, at: yetkiliCache.at, guncel: !bayat,
+            total: yetkiliCache.members.length, members: yetkiliCache.members,
         });
+    }
+
+    // Önbellek yok ya da taze isteniyor: üret ve bekle.
+    try {
+        const c = await yetkiliListesiYenile();
+        res.json({ ok: true, at: c.at, guncel: true, total: c.members.length, members: c.members });
     } catch (error) {
         console.log(`[Yoklama] Yetkili listesi hatası: ${error.message}`);
+        // Üretemedik ama elimizde eski liste varsa onu ver - boş ekrandan iyidir.
+        if (varMi) {
+            return res.json({
+                ok: true, at: yetkiliCache.at, guncel: false, eski: true,
+                total: yetkiliCache.members.length, members: yetkiliCache.members,
+            });
+        }
         res.json({ ok: false, error: error.message });
     }
 });
