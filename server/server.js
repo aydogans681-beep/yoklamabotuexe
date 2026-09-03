@@ -1230,17 +1230,27 @@ function formatWarningEndDate() {
     return `${day}.${month}.${year}`;
 }
 
-// "Uyari veren" satirinda HER IKI hesap birden yaziliyor: duyuruyu gonderen
-// ana hesap ve islemi panelden yapan yetkilinin bagli Discord ID'si. Once
-// yalnizca biri yazilirdi - panel hesabina ID bagliysa ana hesap satirdan
-// tamamen dusuyordu, oysa uyariyi kimin gonderdigi de bilgi.
-// Ikisi ayni hesapsa (ya da bagli ID yoksa) tek sefer yaziliyor.
-function uyariVerenMentions(verenId) {
-    const anaId = client.user ? client.user.id : null;
+// "Uyari veren" satirina UC kaynak birden yaziliyor:
+//   1. duyuruyu gonderen ana hesap,
+//   2. yoklamayi panelden alan yetkilinin bagli Discord ID'si (varsa),
+//   3. o gun "Yoklamaya Katil" diyen hesaplar.
+// Once yalnizca biri yazilirdi: panel hesabina ID bagliysa ana hesap satirdan
+// tamamen dusuyor, "Yoklamaya Katil" diyen ise hicbir zaman gorunmuyordu.
+// Ayni ID birden fazla kaynaktan gelirse tek sefer yaziliyor; sira sabit
+// (ana hesap -> yoklamayi alan -> katilanlar) ki duyurular birbirine benzesin.
+function uyariVerenIdleri(verenId) {
     const idler = [];
-    if (anaId) idler.push(anaId);
-    if (verenId && verenId !== anaId) idler.push(verenId);
-    return idler.map((id) => `<@${id}>`).join('  ');
+    const ekle = (id) => {
+        if (id && !idler.includes(id)) idler.push(id);
+    };
+    ekle(client.user ? client.user.id : null);
+    ekle(verenId);
+    Object.keys(bugunKatilanlar()).forEach(ekle);
+    return idler;
+}
+
+function uyariVerenMentions(verenId) {
+    return uyariVerenIdleri(verenId).map((id) => `<@${id}>`).join('  ');
 }
 
 function itirazSatiri() {

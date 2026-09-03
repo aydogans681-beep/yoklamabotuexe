@@ -475,10 +475,17 @@ tek başına belirlediği için ad tahmin etmeye gerek kalmıyor - komut başka 
 bota ait olsa bile çalışır. ID boş bırakılırsa ada göre aramaya düşülür.
 Komut bulunamazsa hata, dizindeki gerçek komutları ID'leriyle birlikte yazar.
 
-Uyarı duyurusundaki **"Uyarı veren"** satırında **iki hesap birden** yazılır:
-duyuruyu gönderen ana hesap ve işlemi panelden yapan yetkilinin Ayarlar'dan
-bağladığı Discord ID'si. Bağlı ID yoksa (ya da işlemi yapan zaten ana hesapsa)
-tek isim yazılır - önceden bağlı ID varsa ana hesap satırdan tamamen düşüyordu.
+Uyarı duyurusundaki **"Uyarı veren"** satırı üç kaynaktan beslenir, hep bu
+sırayla:
+
+1. duyuruyu gönderen **ana hesap**,
+2. yoklamayı panelden alan yetkilinin Ayarlar'dan bağladığı Discord ID'si
+   (otomatik yoklamada yok),
+3. o gün **"Yoklamaya Katıl"** diyen hesaplar.
+
+Aynı ID birden fazla kaynaktan gelirse tek sefer yazılır. Önceden yalnızca
+biri yazılıyordu: bağlı ID varsa ana hesap satırdan tamamen düşüyor,
+"Yoklamaya Katıl" diyen ise hiç görünmüyordu.
 
 Duyurunun en altına **"Uyarı itirazı için : <@599655428984537109> DM'den
 ulaşın"** satırı eklenir; itirazın kime gideceği ayrıca sorulmasın diye. Hem
