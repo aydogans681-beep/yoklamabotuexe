@@ -89,6 +89,9 @@ function applyAdminVisibility() {
     document.querySelectorAll('.side-nav .tab-btn').forEach((btn) => {
         const sekme = btn.dataset.tab;
         if (sekme === 'hesaploglari') return; // .admin-only ile yonetiliyor
+        // Exe indirme maddesi sekme degil (data-tab'i yok): gorunurlugunu
+        // acExeKur yonetiyor, buradaki izin listesine sokulmamali.
+        if (btn.classList.contains('nav-exe')) return;
         const izinli = currentIsAdmin
             || !Array.isArray(currentSekmeler)
             || currentSekmeler.includes(sekme);
@@ -140,8 +143,8 @@ function showApp() {
     document.getElementById('whoAvatar').textContent = (currentUsername || '?').slice(0, 1);
     document.getElementById('whoRol').textContent =
         currentIsAdmin ? 'Yönetici' : (currentTip === 'ac' ? 'AC' : 'Yetkili');
+    acExeKur();            // applyAdminVisibility'den ONCE: bkz. acExeKur
     applyAdminVisibility();
-    acExeKur();
     sideCanliTazele();
     connectWebSocket();
     refreshLogMenu();
@@ -380,13 +383,20 @@ function boyutYaz(bayt) {
     return `${mb.toFixed(1)} MB`;
 }
 
-// Baglanti iki yerde: kenar cubugunun altinda ve AC TOKEN KAPISINDA. Kapi
-// butun paneli ortuyor - yalnizca kenar cubugunda olsaydi token baglamamis
-// bir AC exe'ye hic ulasamazdi.
+// Baglanti iki yerde: kenar cubugu MENUSUNDE (sekme gibi bir madde) ve AC
+// TOKEN KAPISINDA. Kapi butun paneli ortuyor - yalnizca menude olsaydi token
+// baglamamis bir AC exe'ye hic ulasamazdi.
 const AC_EXE_YERLERI = [
-    { kutu: 'sideExe', alt: 'sideExeAlt' },
+    { kutu: 'navExe', alt: 'navExeAlt' },
     { kutu: 'acGateExe', alt: 'acGateExeAlt' },
 ];
+
+// Gorunurluk hidden ozniteligiyle DEGIL style.display ile: applyAdminVisibility
+// bos kalan nav gruplarini gizlerken maddelerin style.display'ine bakiyor,
+// hidden kullansaydik "Uygulama" basligi tek basina ortada kalirdi.
+function acExeGoster(el, gorunsun) {
+    el.style.display = gorunsun ? '' : 'none';
+}
 
 async function acExeKur() {
     const yerler = AC_EXE_YERLERI
@@ -394,8 +404,10 @@ async function acExeKur() {
         .filter((y) => y.kutu && y.alt);
     if (yerler.length === 0) return;
 
+    // Bu karar fetch BEKLEMEDEN veriliyor: showApp once acExeKur'u sonra
+    // applyAdminVisibility'yi cagiriyor, grup gizleme dogru durumu gorsun.
     const gorunsun = currentTip === 'ac' || currentIsAdmin;
-    yerler.forEach((y) => { y.kutu.hidden = !gorunsun; });
+    yerler.forEach((y) => acExeGoster(y.kutu, gorunsun));
     if (!gorunsun) return;
 
     // "hazir degil" durumunda baglantiyi ACIK birakmiyoruz: tiklayan kisi
@@ -945,7 +957,9 @@ function sayfaBasliginiAyarla(sekme) {
 }
 sayfaBasliginiAyarla('yoklama');
 
-const tabButtons = document.querySelectorAll('.tab-btn');
+// .nav-exe DISARIDA: onun data-tab'i yok, buradaki kod getElementById('tab-undefined')
+// uzerinde cokerdi. O bir indirme baglantisi, sekme degil.
+const tabButtons = document.querySelectorAll('.tab-btn:not(.nav-exe)');
 tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
         tabButtons.forEach((b) => b.classList.remove('active'));

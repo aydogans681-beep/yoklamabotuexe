@@ -423,14 +423,24 @@ dakikalarca bekletirdi, oysa exe nadiren değişiyor.
 
 #### İndirmek
 
-AC (ve yönetici) paneli açtığında iki yerde bir **"Masaüstü sürümü"**
-bağlantısı görür - kenar çubuğunun altında ve **token kapısının üzerinde**.
-Kapı bütün paneli örttüğü için ikincisi şart: yalnızca kenar çubuğuna
-konsaydı, token bağlamamış bir AC exe'ye hiç ulaşamazdı.
+AC (ve yönetici) paneli açtığında iki yerde bir **"Exe Dosyasını İndir"**
+maddesi görür:
 
-Bağlantı dosyanın boyutunu ve derlenme tarihini yazar; exe henüz derlenmemişse
-"henüz hazır değil" der ve **tıklanmaz** (tıklayan kişi ham JSON hata sayfasına
-düşüyordu).
+1. **Kenar çubuğu menüsünde**, sekmelerin altında kendi **"Uygulama"** grubunda.
+2. **Token kapısının üzerinde**. Kapı bütün paneli örttüğü için bu şart:
+   yalnızca menüde olsaydı, token bağlamamış bir AC exe'ye hiç ulaşamazdı.
+
+Menüdeki madde sekme gibi görünür ama **sekme değildir**: `data-tab`'i yoktur,
+tıklanınca panel değiştirmez, dosyayı indirir. Bu yüzden hem sekme tıklama
+bağlaması (`.tab-btn:not(.nav-exe)`) hem de `applyAdminVisibility` onu atlar -
+görünürlüğünü `acExeKur` yönetir. Görünürlük `hidden` özniteliğiyle değil
+`style.display` ile veriliyor: boş kalan nav gruplarını gizleyen kod
+maddelerin `style.display`'ine bakıyor, aksi halde "Uygulama" başlığı tek
+başına ortada kalırdı.
+
+Madde dosyanın boyutunu ve derlenme tarihini ikinci satırda yazar; exe henüz
+derlenmemişse "henüz hazır değil" der ve **tıklanmaz** (tıklayan kişi ham JSON
+hata sayfasına düşüyordu).
 
 - `GET /api/ac-exe` - durum (hazır mı, boyut, tarih)
 - `GET /api/ac-exe/indir` - dosyanın kendisi; her indirme **Hesap Logları'na**

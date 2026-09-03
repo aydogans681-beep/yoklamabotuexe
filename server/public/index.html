@@ -311,6 +311,25 @@
                     <button class="tab-btn admin-only" data-tab="hesaploglari"><span class="ico"><svg><use href="#i-hesaploglari"/></svg></span><span class="etiket">Hesap Logları</span></button>
                     <button class="tab-btn" data-tab="ayarlar"><span class="ico"><svg><use href="#i-ayarlar"/></svg></span><span class="etiket">Ayarlar</span></button>
                 </div>
+
+                <!-- AC masaustu surumu. Sekme DEGIL: data-tab'i yok, tiklayinca
+                     panel degistirmiyor, dosyayi indiriyor. Bu yuzden hem sekme
+                     tiklama baglamasi hem de applyAdminVisibility onu atliyor
+                     (.nav-exe) - gorunurlugunu acExeKur yonetiyor.
+                     Grup, madde gizlenince kendiliginden gizleniyor. -->
+                <div class="nav-grup">
+                    <span class="nav-baslik">Uygulama</span>
+                    <a class="tab-btn nav-exe" id="navExe" href="/api/ac-exe/indir" style="display:none;">
+                        <span class="ico" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+                                 stroke="currentColor" stroke-width="2"
+                                 stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>
+                            </svg>
+                        </span>
+                        <span class="etiket">Exe Dosyasını İndir<small id="navExeAlt"></small></span>
+                    </a>
+                </div>
             </nav>
 
             <!-- Canli ozet: bos kalan alani dolduruyor ve sekmeye girmeden
@@ -324,22 +343,6 @@
             </button>
 
             <div class="side-foot">
-                <!-- AC masaustu surumu. Yalnizca AC (ve yonetici) hesaplarda
-                     goruluyor - app.js acExeKur() aciyor. Sunucu ucu da ayni
-                     kisiti uyguluyor, yani gizlemek tek savunma degil. -->
-                <a class="side-exe" id="sideExe" href="/api/ac-exe/indir" hidden>
-                    <span class="se-ikon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-                             stroke="currentColor" stroke-width="2"
-                             stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>
-                        </svg>
-                    </span>
-                    <span class="se-blok">
-                        <span class="se-bas">Masaüstü sürümü</span>
-                        <span class="se-alt" id="sideExeAlt">durum alınıyor...</span>
-                    </span>
-                </a>
                 <div class="side-status">
                     <span class="status-dot warn" id="statusDot"></span>
                     <span id="statusText">Bağlanıyor...</span>
