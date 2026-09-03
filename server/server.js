@@ -190,16 +190,54 @@ function loginNoteSuccess(ip) {
     loginAttempts.delete(ip);
 }
 
-// Basit oturum deposu (bellekte) - token bir httpOnly cookie'de tutuluyor.
-// Sunucu yeniden başlarsa herkes tekrar giriş yapmak zorunda kalır, bu
-// ölçekte (birkaç yetkili) sorun değil.
+// Oturum deposu - token bir httpOnly cookie'de tutuluyor.
+//
+// DISKTE tutuluyor: eskiden yalnizca bellekteydi ve "sunucu yeniden baslarsa
+// herkes tekrar giris yapar, bu olcekte sorun degil" deniyordu. Bot artik
+// 12 saatte bir kendini yeniden basladigi icin (ecosystem.config.js
+// cron_restart) bu varsayim tutmuyordu: herkes gunde iki kez disari
+// atiliyordu. Token'lar 32 baytlik rastgele degerler; dosya .gitignore'da.
 const SESSION_COOKIE = 'ybsid';
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 gün
-const sessions = new Map(); // token -> { username, expiresAt }
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;        // normal giriş
+const SESSION_HATIRLA_TTL_MS = 30 * 24 * 60 * 60 * 1000; // "Beni hatırla"
+const SESSION_PATH = path.join(ROOT_DIR, 'panel-oturumlar.json');
 
-function createSession(username) {
+// token -> { username, expiresAt, hatirla }
+const sessions = new Map(loadSessions());
+
+function loadSessions() {
+    try {
+        const d = JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8'));
+        if (!d || typeof d !== 'object') return [];
+        const simdi = Date.now();
+        // Suresi gecmisleri yuklerken atiyoruz - dosya sonsuza kadar buyumesin.
+        return Object.entries(d)
+            .filter(([, v]) => v && typeof v.username === 'string' && Number(v.expiresAt) > simdi)
+            .map(([token, v]) => [token, {
+                username: v.username,
+                expiresAt: Number(v.expiresAt),
+                hatirla: Boolean(v.hatirla),
+            }]);
+    } catch (error) {
+        return [];
+    }
+}
+
+function persistSessions() {
+    try {
+        fs.writeFileSync(SESSION_PATH, JSON.stringify(Object.fromEntries(sessions), null, 2));
+    } catch (error) {
+        // Yazamamak girisi engellemesin: oturum bellekte calismaya devam eder,
+        // yalnizca yeniden baslatmada kaybolur.
+        console.log(`[Oturum] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+function createSession(username, hatirla) {
     const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, { username, expiresAt: Date.now() + SESSION_TTL_MS });
+    const omur = hatirla ? SESSION_HATIRLA_TTL_MS : SESSION_TTL_MS;
+    sessions.set(token, { username, expiresAt: Date.now() + omur, hatirla: Boolean(hatirla) });
+    persistSessions();
     return token;
 }
 
@@ -210,6 +248,7 @@ function getSession(req) {
     if (!session) return null;
     if (Date.now() > session.expiresAt) {
         sessions.delete(token);
+        persistSessions();
         return null;
     }
     return session;
@@ -219,12 +258,14 @@ function dropSessionsFor(username) {
     [...sessions.entries()].forEach(([token, session]) => {
         if (session.username === username) sessions.delete(token);
     });
+    persistSessions();
 }
 
 function dropAllSessionsExcept(keepToken) {
     [...sessions.keys()].forEach((token) => {
         if (token !== keepToken) sessions.delete(token);
     });
+    persistSessions();
 }
 
 function requireAuth(req, res, next) {
@@ -4153,14 +4194,21 @@ app.post('/api/login', (req, res) => {
         return res.status(401).json({ ok: false, error: 'Kullanıcı adı ya da şifre yanlış.' });
     }
     loginNoteSuccess(ip);
-    const token = createSession(username);
+    // "Beni hatırla": isaretliyse oturum 30 gun ve cerez DISKE yaziliyor,
+    // degilse 7 gun ve cerez yalnizca oturumluk - uygulama/tarayici
+    // kapaninca dusuyor. Ortak bir makinede kalici giris istemeyen icin.
+    const hatirla = Boolean(req.body && req.body.hatirla);
+    const token = createSession(username, hatirla);
     res.cookie(SESSION_COOKIE, token, {
         httpOnly: true,
         sameSite: 'lax',
         secure: req.secure, // HTTPS arkasındaysa (ör. nginx reverse proxy) otomatik güvenli cookie
-        maxAge: SESSION_TTL_MS,
+        // maxAge YOK = oturumluk cerez. Sunucu tarafi yine SESSION_TTL_MS
+        // sonra suresini doldurur; cerez daha once olur.
+        ...(hatirla ? { maxAge: SESSION_HATIRLA_TTL_MS } : {}),
     });
-    console.log(`[Giriş] Web panele giriş yapıldı: ${username}${isAdmin(username) ? ' (yönetici)' : ''}`);
+    console.log(`[Giriş] Web panele giriş yapıldı: ${username}${isAdmin(username) ? ' (yönetici)' : ''}`
+        + `${hatirla ? ' (beni hatırla)' : ''}`);
     addAudit('giris', username, `Panele giriş yapıldı${isAdmin(username) ? ' (yönetici)' : ''}`, req);
     return res.json({ ok: true, username, isAdmin: isAdmin(username) });
 });
@@ -4169,7 +4217,7 @@ app.post('/api/logout', (req, res) => {
     const token = req.cookies && req.cookies[SESSION_COOKIE];
     const session = token ? sessions.get(token) : null;
     if (session) addAudit('cikis', session.username, 'Panelden çıkış yapıldı', req);
-    if (token) sessions.delete(token);
+    if (token) { sessions.delete(token); persistSessions(); }
     res.clearCookie(SESSION_COOKIE);
     return res.json({ ok: true });
 });
@@ -4531,13 +4579,16 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
 
     // Bu hesabin TUM eski oturumlari dusuyor (sifre degistiyse calinmis bir
     // cerez ise yaramasin diye), sonra bu tarayiciya taze bir oturum veriyoruz.
+    // Onceki oturumun "beni hatirla" tercihi korunuyor: sifresini degistiren
+    // biri, isaretlemis olmasina ragmen bir anda oturumluk cereze dusmesin.
+    const eskiHatirla = Boolean(req.session && req.session.hatirla);
     dropSessionsFor(me);
-    const token = createSession(newUsername);
+    const token = createSession(newUsername, eskiHatirla);
     res.cookie(SESSION_COOKIE, token, {
         httpOnly: true,
         sameSite: 'lax',
         secure: req.secure,
-        maxAge: SESSION_TTL_MS,
+        ...(eskiHatirla ? { maxAge: SESSION_HATIRLA_TTL_MS } : {}),
     });
     console.log(`[Hesap] Hesap güncellendi: ${me} -> ${newUsername}${newPassword ? ' (şifre değişti)' : ''}`);
     addAudit('hesap-guncelle', me,

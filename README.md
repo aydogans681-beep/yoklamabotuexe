@@ -45,6 +45,7 @@ token ve şifre hash'leri asla depoya girmez. Sunucuda elle oluşturulur.
 config.env            GİZLİ - Discord token'ı (depoda yok)
 config.env.yedek      GİZLİ - token.ps1'in aldığı önceki hal (depoda yok)
 panel-auth.json       GİZLİ - panel hesapları (depoda yok)
+panel-oturumlar.json  GİZLİ - açık oturumlar (yeniden başlatmayı atlatsın diye)
 warning-history.json  Uyarı geçmişi (depoda yok, masaüstü sürümüyle paylaşılır)
 panel-settings.json   Panel ayarları: otomatik yoklama, rol botu, ticket mesajı
 panel-audit.json      Hesap Logları (kim ne yaptı)
@@ -163,7 +164,27 @@ Yukarıdan aşağı:
 | **Rozet şeridi** | YOKLAMA · SES AKTİFLİĞİ · OTOMATİK UYARI |
 | **Dev başlık** | MD PvP — / **Yoklama Paneli** (ikinci satır aksan renginde) |
 | **Alt metin** | panelin ne yaptığı, iki cümle |
-| **Form** | kullanıcı adı, şifre, tam genişlik Giriş Yap |
+| **Form** | kullanıcı adı, şifre, **Beni hatırla**, tam genişlik Giriş Yap |
+
+### Beni hatırla
+
+Varsayılan **işaretli**. İşaretliyken:
+
+- kullanıcı adı **o cihazda** hatırlanır (localStorage) ve bir dahakine dolu gelir,
+- oturum **30 gün** açık kalır (kalıcı çerez).
+
+İşaretsizken kullanıcı adı saklanmaz ve çerez **oturumluk** olur - uygulama ya da
+tarayıcı kapanınca giriş düşer. Ortak bir makinede kalıcı giriş istemeyen için.
+
+**Şifre hiçbir koşulda saklanmaz.** Şifre alanı giriş ekranı her gösterildiğinde
+temizlenir: çıkışta sayfa yeniden yüklenmediği için önceki kişinin şifresi
+kutuda kalıyordu ve "Göster"e basan onu okuyabiliyordu.
+
+> **Oturumlar artık diskte** (`panel-oturumlar.json`). Eskiden yalnızca
+> bellekteydi ve "sunucu yeniden başlarsa herkes tekrar giriş yapar, bu ölçekte
+> sorun değil" deniyordu. Bot 12 saatte bir kendini yeniden başlattığı için bu
+> varsayım tutmuyordu: herkes **günde iki kez** dışarı atılıyordu. Dosya
+> `.gitignore`'da; süresi geçen kayıtlar açılışta atılıyor.
 
 Sürüm pilindeki veri `/api/surum`'dan geliyor, **giriş gerektirmiyor** ve gizli
 bilgi içermiyor. İki işi var: panelin açılmaması ile şifrenin yanlış olması
@@ -411,11 +432,16 @@ AC her açılışta yeniden giriş yapmıyor.
 .\exe-yap.ps1 -Adres "panel.site.com"
 ```
 
-`-Adres` exe'ye **gömülen varsayılan** panel adresidir; AC exe'yi açınca hiçbir
-şey sormadan bağlanır. Vermezsen exe ilk açılışta adresi kendisi sorar. Adres
-sonradan uygulamanın **Panel > Sunucu adresini değiştir** menüsünden de
-değiştirilebilir ve kullanıcının girdiği adres gömülü olanı ezer - panel başka
-bir adrese taşındığında kimsenin exe'yi yeniden indirmesi gerekmesin diye.
+**exe adres sormaz.** Panelin adresi `main.js` içinde `YERLESIK_ADRES` olarak
+kodda gömülüdür; AC exe'yi açar açmaz panele bağlanır, IP/port bilmesi
+gerekmez.
+
+Adres üç kaynaktan gelir, bu öncelikle: **kullanıcının girdiği** (uygulamanın
+**Panel > Sunucu adresini değiştir** menüsü) > **derlerken gömülen**
+(`-Adres`) > **kodda gömülü varsayılan**. Panel taşınırsa `YERLESIK_ADRES`
+değiştirilip yeniden derlenir; acele varsa herkes menüden yeni adresi girer,
+exe'yi yeniden dağıtmak gerekmez. Adres ekranı yalnızca bu üçü de boşsa ya da
+panele ulaşılamazsa çıkar.
 
 Çıktı: `indirmeler\MD-AC-Panel.exe`. İlk derleme electron'u indirdiği için
 uzun sürer (~100 MB). `guncelle.ps1`'e **bilerek eklenmedi**: her güncellemeyi

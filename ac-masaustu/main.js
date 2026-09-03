@@ -28,6 +28,13 @@ if (!app.requestSingleInstanceLock()) {
 
 const AYAR_ADI = 'ayar.json';
 
+// Panelin adresi KODA GOMULU. Boylece exe hicbir sey sormadan aciliyor -
+// AC'nin IP/port bilmesi gerekmiyor, "baglanti adresi" ekrani hic gelmiyor.
+// Yine de son soz kullanicinin: menuden baska bir adres girilirse o kazaniyor
+// (bkz. gecerliAdres). Panel tasinirsa burayi degistirip yeniden derlemek
+// ya da menuden yeni adresi girmek yeterli.
+const YERLESIK_ADRES = 'http://185.211.100.117:3000';
+
 let anaPencere = null;
 let adresPenceresi = null;
 
@@ -102,8 +109,10 @@ function adresDuzelt(ham) {
     }
 }
 
+// Oncelik: kullanicinin girdigi > derlerken gomulen (adres.json) > koda
+// gomulu varsayilan. Ucu de bostan donerse adres ekrani aciliyor.
 function gecerliAdres() {
-    return kayitliAdres() || varsayilanAdres();
+    return kayitliAdres() || varsayilanAdres() || adresDuzelt(YERLESIK_ADRES);
 }
 
 // --- Pencereler -----------------------------------------------------------

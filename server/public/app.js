@@ -134,6 +134,7 @@ function showLogin() {
     loginWrap.style.display = 'flex';
     appWrap.style.display = 'none';
     loginUsername.focus();
+    hatirlananiYukle();
 }
 
 function showApp() {
@@ -161,9 +162,53 @@ function showApp() {
     }
 }
 
+// --- Beni hatırla ---
+// Isaretliyse kullanici adi BU CIHAZDA hatiraniyor (sifre asla saklanmiyor)
+// ve sunucu 30 gunluk kalici cerez veriyor. Isaretsizse cerez oturumluk:
+// uygulama/tarayici kapaninca giris dusuyor.
+const HATIRLA_ANAHTAR = 'md-panel-hatirla';
+const beniHatirla = document.getElementById('beniHatirla');
+
+function hatirlananiYukle() {
+    if (!beniHatirla) return;
+    let kayit = null;
+    try {
+        kayit = JSON.parse(localStorage.getItem(HATIRLA_ANAHTAR) || 'null');
+    } catch (error) {
+        kayit = null;   // gizli sekmede localStorage okumak hata verebiliyor
+    }
+    if (kayit && kayit.username) {
+        loginUsername.value = kayit.username;
+        beniHatirla.checked = true;
+        // Kullanici adi hazirsa imleci sifreye koy - bir tab tasarrufu.
+        if (loginPassword) setTimeout(() => loginPassword.focus(), 0);
+    } else if (kayit && kayit.username === '') {
+        beniHatirla.checked = false;
+        loginUsername.value = '';
+    }
+    // Sifre alani HER ZAMAN temizleniyor. Cikista sayfa yeniden yuklenmedigi
+    // icin onceki kisinin sifresi kutuda kaliyordu; ortak bir makinede
+    // "Goster"e basan onu okurdu. Sifre hicbir kosulda hatirlanmiyor.
+    if (loginPassword) loginPassword.value = '';
+}
+
+function hatirlananiKaydet(username) {
+    if (!beniHatirla) return;
+    try {
+        if (beniHatirla.checked) {
+            localStorage.setItem(HATIRLA_ANAHTAR, JSON.stringify({ username }));
+        } else {
+            // Bos kayit birakiyoruz ki "isaretlemedi" bilgisi de hatirlansin;
+            // yoksa her acilista kutu yeniden isaretli gelirdi.
+            localStorage.setItem(HATIRLA_ANAHTAR, JSON.stringify({ username: '' }));
+        }
+    } catch (error) { /* localStorage yoksa giris yine calisir */ }
+}
+
 async function doLogin() {
     const username = loginUsername.value.trim();
     const password = loginPassword.value;
+    const hatirla = Boolean(beniHatirla && beniHatirla.checked);
     loginError.style.display = 'none';
     loginBtn.disabled = true;
     loginBtn.textContent = 'Giriş yapılıyor...';
@@ -171,7 +216,7 @@ async function doLogin() {
         const res = await fetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password }),
+            body: JSON.stringify({ username, password, hatirla }),
         });
         const data = await okuJson(res);
         if (!data.ok) {
@@ -180,6 +225,7 @@ async function doLogin() {
             return;
         }
         currentUsername = username;
+        hatirlananiKaydet(username);
         // Yetkiyi tahmin etmiyoruz - /api/me'den okuyoruz ki sunucuyla ayni
         // kaynaktan gelsin (sekme listesi yalnizca orada donuyor).
         try {

@@ -9,6 +9,8 @@ config.env.yedek
 
 # Panel hesapları (scrypt hash içerir) ve uyarı geçmişi - sunucuda oluşur
 panel-auth.json
+# Açık oturum token'ları - yeniden başlatmada herkes düşmesin diye diskte
+panel-oturumlar.json
 warning-history.json
 panel-audit.json
 panel-settings.json
