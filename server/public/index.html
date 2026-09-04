@@ -477,6 +477,27 @@
                     </div>
                     <div class="scanStatus" id="bireyselProgress" style="margin-top:8px;"></div>
                 </div>
+
+                <!-- Sese Sok: YALNIZCA YÖNETİCİ. Seçilen ses kanalına ana hesabı
+                     sokar ve orada tutar (bağlantı koparsa yeniden bağlanır). -->
+                <div class="card admin-only">
+                    <h2>Sese Sok</h2>
+                    <p class="card-desc">
+                        Ana hesabı seçtiğin ses kanalına sokar ve <b>orada tutar</b>.
+                        Yalnızca yönetici kullanabilir.
+                    </p>
+                    <div class="toolbar" style="margin-bottom:9px;">
+                        <select id="sesKanalSec" class="text-search" style="flex:1 1 auto;">
+                            <option value="">Ses kanalı yükleniyor...</option>
+                        </select>
+                        <button class="ghost small" id="sesYenileBtn" type="button" title="Kanal listesini yenile">↻</button>
+                    </div>
+                    <div class="toolbar">
+                        <button id="sesSokBtn" type="button">Sese Sok</button>
+                        <button class="secondary small" id="sesCikBtn" type="button" disabled>Sesten Çık</button>
+                    </div>
+                    <div class="scanStatus" id="sesDurum" style="margin-top:8px;"></div>
+                </div>
             </div>
 
             <div class="filter-row" style="margin-top:12px;">

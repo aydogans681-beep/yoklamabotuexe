@@ -607,6 +607,15 @@ adı, Yönetici/Yetkili).
   bilgisi sorun değil: gerçek uyarı verilirken üye zaten taze çekilip
   doğrulanıyor.
 - **Acil Toplantı** - sesteki tüm yetkilileri kendi ses kanalına çeker.
+- **Sese Sok** (yalnızca **yönetici**) - açılır listeden bir ses/sahne kanalı
+  seçip **"Sese Sok"** deyince ana hesap o kanala girer ve **orada kalır**;
+  bağlantı koparsa (taşıma/ağ) otomatik yeniden bağlanır. **"Sesten Çık"** ile
+  kanaldan ayrılır. `@discordjs/voice` üzerinden çalışır (selfbot'un
+  `guild.voiceAdapterCreator`'ı ile); bu paket zaten
+  `discord.js-selfbot-v13`'ün bir bağımlılığı olduğu için kurulu geliyor. Ses
+  **göndermediğimiz** (sadece girip duruyoruz) için sodium/tweetnacl gibi bir
+  şifreleme paketi gerekmiyor. Yönetici olmayan hesaplarda menü görünmez, uç
+  nokta da `requireAdmin` ile korunuyor.
 
 ### Yetkili Alım
 

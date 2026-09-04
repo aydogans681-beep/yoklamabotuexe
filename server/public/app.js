@@ -150,6 +150,7 @@ function showApp() {
     connectWebSocket();
     refreshLogMenu();
     if (currentIsAdmin) refreshAccounts();
+    if (currentIsAdmin) sesKanallariYukle();
     loadKatilim();
 
     // AC hesabi girince: token bağlamadan HİÇBİR ŞEY yapamasın diye hemen tam
@@ -950,6 +951,130 @@ emergencyBtn.addEventListener('click', async () => {
         emergencyBtn.disabled = false;
     }
 });
+
+// ============================================================================
+// --- SESE SOK (yalnızca yönetici) ---
+// Ana hesabı seçilen ses kanalına sokup orada tutar. Kanal listesi ana hesabın
+// gördüğü ses/sahne kanallarından geliyor; durum sunucudan okunuyor.
+// ============================================================================
+const sesKanalSec = document.getElementById('sesKanalSec');
+const sesYenileBtn = document.getElementById('sesYenileBtn');
+const sesSokBtn = document.getElementById('sesSokBtn');
+const sesCikBtn = document.getElementById('sesCikBtn');
+const sesDurumEl = document.getElementById('sesDurum');
+
+function sesDurumCiz(durum) {
+    if (!sesDurumEl) return;
+    if (durum && durum.bagli) {
+        const ad = durum.channelName || durum.channelId || '?';
+        const hazir = durum.durum === 'ready';
+        sesDurumEl.innerHTML = hazir
+            ? `<span style="color:var(--ok,#3fb950)">● <b>${escapeHtml(ad)}</b> kanalında.</span>`
+            : `<span style="color:var(--attn)">● <b>${escapeHtml(ad)}</b> kanalına bağlanılıyor... (${escapeHtml(durum.durum || '')})</span>`;
+        if (sesCikBtn) sesCikBtn.disabled = false;
+        // Seçili kanalı bulunduğu kanala getir (görsel tutarlılık).
+        if (sesKanalSec && durum.channelId) sesKanalSec.value = durum.channelId;
+    } else {
+        sesDurumEl.textContent = 'Şu an hiçbir ses kanalında değil.';
+        if (sesCikBtn) sesCikBtn.disabled = true;
+    }
+}
+
+async function sesKanallariYukle() {
+    if (!sesKanalSec) return;
+    const oncekiSecim = sesKanalSec.value;
+    try {
+        const res = await fetch('/api/ses/kanallar');
+        const data = await okuJson(res);
+        if (!data.ok) {
+            sesKanalSec.innerHTML = '<option value="">Kanallar alınamadı</option>';
+            if (sesDurumEl) sesDurumEl.textContent = `Hata: ${data.error}`;
+            return;
+        }
+        const kanallar = data.kanallar || [];
+        if (!kanallar.length) {
+            sesKanalSec.innerHTML = '<option value="">Ses kanalı bulunamadı</option>';
+        } else {
+            // Kategoriye göre optgroup'la.
+            const gruplar = new Map();
+            kanallar.forEach((k) => {
+                const g = k.kategori || 'Diğer';
+                if (!gruplar.has(g)) gruplar.set(g, []);
+                gruplar.get(g).push(k);
+            });
+            let html = '<option value="">— Ses kanalı seç —</option>';
+            gruplar.forEach((liste, grup) => {
+                html += `<optgroup label="${escapeHtml(grup)}">`;
+                liste.forEach((k) => {
+                    const isim = (k.sahne ? '🎙 ' : '🔊 ') + k.ad;
+                    html += `<option value="${escapeHtml(k.id)}">${escapeHtml(isim)}</option>`;
+                });
+                html += '</optgroup>';
+            });
+            sesKanalSec.innerHTML = html;
+        }
+        // Önceki seçimi ya da aktif bağlantının kanalını geri koy.
+        const hedef = (data.durum && data.durum.bagli && data.durum.channelId) || oncekiSecim;
+        if (hedef) sesKanalSec.value = hedef;
+        sesDurumCiz(data.durum);
+    } catch (error) {
+        sesKanalSec.innerHTML = '<option value="">Kanallar alınamadı</option>';
+        if (sesDurumEl) sesDurumEl.textContent = `Hata: ${error.message}`;
+    }
+}
+
+if (sesYenileBtn) {
+    sesYenileBtn.addEventListener('click', () => sesKanallariYukle());
+}
+
+if (sesSokBtn) {
+    sesSokBtn.addEventListener('click', async () => {
+        const channelId = sesKanalSec ? sesKanalSec.value : '';
+        if (!channelId) {
+            if (sesDurumEl) sesDurumEl.textContent = 'Önce bir ses kanalı seç.';
+            return;
+        }
+        sesSokBtn.disabled = true;
+        if (sesDurumEl) sesDurumEl.textContent = 'Kanala giriliyor...';
+        try {
+            const res = await fetch('/api/ses/sok', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channelId }),
+            });
+            const data = await okuJson(res);
+            if (!data.ok) {
+                if (sesDurumEl) sesDurumEl.textContent = `Hata: ${data.error}`;
+                return;
+            }
+            sesDurumCiz(data.durum);
+        } catch (error) {
+            if (sesDurumEl) sesDurumEl.textContent = `Hata: ${error.message}`;
+        } finally {
+            sesSokBtn.disabled = false;
+        }
+    });
+}
+
+if (sesCikBtn) {
+    sesCikBtn.addEventListener('click', async () => {
+        sesCikBtn.disabled = true;
+        if (sesDurumEl) sesDurumEl.textContent = 'Sesten çıkılıyor...';
+        try {
+            const res = await fetch('/api/ses/cik', { method: 'POST' });
+            const data = await okuJson(res);
+            if (!data.ok) {
+                if (sesDurumEl) sesDurumEl.textContent = `Hata: ${data.error}`;
+                sesCikBtn.disabled = false;
+                return;
+            }
+            sesDurumCiz(data.durum);
+        } catch (error) {
+            if (sesDurumEl) sesDurumEl.textContent = `Hata: ${error.message}`;
+            sesCikBtn.disabled = false;
+        }
+    });
+}
 
 // ============================================================================
 // --- YETKILI ALIM (mülakat başvuruları) ---
@@ -2795,6 +2920,8 @@ const AUDIT_TYPES = {
     'uyari-geri-al':  { label: 'Uyarı Geri Alma', sinif: 't-islem' },
     'yoklama-al':     { label: 'Yoklamayı Al',   sinif: 't-islem' },
     'acil-toplanti':  { label: 'Acil Toplantı',  sinif: 't-islem' },
+    'sese-sok':       { label: 'Sese Sok',       sinif: 't-islem' },
+    'sesten-cik':     { label: 'Sesten Çık',     sinif: 't-islem' },
 };
 
 let auditOffset = 0;

@@ -1778,6 +1778,149 @@ async function pullEveryoneToMyVoiceChannel() {
 }
 
 // ============================================================================
+// --- SESE SOK: ana hesabı seçilen ses kanalına sokup orada tutma ---
+// Yalnizca YONETICI kullanir. discord.js-selfbot-v13, @discordjs/voice ile
+// uyumlu bir voiceAdapterCreator veriyor (guild.voiceAdapterCreator) ve
+// gateway'den gelen VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE olaylarini bu
+// adaptore iletiyor (ClientVoiceManager). Ses verisi GONDERMEDIGIMIZ icin
+// (sadece girip oturuyoruz) sifreleme paketine gerek yok: baglanti "Ready"
+// asamasina ulasirken sifreleme kullanilmiyor, sifreleme yalnizca ses paketi
+// gonderirken/alirken devreye giriyor. Bu yuzden sodium/tweetnacl kurulu
+// olmasa bile "sese girip kalma" calisir.
+// ============================================================================
+let VOICE_LIB = null;
+try {
+    // eslint-disable-next-line global-require
+    VOICE_LIB = require('@discordjs/voice');
+    console.log('[Ses] @discordjs/voice yüklendi; "Sese Sok" kullanılabilir.');
+} catch (error) {
+    console.log(`[Ses] @discordjs/voice yüklenemedi; "Sese Sok" devre dışı: ${error.message}`);
+}
+
+const SES_KANAL_TIPLERI = new Set(['GUILD_VOICE', 'GUILD_STAGE_VOICE']);
+
+let sesBaglanti = null;   // aktif VoiceConnection
+let sesKanalId = null;    // sokuldugumuz kanal id
+let sesKanalAd = null;    // kanalin adi (arayuze)
+let sesKalici = false;    // "orada kal": baglanti koparsa yeniden bagla
+let sesYenidenTimer = null;
+
+function sesKanallariListele(guild) {
+    const kanallar = [];
+    guild.channels.cache.forEach((ch) => {
+        if (!SES_KANAL_TIPLERI.has(ch.type)) return;
+        kanallar.push({
+            id: ch.id,
+            ad: ch.name,
+            kategori: ch.parent ? ch.parent.name : null,
+            sahne: ch.type === 'GUILD_STAGE_VOICE',
+        });
+    });
+    kanallar.sort((a, b) => {
+        const k = String(a.kategori || '').localeCompare(String(b.kategori || ''), 'tr');
+        if (k !== 0) return k;
+        return String(a.ad).localeCompare(String(b.ad), 'tr');
+    });
+    return kanallar;
+}
+
+function seseDurum() {
+    let durum = 'yok';
+    if (sesBaglanti) {
+        try { durum = sesBaglanti.state.status; } catch (error) { durum = 'bilinmiyor'; }
+    }
+    return {
+        bagli: Boolean(sesBaglanti),
+        channelId: sesKanalId,
+        channelName: sesKanalAd,
+        durum,
+    };
+}
+
+function sestenCik() {
+    sesKalici = false;
+    if (sesYenidenTimer) { clearTimeout(sesYenidenTimer); sesYenidenTimer = null; }
+    const eski = { channelId: sesKanalId, channelName: sesKanalAd };
+    const vardi = Boolean(sesBaglanti);
+    if (sesBaglanti) {
+        try { sesBaglanti.destroy(); } catch (error) { /* zaten kopmus olabilir */ }
+        sesBaglanti = null;
+    }
+    sesKanalId = null;
+    sesKanalAd = null;
+    return { vardi, ...eski };
+}
+
+async function seseSok(channelId) {
+    if (!VOICE_LIB) {
+        throw new Error('Ses modülü (@discordjs/voice) sunucuda kurulu değil. Sunucuda "npm install" çalıştırıp botu yeniden başlat.');
+    }
+    const { joinVoiceChannel, entersState, VoiceConnectionStatus } = VOICE_LIB;
+    const guild = await getReadyGuild();
+
+    let kanal = guild.channels.cache.get(channelId);
+    if (!kanal) { try { kanal = await client.channels.fetch(channelId); } catch (error) { kanal = null; } }
+    if (!kanal) throw new Error('Ses kanalı bulunamadı.');
+    if (!SES_KANAL_TIPLERI.has(kanal.type)) throw new Error('Seçilen kanal bir ses kanalı değil.');
+    if (!kanal.guild || kanal.guild.id !== guild.id) throw new Error('Kanal bu sunucuya ait değil.');
+
+    // Kanal degistirmek icin once mevcut baglantiyi kapat.
+    if (sesYenidenTimer) { clearTimeout(sesYenidenTimer); sesYenidenTimer = null; }
+    if (sesBaglanti) {
+        try { sesBaglanti.destroy(); } catch (error) { /* yoksay */ }
+        sesBaglanti = null;
+    }
+
+    const baglanti = joinVoiceChannel({
+        channelId: kanal.id,
+        guildId: guild.id,
+        adapterCreator: guild.voiceAdapterCreator,
+        selfDeaf: false,
+        selfMute: true, // ses gönderemediğimiz için kendimizi susturulmuş gösteriyoruz
+    });
+
+    sesBaglanti = baglanti;
+    sesKanalId = kanal.id;
+    sesKanalAd = kanal.name;
+    sesKalici = true;
+
+    // "Orada kal": baglanti koparsa (tasima/ag) once toparlanmasini bekle,
+    // gercekten dustuyse ve hala kalici moddaysak yeniden sok.
+    baglanti.on('stateChange', async (oldS, newS) => {
+        if (newS.status !== VoiceConnectionStatus.Disconnected) return;
+        if (!sesKalici || sesBaglanti !== baglanti) return;
+        try {
+            await Promise.race([
+                entersState(baglanti, VoiceConnectionStatus.Signalling, 5000),
+                entersState(baglanti, VoiceConnectionStatus.Connecting, 5000),
+            ]);
+            // Kendi toparliyor - dokunma.
+        } catch (error) {
+            try { baglanti.destroy(); } catch (e) { /* yoksay */ }
+            if (sesBaglanti === baglanti) sesBaglanti = null;
+            if (sesKalici && sesKanalId) {
+                const hedef = sesKanalId;
+                sesYenidenTimer = setTimeout(() => {
+                    seseSok(hedef).catch((err) => console.log(`[Ses] Yeniden bağlanma hatası: ${err.message}`));
+                }, 2500);
+            }
+        }
+    });
+    baglanti.on('error', (err) => console.log(`[Ses] Bağlantı hatası: ${err.message}`));
+
+    // Ready'i beklemeyi dene. Ulasmasa bile gateway'de kanaldayiz (uye listesinde
+    // gorunuruz); o durumda ready:false donup arayuzde uyari gosteriyoruz.
+    try {
+        await entersState(baglanti, VoiceConnectionStatus.Ready, 20000);
+        console.log(`[Ses] "${kanal.name}" kanalına girildi (Ready).`);
+        return { channelId: kanal.id, channelName: kanal.name, ready: true };
+    } catch (error) {
+        console.log(`[Ses] "${kanal.name}" kanalına bağlanıldı ama Ready beklenirken zaman aşımı: ${error.message}`);
+        return { channelId: kanal.id, channelName: kanal.name, ready: false };
+    }
+}
+
+// ============================================================================
 // --- TX LOGS: tum gecmisi arka planda cekme ---
 // Secilen yaklasim: sunucu Discord'a baglanir baglanmaz her log kanalinin TUM
 // gecmisi arka planda cekilip bellekte tutuluyor. Panele girildiginde veri
@@ -4554,6 +4697,44 @@ app.post('/api/yoklama/acil-toplanti', requireIzin('yoklama'), async (req, res) 
         res.json({ ok: true, data: veri });
     } catch (error) {
         console.log(`[Yoklama] Acil toplantı hatası: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// --- SESE SOK (yalnizca yonetici) ---
+// Ana hesabi secilen ses kanalina sokar ve orada tutar.
+app.get('/api/ses/kanallar', requireAdmin, async (req, res) => {
+    try {
+        const guild = await getReadyGuild();
+        res.json({ ok: true, kanallar: sesKanallariListele(guild), durum: seseDurum() });
+    } catch (error) {
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.get('/api/ses/durum', requireAdmin, (req, res) => {
+    res.json({ ok: true, durum: seseDurum(), destekli: Boolean(VOICE_LIB) });
+});
+
+app.post('/api/ses/sok', requireAdmin, async (req, res) => {
+    const channelId = String((req.body && req.body.channelId) || '').trim();
+    if (!channelId) return res.json({ ok: false, error: 'Ses kanalı seçilmedi.' });
+    try {
+        const veri = await seseSok(channelId);
+        addAudit('sese-sok', req.session.username, `${veri.channelName} (${veri.ready ? 'Ready' : 'bağlanıyor'})`, req);
+        res.json({ ok: true, data: veri, durum: seseDurum() });
+    } catch (error) {
+        console.log(`[Ses] Sese sok hatası: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/ses/cik', requireAdmin, (req, res) => {
+    try {
+        const veri = sestenCik();
+        addAudit('sesten-cik', req.session.username, veri.channelName || '-', req);
+        res.json({ ok: true, data: veri, durum: seseDurum() });
+    } catch (error) {
         res.json({ ok: false, error: error.message });
     }
 });
