@@ -1534,6 +1534,32 @@ tabButtons.forEach((btn) => {
 });
 
 // ============================================================================
+// --- AÇILIR/KAPANIR KARTLAR ---
+// Yoklama sekmesi çok uzayıp alttaki liste görünmez olunca istendi: başlığa
+// tıklayınca kart içeriği gizlenir. Durum bu cihazda hatırlanır (localStorage).
+// ============================================================================
+function katlanirKartlariKur() {
+    document.querySelectorAll('.card.katlanir').forEach((kart) => {
+        const h2 = kart.querySelector('h2');
+        if (!h2 || h2.dataset.katKuruldu) return;
+        h2.dataset.katKuruldu = '1';
+        const anahtar = 'kat-' + (kart.dataset.kat || (h2.textContent || '').trim());
+        try {
+            const kayit = localStorage.getItem(anahtar);
+            if (kayit === 'kapali') kart.classList.add('kapali');
+            else if (kayit === 'acik') kart.classList.remove('kapali');
+        } catch (e) { /* localStorage yoksa varsayılan HTML durumu kalır */ }
+        h2.addEventListener('click', () => {
+            kart.classList.toggle('kapali');
+            try {
+                localStorage.setItem(anahtar, kart.classList.contains('kapali') ? 'kapali' : 'acik');
+            } catch (e) { /* yoksay */ }
+        });
+    });
+}
+katlanirKartlariKur();
+
+// ============================================================================
 // --- TABLO (seçilen roller için sırayla /ticket-top rol:@X) ---
 // Bireysel Uyarı tablosuyla aynı iskelet: rolleri çeker, çoklu seç, Gönder'e
 // basınca her rol için AYRI komut gider (tek komut = tek rol), sırayla.
