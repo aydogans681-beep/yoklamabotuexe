@@ -345,6 +345,10 @@ function connectWebSocket() {
                 bulkProgress.textContent = `Toplu geri alma: ${msg.current}/${msg.total}`;
             } else if (msg.type === 'yoklama-acil-toplanti-ilerleme') {
                 emergencyStatus.textContent = `Taşınıyor: ${msg.current}/${msg.total}`;
+            } else if (msg.type === 'tablo-ilerleme') {
+                if (tabloProgress) {
+                    tabloProgress.textContent = `Gönderiliyor: ${msg.current}/${msg.total} — ${msg.roleName || ''}`;
+                }
             } else if (msg.type === 'yoklama-asama') {
                 if (msg.asama) scanStatus.textContent = msg.asama;
             } else if (msg.type === 'uye-durum') {
@@ -1476,6 +1480,7 @@ const SEKME_BASLIKLARI = {
     yetkililer:   ['i-yetkililer',   'Yetkililer',     'Rol bazlı yetkili listesi ve satır içi rol işlemleri.'],
     roller:       ['i-roller',       'Rol Ver / Al',   'Seçtiğin kişiye rol ver ya da geri al.'],
     yetkilialim:  ['i-yetkililer',   'Yetkili Alım',   'Mülakat başvuru ticket\'larını gör, onayla ya da reddet.'],
+    tablo:        ['i-roller',       'Tablo',          'Seçtiğin roller için sırayla /ticket-top komutu gönderir.'],
     aktiflik:     ['i-aktiflik',     'Aktiflik',       'Kim ne kadar süre seste kaldı, gün gün.'],
     etkinlik:     ['i-etkinlik',     'Etkinlik',       'Kanal bazlı mesaj sayıları ve ticket sahiplenme.'],
     loglar:       ['i-loglar',       'TX Logs',        'Ban, unban, kick, warn, DM ve diğer log kanalları.'],
@@ -1520,12 +1525,151 @@ tabButtons.forEach((btn) => {
         }
         if (btn.dataset.tab === 'yetkililer') initStaffTab();
         if (btn.dataset.tab === 'yetkilialim') initYetkiliAlim(); else stopYetkiliAlimPolling();
+        if (btn.dataset.tab === 'tablo') initTablo();
         if (btn.dataset.tab === 'roller') loadGuildRoles().then(renderRoleList);
         if (btn.dataset.tab === 'hesaploglari') { auditOffset = 0; loadAudit(); }
         if (btn.dataset.tab === 'etkinlik') initActivityTab();
         if (btn.dataset.tab === 'aktiflik') initPresenceTab(); else stopPresenceTimer();
     });
 });
+
+// ============================================================================
+// --- TABLO (seçilen roller için sırayla /ticket-top rol:@X) ---
+// Bireysel Uyarı tablosuyla aynı iskelet: rolleri çeker, çoklu seç, Gönder'e
+// basınca her rol için AYRI komut gider (tek komut = tek rol), sırayla.
+// ============================================================================
+const tabloYenileBtn = document.getElementById('tabloYenileBtn');
+const tabloSayac = document.getElementById('tabloSayac');
+const tabloHepsi = document.getElementById('tabloHepsi');
+const tabloTemizle = document.getElementById('tabloTemizle');
+const tabloAra = document.getElementById('tabloAra');
+const tabloTabloSar = document.getElementById('tabloTabloSar');
+const tabloTablo = document.getElementById('tabloTablo');
+const tabloGonderBtn = document.getElementById('tabloGonderBtn');
+const tabloProgress = document.getElementById('tabloProgress');
+
+let tabloRoller = [];
+const tabloSecili = new Set();
+let tabloYuklendi = false;
+
+async function initTablo() {
+    if (tabloYuklendi) { tabloCiz(); return; }
+    await tabloRolleriYukle();
+}
+
+async function tabloRolleriYukle(sessiz) {
+    if (!tabloTablo) return;
+    if (!sessiz) {
+        tabloProgress.textContent = 'Roller yükleniyor...';
+    }
+    try {
+        const res = await fetch('/api/tablo/roller');
+        const data = await okuJson(res);
+        if (!data.ok) {
+            tabloProgress.textContent = `Hata: ${data.error}`;
+            return;
+        }
+        tabloRoller = data.roller || [];
+        tabloYuklendi = true;
+        // Var olmayan (silinmiş) seçimleri temizle.
+        const mevcut = new Set(tabloRoller.map((r) => r.id));
+        [...tabloSecili].forEach((id) => { if (!mevcut.has(id)) tabloSecili.delete(id); });
+        tabloTabloSar.hidden = false;
+        tabloAra.hidden = false;
+        tabloHepsi.hidden = false;
+        tabloTemizle.hidden = false;
+        tabloCiz();
+        if (!sessiz) tabloProgress.textContent = '';
+    } catch (error) {
+        tabloProgress.textContent = `Hata: ${error.message}`;
+    }
+}
+
+function tabloCiz() {
+    if (!tabloTablo) return;
+    const filtre = (tabloAra.value || '').toLocaleLowerCase('tr');
+    const liste = filtre
+        ? tabloRoller.filter((r) => r.name.toLocaleLowerCase('tr').includes(filtre))
+        : tabloRoller;
+    if (!liste.length) {
+        tabloTablo.innerHTML = '<tr><td style="padding:10px;color:var(--muted)">Rol bulunamadı.</td></tr>';
+        tabloSayacGuncelle();
+        return;
+    }
+    tabloTablo.innerHTML = liste.map((r) => {
+        const secili = tabloSecili.has(r.id);
+        const nokta = r.color
+            ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(r.color)};margin-right:8px;vertical-align:middle;"></span>`
+            : '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--border);margin-right:8px;vertical-align:middle;"></span>';
+        return `<tr data-id="${escapeHtml(r.id)}" class="${secili ? 'secili' : ''}">
+            <td style="width:34px;text-align:center;"><input type="checkbox" ${secili ? 'checked' : ''} tabindex="-1"></td>
+            <td>${nokta}${escapeHtml(r.name)}</td>
+        </tr>`;
+    }).join('');
+    tabloTablo.querySelectorAll('tr[data-id]').forEach((tr) => {
+        tr.addEventListener('click', () => {
+            const id = tr.dataset.id;
+            if (tabloSecili.has(id)) tabloSecili.delete(id); else tabloSecili.add(id);
+            tr.classList.toggle('secili', tabloSecili.has(id));
+            const cb = tr.querySelector('input[type=checkbox]');
+            if (cb) cb.checked = tabloSecili.has(id);
+            tabloSayacGuncelle();
+        });
+    });
+    tabloSayacGuncelle();
+}
+
+function tabloSayacGuncelle() {
+    if (tabloSayac) tabloSayac.textContent = `${tabloSecili.size} seçili / ${tabloRoller.length} rol`;
+    if (tabloGonderBtn) tabloGonderBtn.disabled = tabloSecili.size === 0;
+}
+
+if (tabloYenileBtn) tabloYenileBtn.addEventListener('click', () => tabloRolleriYukle());
+if (tabloAra) tabloAra.addEventListener('input', () => tabloCiz());
+if (tabloHepsi) {
+    tabloHepsi.addEventListener('click', () => {
+        const filtre = (tabloAra.value || '').toLocaleLowerCase('tr');
+        const liste = filtre
+            ? tabloRoller.filter((r) => r.name.toLocaleLowerCase('tr').includes(filtre))
+            : tabloRoller;
+        liste.forEach((r) => tabloSecili.add(r.id));
+        tabloCiz();
+    });
+}
+if (tabloTemizle) {
+    tabloTemizle.addEventListener('click', () => { tabloSecili.clear(); tabloCiz(); });
+}
+if (tabloGonderBtn) {
+    tabloGonderBtn.addEventListener('click', async () => {
+        const roleIds = [...tabloSecili];
+        if (!roleIds.length) return;
+        tabloGonderBtn.disabled = true;
+        tabloProgress.textContent = `Gönderiliyor: 0/${roleIds.length}...`;
+        try {
+            const res = await fetch('/api/tablo/gonder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roleIds }),
+            });
+            const data = await okuJson(res);
+            if (!data.ok) {
+                tabloProgress.textContent = `Hata: ${data.error}`;
+                return;
+            }
+            const g = data.data.gonderilen.length;
+            const h = data.data.hatalar.length;
+            tabloProgress.innerHTML = `Tamamlandı: <b>${g} rol gönderildi</b>`
+                + (h ? `, <b style="color:var(--attn)">${h} hata</b><br><span style="color:var(--attn)">${escapeHtml(data.data.hatalar[0].name)}: ${escapeHtml(data.data.hatalar[0].error || '')}</span>` : '.');
+            // Başarılı gönderilenlerin seçimini kaldır.
+            data.data.gonderilen.forEach((x) => tabloSecili.delete(x.id));
+            tabloCiz();
+        } catch (error) {
+            tabloProgress.textContent = `Hata: ${error.message}`;
+        } finally {
+            tabloGonderBtn.disabled = tabloSecili.size === 0;
+        }
+    });
+}
 
 // ============================================================================
 // --- LOG SEKMELERI (TX Logs + Mute Logları) ---
@@ -2922,6 +3066,7 @@ const AUDIT_TYPES = {
     'acil-toplanti':  { label: 'Acil Toplantı',  sinif: 't-islem' },
     'sese-sok':       { label: 'Sese Sok',       sinif: 't-islem' },
     'sesten-cik':     { label: 'Sesten Çık',     sinif: 't-islem' },
+    'tablo-gonder':   { label: 'Tablo Gönder',   sinif: 't-islem' },
 };
 
 let auditOffset = 0;

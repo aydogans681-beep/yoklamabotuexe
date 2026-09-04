@@ -286,6 +286,7 @@ const IZIN_SEKMELERI = [
     { key: 'yetkililer', label: 'Yetkililer' },
     { key: 'roller', label: 'Rol Ver/Al' },
     { key: 'yetkilialim', label: 'Yetkili Alım' },
+    { key: 'tablo', label: 'Tablo' },
     { key: 'aktiflik', label: 'Aktiflik' },
     { key: 'etkinlik', label: 'Etkinlik' },
     { key: 'loglar', label: 'TX Logs' },
@@ -1038,6 +1039,34 @@ async function rolKomutunuBul(guild, { komutId, komutAdi, botId }) {
 // pozisyonel olarak gidiyor - sendSlash de aynisini yapiyor.
 async function rolSlashGonder(guild, channel, secim, ...args) {
     const komut = await rolKomutunuBul(guild, secim);
+    const nesne = await komutNesnesi(komut);
+    const sahteMesaj = new SlashMesaji(client, {
+        channel_id: channel.id,
+        guild_id: guild.id,
+        author: client.user,
+        content: '',
+        id: client.user.id,
+    });
+    await nesne.sendSlashCommand(sahteMesaj, [], args);
+    return { name: komut.name, id: komut.id, applicationId: komut.application_id };
+}
+
+// rolSlashGonder komutu ID/bot ile buluyor. Bazi komutlar (ornegin /ticket-top)
+// icin elimizde yalnizca AD var: sunucunun slash dizininde ada gore ariyoruz.
+// Ayni adli birden fazla komut olursa ilki secilir - 'ticket-top' gibi ozel
+// adlarda bu pratikte tek. args, komutun secenek SIRASINA gore pozisyonel gider
+// (tek secenekli /ticket-top rol:@X icin [roleId] yeterli).
+async function slashGonderAdla(guild, channel, komutAdi, ...args) {
+    let komutlar = await komutDizinileri(guild);
+    let komut = komutlar.find((c) => c.type === 1 && c.name === komutAdi);
+    if (!komut) {
+        komutlar = await komutDizinileri(guild, true); // onbellek eski olabilir
+        komut = komutlar.find((c) => c.type === 1 && c.name === komutAdi);
+    }
+    if (!komut) {
+        throw new Error(`"/${komutAdi}" komutu sunucunun slash dizininde bulunamadı `
+            + `(${komutlar.length} komut tarandı). Komut adı değişmiş ya da botu sunucuda değil olabilir.`);
+    }
     const nesne = await komutNesnesi(komut);
     const sahteMesaj = new SlashMesaji(client, {
         channel_id: channel.id,
@@ -4228,6 +4257,66 @@ function serializeRole(role, selfTop) {
     };
 }
 
+// ============================================================================
+// --- TABLO: secilen roller icin sirayla /ticket-top rol:@X gonderme ---
+// "Ekstra, her seyden ayri" bir menu. Kullanici bir veya daha fazla rol
+// seciyor; butona basinca ana hesap TABLO_KANALI'na her rol icin AYRI bir
+// /ticket-top slash komutu gonderiyor (tek komut = tek rol). Roller sirayla,
+// aralarinda kisa beklemeyle gonderiliyor (rate limit + bot islesin diye).
+// ============================================================================
+const TABLO_KANALI = ROLE_COMMAND_CHANNEL_ID;  // '1504900865507463259'
+const TABLO_KOMUTU = 'ticket-top';             // /ticket-top rol:@...
+const TABLO_GONDER_BEKLEME_MS = 1500;
+
+// Rol listesi - uye onbellegini DOLDURMADAN (hizli). guild.roles.cache zaten
+// dolu; secim icin id + ad + renk yetiyor. @everyone ve bot/entegrasyon
+// rolleri (managed) haric.
+async function tabloRolListesi() {
+    const guild = await getReadyGuild();
+    return [...guild.roles.cache.values()]
+        .filter((role) => role.id !== guild.id && !role.managed)
+        .sort(byHierarchyDesc)
+        .map((role) => ({
+            id: role.id,
+            name: role.name,
+            color: role.hexColor && role.hexColor !== '#000000' ? role.hexColor : null,
+        }));
+}
+
+async function tabloRolleriGonder(roleIds) {
+    const guild = await getReadyGuild();
+    let channel;
+    try {
+        channel = await client.channels.fetch(TABLO_KANALI);
+    } catch (error) {
+        throw new Error(`Komut kanalı alınamadı: ${error.message}`);
+    }
+    if (!channel) throw new Error('Komut kanalı bulunamadı, TABLO_KANALI hatalı olabilir.');
+
+    const gonderilen = [];
+    const hatalar = [];
+    for (let i = 0; i < roleIds.length; i += 1) {
+        const rid = String(roleIds[i]);
+        const role = guild.roles.cache.get(rid);
+        const ad = role ? role.name : rid;
+        wsBroadcast({ type: 'tablo-ilerleme', current: i + 1, total: roleIds.length, roleId: rid, roleName: ad });
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const g = await slashGonderAdla(guild, channel, TABLO_KOMUTU, rid);
+            console.log(`[Tablo] /${g.name} rol:${ad} (${rid}) gönderildi.`);
+            gonderilen.push({ id: rid, name: ad });
+        } catch (error) {
+            console.log(`[Tablo] "${ad}" (${rid}) için komut gönderilemedi: ${error.message}`);
+            hatalar.push({ id: rid, name: ad, error: error.message });
+        }
+        if (i < roleIds.length - 1) {
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => setTimeout(resolve, TABLO_GONDER_BEKLEME_MS));
+        }
+    }
+    return { gonderilen, hatalar };
+}
+
 async function listGuildRoles() {
     const guild = await getReadyGuild();
     try {
@@ -5219,6 +5308,33 @@ app.get('/api/roller', requireIzin('roller', 'yetkililer'), async (req, res) => 
         res.json({ ok: true, ...(await listGuildRoles()) });
     } catch (error) {
         console.log(`[Roller] Liste hatasi: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// --- TABLO: /ticket-top rol:@X toplu gonderimi ---
+app.get('/api/tablo/roller', requireIzin('tablo'), async (req, res) => {
+    try {
+        res.json({ ok: true, roller: await tabloRolListesi(), komut: TABLO_KOMUTU });
+    } catch (error) {
+        console.log(`[Tablo] Rol listesi hatasi: ${error.message}`);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/tablo/gonder', requireIzin('tablo'), async (req, res) => {
+    const roleIds = Array.isArray(req.body && req.body.roleIds)
+        ? req.body.roleIds.map((x) => String(x)).filter(Boolean)
+        : [];
+    if (!roleIds.length) return res.json({ ok: false, error: 'En az bir rol seç.' });
+    try {
+        const veri = await tabloRolleriGonder(roleIds);
+        addAudit('tablo-gonder', req.session.username,
+            `/${TABLO_KOMUTU}: ${veri.gonderilen.length} rol gönderildi`
+            + `${veri.hatalar.length ? `, ${veri.hatalar.length} hata` : ''}`, req);
+        res.json({ ok: true, data: veri });
+    } catch (error) {
+        console.log(`[Tablo] Gönderim hatasi: ${error.message}`);
         res.json({ ok: false, error: error.message });
     }
 });

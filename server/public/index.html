@@ -302,6 +302,11 @@
                 </div>
 
                 <div class="nav-grup">
+                    <span class="nav-baslik">Araçlar</span>
+                    <button class="tab-btn" data-tab="tablo"><span class="ico"><svg><use href="#i-roller"/></svg></span><span class="etiket">Tablo</span></button>
+                </div>
+
+                <div class="nav-grup">
                     <span class="nav-baslik">Raporlar</span>
                     <button class="tab-btn" data-tab="aktiflik"><span class="ico"><svg><use href="#i-aktiflik"/></svg></span><span class="etiket">Aktiflik</span></button>
                     <button class="tab-btn" data-tab="etkinlik"><span class="ico"><svg><use href="#i-etkinlik"/></svg></span><span class="etiket">Etkinlik</span></button>
@@ -862,6 +867,36 @@
             <div id="roleListWrap">
                 <div class="empty-hint" id="roleEmpty">Önce Yetkililer sekmesinden bir kişi seç.</div>
                 <div class="role-list" id="roleList"></div>
+            </div>
+        </div>
+
+        <!-- ================= TABLO ================= -->
+        <!-- Her şeyden ayrı menü: seçilen roller için sırayla
+             /ticket-top rol:@X slash komutu gönderir (tek komut = tek rol). -->
+        <div class="tab-panel" id="tab-tablo">
+            <div class="card">
+                <h2>Tablo</h2>
+                <p class="card-desc">
+                    Seçtiğin roller için <b>sırayla</b> <code>/ticket-top rol:@rol</code>
+                    komutu gönderilir. Birden fazla rol seçebilirsin; her komut
+                    <b>tek bir rol</b> içerir ve roller tek tek gönderilir.
+                </p>
+                <div class="toolbar" style="margin-bottom:9px;">
+                    <button class="secondary small" id="tabloYenileBtn" type="button">Rolleri Yenile</button>
+                    <span class="scanStatus" id="tabloSayac">—</span>
+                    <button class="ghost small" id="tabloHepsi" type="button" hidden>Tümünü Seç</button>
+                    <button class="ghost small" id="tabloTemizle" type="button" hidden>Temizle</button>
+                </div>
+                <input type="text" class="text-search" id="tabloAra"
+                       placeholder="Rol ara..." hidden style="margin-bottom:8px;">
+                <div id="tabloTabloSar" hidden
+                     style="max-height:360px; overflow:auto; border:1px solid var(--border); border-radius:10px; margin-bottom:9px;">
+                    <table class="bireysel-tablo" id="tabloTablo"></table>
+                </div>
+                <div class="toolbar">
+                    <button id="tabloGonderBtn" disabled>Gönder</button>
+                </div>
+                <div class="scanStatus" id="tabloProgress" style="margin-top:8px;"></div>
             </div>
         </div>
 

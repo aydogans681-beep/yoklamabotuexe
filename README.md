@@ -698,6 +698,23 @@ Duyurunun en altına **"Uyarı itirazı için : <@599655428984537109> DM'den
 ulaşın"** satırı eklenir; itirazın kime gideceği ayrıca sorulmasın diye. Hem
 tekil hem toplu uyarı duyurusunda, elle ve otomatik yoklamada aynı.
 
+### Tablo
+
+Her şeyden **ayrı** bir menü (kenar çubuğunda "Araçlar" grubu). Seçtiğin
+roller için ana hesap, komut kanalına (`1504900865507463259`) **sırayla**
+`/ticket-top rol:@rol` slash komutunu gönderir. Birden fazla rol seçebilirsin;
+**her komut tek bir rol içerir** ve roller tek tek, aralarında ~1,5 sn beklemeyle
+gönderilir (rate limit + botun işlemesi için).
+
+- Rol listesi üye önbelleği doldurulmadan hızlıca gelir (`GET /api/tablo/roller`).
+- Çoklu seçim, arama, "Tümünü Seç"/"Temizle"; **Gönder** ile başlar, ilerleme
+  canlı gösterilir (WebSocket `tablo-ilerleme`), başarılılar seçimden düşer.
+- Komut, sunucunun slash dizininde **ada göre** bulunur (`ticket-top`) - komut
+  ID'si veya botu ayrıca girmeye gerek yok; `slashGonderAdla` mevcut rol-ver/al
+  gönderim mekanizmasının aynısını kullanır.
+- Uç: `POST /api/tablo/gonder` (`{ roleIds: [...] }`), **tablo** izniyle. Kanal
+  ve komut adı kodda sabit (`TABLO_KANALI`, `TABLO_KOMUTU`).
+
 ### TX Logs
 
 Log kanallarının **tüm geçmişi**, sunucu Discord'a bağlanır bağlanmaz arka
