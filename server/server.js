@@ -535,26 +535,34 @@ const LOG_GROUPS = [
     { key: 'mute', label: 'Mute Logları' },
     { key: 'felox', label: 'Felox' },
 ];
+// ilkCekimSiniri: bu kanalda TUM gecmis inmiyor, yalnizca en yeni N mesaj hemen
+// cekiliyor; sonrasi kanala mesaj geldikce canli ekleniyor (messageCreate).
+// "Loglari cekmesi cok uzun suruyo" sikayeti bunun icin: yuksek hacimli
+// kanallarda (ozellikle Felox Connections, Ban, DM) tum gecmisi indirmek
+// binlerce istek ve dakikalar demekti. Artik gozat loglari son LOG_ILK_SINIR
+// mesajla siniri; DUSUK hacimli kanallar zaten bu sayidan az mesaja sahip
+// oldugu icin onlar tam gelmeye devam ediyor - sinir yalnizca yavas olanlari
+// kesiyor. Etkinlik/Ticket kanallari (ACTIVITY_CHANNELS) sinirLANMIYOR: gunluk
+// sayac ve tarih araligi ozellikleri onlarin TUM gecmisine ihtiyac duyuyor.
+const LOG_ILK_SINIR = 500;
 const LOG_CHANNELS = [
-    { key: 'ban', label: 'Ban', channelId: '1514634711413293197', group: 'tx' },
-    { key: 'unban', label: 'Unban', channelId: '1456027006964858901', group: 'tx' },
-    { key: 'kick', label: 'Kick', channelId: '1514634723043836155', group: 'tx' },
-    { key: 'warn', label: 'Warn', channelId: '1514634738915086560', group: 'tx' },
-    { key: 'dm', label: 'DM', channelId: '1514634767033696387', group: 'tx' },
-    { key: 'duyuru', label: 'Duyuru', channelId: '1514634800407904398', group: 'tx' },
-    { key: 'revive', label: 'Revive', channelId: '1514633983160483901', group: 'tx' },
+    { key: 'ban', label: 'Ban', channelId: '1514634711413293197', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'unban', label: 'Unban', channelId: '1456027006964858901', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'kick', label: 'Kick', channelId: '1514634723043836155', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'warn', label: 'Warn', channelId: '1514634738915086560', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'dm', label: 'DM', channelId: '1514634767033696387', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'duyuru', label: 'Duyuru', channelId: '1514634800407904398', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'revive', label: 'Revive', channelId: '1514633983160483901', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
     // Bu kanalin ne logu oldugu soylenmedi - menu adi buradan degistirilebilir.
-    // ilkCekimSiniri: bu kanalda TUM gecmis inmiyor, yalnizca en yeni N mesaj.
-    // Sonrasinda kanala yeni mesaj geldikce canli ekleniyor.
     { key: 'ek', label: 'Ek Log', channelId: '1514634694917095614', group: 'tx', ilkCekimSiniri: 100 },
-    { key: 'para', label: 'Para Verme', channelId: '1500941817242452020', group: 'tx' },
-    { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute' },
-    { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute' },
+    { key: 'para', label: 'Para Verme', channelId: '1500941817242452020', group: 'tx', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'mute', label: 'Mute', channelId: '1456027009624051940', group: 'mute', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'unmute', label: 'Unmute', channelId: '1456027014036459663', group: 'mute', ilkCekimSiniri: LOG_ILK_SINIR },
     // Felox alt sekmeleri (hepsi 'felox' grubunda, Felox sekmesinde menü olur).
-    { key: 'feloxconn', label: 'Felox Connections Log', channelId: '1513234125337919610', group: 'felox' },
-    { key: 'feloxban', label: 'Ban Webhook', channelId: '1513234198918598706', group: 'felox' },
-    { key: 'feloxunban', label: 'Unban Webhook', channelId: '1513234220011749607', group: 'felox' },
-    { key: 'feloxweapons', label: 'Weapons Webhook', channelId: '1513234241658556702', group: 'felox' },
+    { key: 'feloxconn', label: 'Felox Connections Log', channelId: '1513234125337919610', group: 'felox', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'feloxban', label: 'Ban Webhook', channelId: '1513234198918598706', group: 'felox', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'feloxunban', label: 'Unban Webhook', channelId: '1513234220011749607', group: 'felox', ilkCekimSiniri: LOG_ILK_SINIR },
+    { key: 'feloxweapons', label: 'Weapons Webhook', channelId: '1513234241658556702', group: 'felox', ilkCekimSiniri: LOG_ILK_SINIR },
     // Silent Log: cok yuksek hacimli olabilir. "Hizli ceksin" istendi:
     // gecmisin TAMAMI inmiyor, yalnizca en yeni 200 mesaj hemen geliyor,
     // sonrasi canli ekleniyor (messageCreate). Boylece sekme aninda aciliyor.
@@ -3444,6 +3452,15 @@ async function fetchAllChannelMessages(key, { tamCekim = false } = {}) {
     });
 
     collected.sort((a, b) => b.createdTimestamp - a.createdTimestamp); // en yeni ustte
+
+    // SinirLI kanallarda yalnizca en yeni N mesaji tut. Aksi halde artimli
+    // cekimler (after imleci) ve canli ekleme, capli bir kanalin onbellegini
+    // zamanla yeniden sisiriyordu: yeniden baslatma yuklemesi yavaslar, bellek
+    // buyurdu. En yeniler ustte oldugu icin listeyi bastan kesiyoruz.
+    if (store.ilkCekimSiniri && collected.length > store.ilkCekimSiniri) {
+        collected = collected.slice(0, store.ilkCekimSiniri);
+    }
+
     collected.forEach((entry) => { entry._s = logSearchText(entry); });
 
     store.messages = collected;
