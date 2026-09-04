@@ -621,6 +621,16 @@ görüntülenir (seçiliyken 5 sn'de bir tazelenir). Altta iki karar butonu:
 - **❌ Reddet** → `Başvurunuz (Yetersiz Yaş/Saat/Uygunsuz) Sebebiyle Red ❌
   Yemiştir İyi Günler Dileriz !`
 
+**Onaylayınca** başvurana otomatik olarak **`1470230362914553867` rolü** verilir
+(mesaj gönderildikten sonra; rol verilemezse karar geri alınmaz, panelde
+"rol VERİLEMEDİ" yazar). Rol ana hesaptan `member.roles.add` ile eklenir -
+hesabın Rol Yönetme izni ve hiyerarşisi yeterli olmalı.
+
+Seçilen başvurunun altında **Başvuru Bilgisi** bloğu: başvuranın **Discord
+ID'si** (kopyalanabilir) ve ticket'a **yazılan her şeyin** düz metin dökümü,
+mesaj görüntüleyiciden ayrı. ID `/api/yetkili-alim/mesajlar` cevabında
+`sahipId` olarak döner (tek geçişli hızlı arama - `ticketAcaniHizli`).
+
 Mesajlar panelin **ana hesabından** gönderilir (AC token'ı gerekmez). Emojiler
 gerçek Unicode (✅/❌) - selfbot API'sinden `:shortcode:` düz metin giderdi.
 Uçlar: `GET /api/yetkili-alim/ticketlar`, `POST /api/yetkili-alim/mesajlar`,

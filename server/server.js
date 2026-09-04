@@ -2124,6 +2124,8 @@ const AC_TICKET_KATEGORI = '1470230380572573706';
 const YETKILI_ALIM_KATEGORI = '1470230416395866278';
 // Onay mesajında verilen mülakat kanalı linki.
 const YETKILI_MULAKAT_URL = 'https://discord.com/channels/1469033815518482445/1470230625759002729';
+// Onay verilince başvurana OTOMATİK verilecek rol.
+const YETKILI_ONAY_ROL = '1470230362914553867';
 const AC_TOKEN_PATH = path.join(ROOT_DIR, 'ac-tokenlari.json');
 
 // Gonderim hiz siniri: kisi basina ve panel genelinde.
@@ -3868,6 +3870,18 @@ function readOpenerFromOverwrites(channel) {
     } catch (error) {
         return null;
     }
+}
+
+// Ticket'ı açanı TEK geçişte bulur (retry yok) - mesaj listesi 5 sn'de bir
+// yenilendiği için findTicketOpener'ın 8 sn'lik beklemesi burada olmaz.
+function ticketAcaniHizli(channel) {
+    const id = readOpenerFromOverwrites(channel);
+    if (id) return id;
+    if (channel && channel.topic) {
+        const m = String(channel.topic).match(/(\d{17,20})/);
+        if (m) return m[1];
+    }
+    return null;
 }
 
 async function findTicketOpener(channel) {
@@ -6222,7 +6236,11 @@ app.post('/api/yetkili-alim/mesajlar', requireIzin('yetkilialim'), async (req, r
     if (!/^\d{17,20}$/.test(kanalId)) return res.json({ ok: false, error: 'Geçersiz ticket.' });
     try {
         const mesajlar = await ticketMesajlariGetir(kanalId, 50, YETKILI_ALIM_KATEGORI);
-        res.json({ ok: true, mesajlar });
+        // Başvuranın Discord ID'si de dönüyor - panel altta ayrı gösteriyor.
+        let kanal = client.channels.cache.get(kanalId);
+        if (!kanal) { try { kanal = await client.channels.fetch(kanalId); } catch (e) { kanal = null; } }
+        const sahipId = kanal ? ticketAcaniHizli(kanal) : null;
+        res.json({ ok: true, mesajlar, sahipId });
     } catch (error) {
         res.json({ ok: false, error: error.message });
     }
@@ -6262,8 +6280,31 @@ async function yetkiliAlimKarar(kanalId, tur, actor) {
     }
 
     await kanal.send(mesaj);
-    addAudit('yetkili-alim', actor, `${tur === 'onay' ? 'ONAY' : 'RED'} - #${kanal.name} (${kanalId})`, null);
-    return { kanal: kanal.name, sahipId };
+
+    // ONAY: başvurana otomatik rol ver. Mesaj gitti bile - rol veremezsek
+    // kararı geri almıyoruz, sadece durumu bildiriyoruz.
+    let rolVerildi = false;
+    let rolHata = null;
+    if (tur === 'onay') {
+        if (!sahipId) {
+            rolHata = 'Başvuran bulunamadı, rol verilemedi.';
+        } else {
+            try {
+                const guild = kanal.guild || client.guilds.cache.get(GUILD_ID) || await client.guilds.fetch(GUILD_ID);
+                const member = await guild.members.fetch(sahipId);
+                await member.roles.add(YETKILI_ONAY_ROL);
+                rolVerildi = true;
+            } catch (error) {
+                rolHata = error.message;
+                console.log(`[YetkiliAlim] Rol verilemedi (${sahipId}): ${error.message}`);
+            }
+        }
+    }
+
+    addAudit('yetkili-alim', actor,
+        `${tur === 'onay' ? 'ONAY' : 'RED'} - #${kanal.name} (${kanalId})`
+        + (tur === 'onay' ? ` · rol ${rolVerildi ? 'verildi' : 'VERİLEMEDİ'}` : ''), null);
+    return { kanal: kanal.name, sahipId, rolVerildi, rolHata };
 }
 
 app.post('/api/yetkili-alim/onay', requireIzin('yetkilialim'), async (req, res) => {

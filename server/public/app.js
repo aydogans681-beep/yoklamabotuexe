@@ -966,6 +966,10 @@ const yaMesajYenile = document.getElementById('yaMesajYenile');
 const yaOnayBtn = document.getElementById('yaOnayBtn');
 const yaRedBtn = document.getElementById('yaRedBtn');
 const yaKararMsg = document.getElementById('yaKararMsg');
+const yaBilgiKart = document.getElementById('yaBilgiKart');
+const yaSahipId = document.getElementById('yaSahipId');
+const yaSahipKopyala = document.getElementById('yaSahipKopyala');
+const yaDump = document.getElementById('yaDump');
 
 let yaTicketler = [];
 let yaSecili = null;
@@ -1004,6 +1008,7 @@ function yaSeciminiTemizle() {
     if (yaOnayBtn) yaOnayBtn.disabled = true;
     if (yaRedBtn) yaRedBtn.disabled = true;
     if (yaKararMsg) yaKararMsg.textContent = '';
+    if (yaBilgiKart) yaBilgiKart.hidden = true;
 }
 
 function yaTicketleriCiz() {
@@ -1077,8 +1082,25 @@ async function yaMesajlariYukle(sessiz) {
         const d = await okuJson(res);
         if (!d.ok) { if (!sessiz) yaMesajKutu.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(d.error)}</div>`; return; }
         yaMesajlariCiz(d.mesajlar);
+        yaBilgiCiz(d.sahipId, d.mesajlar);
     } catch (error) {
         if (!sessiz) yaMesajKutu.innerHTML = `<div class="empty-hint">Hata: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+// Altta ayrı blok: başvuranın Discord ID'si + yazılan her şey (düz metin).
+function yaBilgiCiz(sahipId, mesajlar) {
+    if (!yaBilgiKart) return;
+    yaBilgiKart.hidden = false;
+    if (yaSahipId) yaSahipId.textContent = sahipId || 'bulunamadı';
+    if (yaDump) {
+        const satirlar = (mesajlar || []).map((m) => {
+            const ekAd = (m.ekler || []).map((e) => e.ad || e.url).filter(Boolean);
+            const ekNot = ekAd.length ? ` [ek: ${ekAd.join(', ')}]` : '';
+            const govde = (m.icerik || '').trim() || (m.embedVar ? '[gömülü içerik]' : '');
+            return `${m.yazar}: ${govde}${ekNot}`.trim();
+        }).filter((s) => s && !s.endsWith(':'));
+        yaDump.textContent = satirlar.length ? satirlar.join('\n') : '(yazı yok)';
     }
 }
 
@@ -1098,9 +1120,13 @@ async function yaKararVer(tur) {
         if (res.status === 401) { showLogin(); return; }
         const d = await okuJson(res);
         if (!d.ok) { yaKararMsg.textContent = `Hata: ${d.error}`; return; }
-        yaKararMsg.textContent = tur === 'onay'
-            ? (d.sahipId ? '✅ Onaylandı, başvuran etiketlendi.' : '✅ Onaylandı (başvuran bulunamadı, etiketsiz).')
-            : '❌ Reddedildi.';
+        if (tur === 'onay') {
+            const rol = d.rolVerildi ? 'rol verildi' : `rol VERİLEMEDİ${d.rolHata ? ' (' + d.rolHata + ')' : ''}`;
+            yaKararMsg.textContent = (d.sahipId ? '✅ Onaylandı, başvuran etiketlendi' : '✅ Onaylandı (başvuran bulunamadı)')
+                + ` · ${rol}.`;
+        } else {
+            yaKararMsg.textContent = '❌ Reddedildi.';
+        }
         yaMesajlariYukle(true);   // gönderilen mesaj listede görünsün
     } catch (error) {
         yaKararMsg.textContent = `Hata: ${error.message}`;
@@ -1114,6 +1140,14 @@ if (yaAra) yaAra.addEventListener('input', yaTicketleriCiz);
 if (yaMesajYenile) yaMesajYenile.addEventListener('click', () => yaMesajlariYukle());
 if (yaOnayBtn) yaOnayBtn.addEventListener('click', () => yaKararVer('onay'));
 if (yaRedBtn) yaRedBtn.addEventListener('click', () => yaKararVer('red'));
+if (yaSahipKopyala) yaSahipKopyala.addEventListener('click', () => {
+    const id = (yaSahipId && yaSahipId.textContent || '').trim();
+    if (!id || id === 'bulunamadı' || id === '—') return;
+    if (navigator.clipboard) navigator.clipboard.writeText(id).then(() => {
+        yaSahipKopyala.textContent = 'Kopyalandı';
+        setTimeout(() => { yaSahipKopyala.textContent = 'Kopyala'; }, 1200);
+    }).catch(() => {});
+});
 
 function renderResults(data) {
     lastResults = data.members;

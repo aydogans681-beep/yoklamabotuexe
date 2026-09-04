@@ -523,6 +523,21 @@
                         </div>
                     </div>
 
+                    <!-- Başvuru bilgisi: ticket'ı açanın Discord ID'si ve yazılan
+                         her şey ayrı, sade bir blokta (kopyalanabilir). -->
+                    <div class="card" style="margin:0 0 12px;" id="yaBilgiKart" hidden>
+                        <h2>Başvuru Bilgisi</h2>
+                        <div class="toolbar" style="margin-bottom:8px;">
+                            <span class="scanStatus">Başvuran Discord ID:</span>
+                            <code id="yaSahipId" style="user-select:all;">—</code>
+                            <button class="ghost small" id="yaSahipKopyala" type="button">Kopyala</button>
+                        </div>
+                        <div class="scanStatus" style="margin-bottom:4px;">Yazılan her şey:</div>
+                        <pre id="yaDump" style="white-space:pre-wrap; word-break:break-word; margin:0;
+                             max-height:240px; overflow-y:auto; border:1px solid var(--border);
+                             border-radius:8px; padding:10px; font-size:12px; background:var(--surface-2);"></pre>
+                    </div>
+
                     <!-- Karar: Onay yeşil, Red kırmızı. Onayda ticket'ı açan
                          kişi etiketlenir, mülakat kanalı linki verilir. -->
                     <div class="card accent-card" style="margin:0;">
