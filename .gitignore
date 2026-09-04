@@ -61,3 +61,10 @@ Thumbs.db
 # sirasinda uzerine yazilmasin; ayrica takip edilmeyen dosya olarak kalsaydi
 # guncelle.ps1'in "yerel degisiklik var" kontrolu her seferinde takilirdi.
 server/public/logo.*
+
+# package-lock.json - npm "npm install" sirasinda otomatik uretir. Sunucudaki
+# npm surumu/platformu depodakinden farkli uretince "M server/package-lock.json"
+# olarak takip edilen bir degisiklik kaliyordu ve guncelle.ps1 "kaydedilmemis
+# degisiklik var" deyip pull'u DURDURUYORDU (her guncellemede tekrar eden sorun).
+# Depoda tutmuyoruz; her makine kendi lock'unu uretsin, guncelleme durmasin.
+package-lock.json
