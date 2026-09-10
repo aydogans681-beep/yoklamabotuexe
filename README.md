@@ -715,6 +715,31 @@ gönderilir (rate limit + botun işlemesi için).
 - Uç: `POST /api/tablo/gonder` (`{ roleIds: [...] }`), **tablo** izniyle. Kanal
   ve komut adı kodda sabit (`TABLO_KANALI`, `TABLO_KOMUTU`).
 
+### Ortak Sunucu Sorgusu (Discord tarafı - sekme değil)
+
+`1470230485820112950` kanalına **herhangi biri bir Discord ID** (ham ID ya da
+`<@id>` etiketi) yazınca, ana hesap o kişiyle **ortak olduğu sunucuları**, kişinin
+her sunucudaki **adını** ve **rollerini** liste hâlinde aynı kanala yazar.
+
+- **Ortak sunucular tek istekte** profil ucundan geliyor
+  (`users/{id}/profile?with_mutual_guilds=true` → `user.getProfile()`), 80+
+  sunucuyu tek tek taramaktan çok daha hızlı.
+- **Roller profil cevabında yok**; her ortak sunucu için üye kaydı ayrıca
+  çekiliyor: önce önbellek → REST → o da olmazsa **sunucuya özel profil**
+  (`getProfile(guildId)`, `guild_member`'ı rolleriyle önbelleğe koyar).
+  Aynı anda `ORTAK_SUNUCU_ESZAMAN` (4) sunucu işlenir.
+- Roller **hiyerarşik** sıralanır, `@everyone` listelenmez. Rol ve isimler
+  **düz metin** gider ve mesaj `allowedMentions: { parse: [] }` ile atılır -
+  **hiç kimse pinglenmez**.
+- Uzun sonuçlar Discord'un 2000 karakter sınırına göre **parçalara bölünür**;
+  tek bir sunucunun rol listesi bile sınırı aşarsa kırpılıp `(+N rol)` yazılır.
+  En fazla `ORTAK_SUNUCU_LIMITI` (40) sunucu listelenir.
+- **Sonsuz döngü koruması:** cevabın kendisi de ID içerdiği için ana hesabın
+  (ve botların) mesajları atlanır. Ayrıca aynı ID için eşzamanlı ikinci sorgu
+  çalışmaz (`ortakSunucuIslemde`).
+- Kullanıcının **gizlilik ayarları** ortak sunucuları gizliyorsa liste boş
+  dönebilir; bu durum kanala açıkça yazılır.
+
 ### TX Logs
 
 Log kanallarının **tüm geçmişi**, sunucu Discord'a bağlanır bağlanmaz arka

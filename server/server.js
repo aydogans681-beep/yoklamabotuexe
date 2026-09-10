@@ -475,6 +475,16 @@ const UYARI_ITIRAZ_ID = '599655428984537109';
 const BULK_WARNING_DELAY_MS = 1200;
 const EMERGENCY_MEETING_DELAY_MS = 500;
 
+// Ortak sunucu sorgusu: bu kanala bir Discord ID (ya da etiket) yazilinca ana
+// hesabin o kisiyle ORTAK oldugu sunuculari, kisinin oradaki adini ve rollerini
+// listeliyoruz. Sonuc mesaji ayni kanala gonderiliyor.
+const ORTAK_SUNUCU_KANALI = '1470230485820112950';
+// Cok fazla ortak sunucu olursa hem istek hem mesaj uzunlugu patliyor.
+const ORTAK_SUNUCU_LIMITI = 40;
+// Rol/uye bilgisi kac sunucudan AYNI ANDA cekilsin.
+const ORTAK_SUNUCU_ESZAMAN = 4;
+const DISCORD_MESAJ_SINIRI = 1900; // 2000 sinirinin altinda guvenli pay
+
 // ============================================================================
 // --- TX LOGS: log kanallari ---
 // TX Logs, bu menuleri iceren ust sekmenin adi; kendi kanali yok.
@@ -3663,7 +3673,180 @@ async function primeAllLogs() {
 
 // Ilk yukleme bittikten sonra yeni gelen log mesajlarini canli olarak ekliyoruz -
 // boylece sekme acikken kanal yeniden cekilmeden guncel kaliyor.
+// ============================================================================
+// --- ORTAK SUNUCU SORGUSU ---
+// ORTAK_SUNUCU_KANALI'na bir Discord ID (ya da etiket) yazilinca: ana hesabin
+// o kisiyle ORTAK oldugu sunuculari, kisinin her sunucudaki adini ve rollerini
+// listeleyip ayni kanala yaziyoruz.
+//
+// Ortak sunucular TEK istekte profil ucundan geliyor
+// (users/{id}/profile?with_mutual_guilds=true) - 80+ sunucuyu tek tek taramaktan
+// cok daha hizli. Roller profil cevabinda YOK; her ortak sunucu icin uye kaydi
+// ayrica cekiliyor (once onbellek, sonra REST, o da olmazsa sunucuya ozel
+// profil - o cagri guild_member'i rolleriyle onbellege koyuyor).
+// ============================================================================
+
+// Mesajdan ilk Discord ID'sini cikarir: <@123>, <@!123> ya da ham 17-20 hane.
+function ortakSunucuIdBul(icerik) {
+    if (!icerik) return null;
+    const etiket = icerik.match(/<@!?(\d{17,20})>/);
+    if (etiket) return etiket[1];
+    const ham = icerik.match(/(?:^|\D)(\d{17,20})(?:\D|$)/);
+    return ham ? ham[1] : null;
+}
+
+// Bir sunucudaki uye kaydini (roller icin) elde etmeye calisir.
+async function ortakSunucuUyesi(guild, user) {
+    const onbellek = guild.members.cache.get(user.id);
+    if (onbellek) return onbellek;
+    try {
+        return await guild.members.fetch(user.id);
+    } catch (error) {
+        // Kullanici hesabinda uye ucu her sunucuda calismayabiliyor. Sunucuya
+        // ozel profil cagrisi guild_member'i rolleriyle onbellege koyuyor.
+        try {
+            await user.getProfile(guild.id);
+            return guild.members.cache.get(user.id) || null;
+        } catch (error2) {
+            return null;
+        }
+    }
+}
+
+async function ortakSunuculariBul(userId) {
+    let user;
+    try {
+        user = await client.users.fetch(userId);
+    } catch (error) {
+        throw new Error(`Kullanıcı bulunamadı (${userId}).`);
+    }
+    try {
+        await user.getProfile();
+    } catch (error) {
+        throw new Error(`Profil alınamadı (${error.message}). `
+            + 'Kullanıcının gizlilik ayarları ortak sunucuları gizliyor olabilir.');
+    }
+
+    const ham = [...user.mutualGuilds.values()];
+    const toplam = ham.length;
+    const secilen = ham.slice(0, ORTAK_SUNUCU_LIMITI);
+    const sonuc = new Array(secilen.length);
+
+    let sonraki = 0;
+    async function isci() {
+        for (;;) {
+            const i = sonraki;
+            sonraki += 1;
+            if (i >= secilen.length) return;
+            const kayit = secilen[i];
+            const guild = client.guilds.cache.get(kayit.id);
+            if (!guild) {
+                sonuc[i] = {
+                    id: kayit.id, ad: `(bilinmeyen sunucu ${kayit.id})`,
+                    takma: kayit.nick || null, roller: [], hata: 'sunucu önbellekte yok',
+                };
+                continue;
+            }
+            // eslint-disable-next-line no-await-in-loop
+            const uye = await ortakSunucuUyesi(guild, user);
+            const roller = uye
+                ? [...uye.roles.cache.values()]
+                    .filter((r) => r.id !== guild.id)      // @everyone haric
+                    .sort(byHierarchyDesc)
+                    .map((r) => r.name)
+                : [];
+            sonuc[i] = {
+                id: guild.id,
+                ad: guild.name,
+                takma: (uye && (uye.nickname || uye.displayName)) || kayit.nick || null,
+                roller,
+                hata: uye ? null : 'üye bilgisi alınamadı',
+            };
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(ORTAK_SUNUCU_ESZAMAN, secilen.length) }, isci));
+
+    return { user, sunucular: sonuc.filter(Boolean), toplam, kesildi: toplam > secilen.length };
+}
+
+// Sonucu Discord'un 2000 karakter sinirina gore parcalara boler.
+function ortakSunucuMesajlari(user, veri) {
+    const bas = `📋 **${user.tag}** (\`${user.id}\`)\n`
+        + `🌐 Ortak sunucu: **${veri.toplam}**`
+        + (veri.kesildi ? ` — ilk ${veri.sunucular.length} tanesi gösteriliyor` : '')
+        + '\n';
+    if (!veri.sunucular.length) {
+        return [`${bas}\nOrtak sunucu bulunamadı (ya da kullanıcının gizlilik ayarları listelemeyi engelliyor).`];
+    }
+
+    const bloklar = veri.sunucular.map((s, i) => {
+        const basSatir = `\n**${i + 1}. ${s.ad}**\n`
+            + `┗ İsim: ${s.takma || '(yok)'}\n`
+            + '┗ Roller: ';
+        let roller = s.roller.length
+            ? s.roller.join(', ')
+            : (s.hata ? `(${s.hata})` : '(rol yok)');
+        // Tek bir sunucunun rol listesi bile siniri asabiliyor - kirp.
+        const yer = DISCORD_MESAJ_SINIRI - basSatir.length - 24;
+        if (roller.length > yer) roller = `${roller.slice(0, Math.max(0, yer))}… (+${s.roller.length} rol)`;
+        return basSatir + roller;
+    });
+
+    const parcalar = [];
+    let simdiki = bas;
+    bloklar.forEach((blok) => {
+        if (simdiki.length + blok.length > DISCORD_MESAJ_SINIRI) {
+            if (simdiki.trim()) parcalar.push(simdiki);
+            simdiki = '';
+        }
+        simdiki += blok;
+    });
+    if (simdiki.trim()) parcalar.push(simdiki);
+    return parcalar;
+}
+
+// Ayni ID icin ust uste sorgu gelmesin (spam korumasi).
+const ortakSunucuIslemde = new Set();
+
+async function ortakSunucuSorgusunuCalistir(message, hedefId) {
+    if (ortakSunucuIslemde.has(hedefId)) return;
+    ortakSunucuIslemde.add(hedefId);
+    try {
+        message.channel.sendTyping().catch(() => {});
+        const veri = await ortakSunuculariBul(hedefId);
+        const parcalar = ortakSunucuMesajlari(veri.user, veri);
+        for (let i = 0; i < parcalar.length; i += 1) {
+            // allowedMentions: hic kimse pinglenmesin - rol/kisi adlari metin olarak gidiyor.
+            // eslint-disable-next-line no-await-in-loop
+            await message.channel.send({ content: parcalar[i], allowedMentions: { parse: [] } });
+        }
+        console.log(`[OrtakSunucu] ${hedefId}: ${veri.toplam} ortak sunucu listelendi.`);
+    } catch (error) {
+        console.log(`[OrtakSunucu] ${hedefId} sorgusu basarisiz: ${error.message}`);
+        message.channel.send({
+            content: `❌ \`${hedefId}\` için liste alınamadı: ${error.message}`,
+            allowedMentions: { parse: [] },
+        }).catch(() => {});
+    } finally {
+        ortakSunucuIslemde.delete(hedefId);
+    }
+}
+
 client.on('messageCreate', (message) => {
+    // Ortak sunucu sorgusu. KENDI cevabimiz da ID iceriyor - kendi mesajlarimizi
+    // atlamazsak sonsuz donguye girerdi.
+    try {
+        if (message.channelId === ORTAK_SUNUCU_KANALI
+            && message.author
+            && !message.author.bot
+            && !(client.user && message.author.id === client.user.id)) {
+            const hedefId = ortakSunucuIdBul(message.content);
+            if (hedefId) ortakSunucuSorgusunuCalistir(message, hedefId);
+        }
+    } catch (error) {
+        console.log(`[OrtakSunucu] Yakalama hatasi: ${error.message}`);
+    }
+
     // AC "kontrol" otomasyonu: AC ticket kategorisinde, tokenini giren bir AC
     // "kontrol" yazinca onun KENDI hesabindan otomatik /nexorapin + SS iste.
     try {
