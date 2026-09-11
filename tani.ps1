@@ -33,18 +33,33 @@ try {
 
 Write-Host ""
 Write-Host "Calisan kod" -ForegroundColor Green
-Write-Host "  commit      : $($s.commit)   dal: $($s.dal)"
+Write-Host "  commit      : $($s.commit)   dal: $($s.dal)   <- DISKTEKI .git (calisan kodu kanitlamaz)"
 Write-Host "  baslatildi  : $($s.baslatildi)  ($($s.calismaSuresiSn) sn once)"
 
-# Diskteki kod ile calisan kod ayni mi?
-$yerel = $null
-$eskiEAP = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-try { $yerel = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1) } catch { $yerel = $null }
-$ErrorActionPreference = $eskiEAP
-$global:LASTEXITCODE = 0
-if ($yerel -and $s.commit -and ($yerel.Trim() -ne $s.commit)) {
-    Write-Host "  UYARI: diskte $($yerel.Trim()), calisan $($s.commit) - eski surec hala ayakta olabilir." -ForegroundColor Yellow
+# GERCEK tazelik kontrolu: KOD_SURUMU kaynak dosyanin icinde gomulu oldugu icin
+# yalnizca surec yeniden basladiginda degisir. "commit" ise git pull biter bitmez
+# yeni gorunur ve eski kodu calistiran bir sureci ele vermez.
+$diskKod = $null
+try {
+    $sj = Join-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'server') 'server.js'
+    if (Test-Path $sj) {
+        $m = Select-String -Path $sj -Pattern "^const KOD_SURUMU = '([^']+)'" | Select-Object -First 1
+        if ($m) { $diskKod = $m.Matches[0].Groups[1].Value }
+    }
+} catch { $diskKod = $null }
+
+Write-Host "  kod surumu  : $($s.kodSurumu)   (diskte: $diskKod)"
+if ($s.ozellikler) {
+    Write-Host "  ozellikler  : $($s.ozellikler -join ', ')"
+}
+if ($diskKod -and (-not $s.kodSurumu)) {
+    Write-Host "  DIKKAT: calisan surec kod surumunu bildirmiyor -> ESKI kod calisiyor." -ForegroundColor Red
+    Write-Host "          Yeni menuler/uclar gelmez. Cozum:  .\temizle.ps1" -ForegroundColor Yellow
+} elseif ($diskKod -and $s.kodSurumu -and ($diskKod -ne $s.kodSurumu)) {
+    Write-Host "  DIKKAT: diskte $diskKod ama CALISAN $($s.kodSurumu) - eski surec hala ayakta." -ForegroundColor Red
+    Write-Host "          Cozum:  .\temizle.ps1" -ForegroundColor Yellow
+} elseif ($diskKod) {
+    Write-Host "  Calisan kod GUNCEL." -ForegroundColor Cyan
 }
 
 Write-Host ""

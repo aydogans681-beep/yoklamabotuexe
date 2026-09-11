@@ -4657,6 +4657,30 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // sorusunu kesin cevaplamak icin.
 const SUNUCU_BASLANGIC = Date.now();
 
+// ============================================================================
+// --- KOD SURUMU: "calisan surec gercekten guncel mi?" ---
+// DIKKAT: /api/surum'daki "commit" DISKTEKI .git'ten okunuyor. Yani "git pull"
+// yapilir yapilmaz YENI gorunur - ama node eski kodu bellekte tutmaya devam
+// ediyorsa bunu ELE VERMEZ. "Guncelledim, menu/ozellik yine gelmedi" sorununun
+// asil sebebi buydu; guncelle.ps1'in "diskteki kod X ama calisan Y" uyarisi da
+// ayni yuzden HIC tetiklenemiyordu (iki deger de ayni .git'ten geliyordu).
+//
+// Bu sabit KAYNAK DOSYANIN ICINDE oldugu icin yalnizca surec YENIDEN BASLAYINCA
+// degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
+// dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
+// Yeni bir ozellik eklendiginde bu degeri artir.
+const KOD_SURUMU = '2026-09-11.1';
+
+// Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
+// bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
+const KOD_OZELLIKLERI = [
+    'sese-sok',       // Yoklama > Sese Sok (yonetici)
+    'tablo',          // Tablo sekmesi + /api/tablo/*
+    'ortak-sunucu',   // ORTAK_SUNUCU_KANALI'na ID atilinca liste
+    'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
+    'katlanir-kart',  // Yoklama kartlari acilir/kapanir
+];
+
 // Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz
 // (VDS'de PATH'te olmayabilir) - .git dosyalarini dogrudan okuyoruz. Depo
 // degilse ya da okunamazsa null doner, uc yine calisir.
@@ -4706,8 +4730,12 @@ app.get('/api/surum', (req, res) => {
         baslatildi: new Date(SUNUCU_BASLANGIC).toISOString(),
         calismaSuresiSn: Math.round((Date.now() - SUNUCU_BASLANGIC) / 1000),
         serverJsTarihi: dosyaZamani,
-        commit: surum.commit,
+        commit: surum.commit,   // DISKTEKI .git - calisan kodu KANITLAMAZ
         dal: surum.dal,
+        // Bunlar kaynak dosyanin icinde gomulu: yalnizca surec yeniden
+        // baslayinca degisir, yani CALISAN kodu kanitlar.
+        kodSurumu: KOD_SURUMU,
+        ozellikler: KOD_OZELLIKLERI,
         ayrintili: ayrinti,
         // Rol islemlerinde kullanilan bot - yanlis ID'de butun rol verme
         // sessizce calismiyordu, o yuzden burada gorunuyor.

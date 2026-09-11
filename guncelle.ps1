@@ -19,6 +19,51 @@ $ErrorActionPreference = "Stop"
 $kok = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $kok
 
+# ============================================================================
+# Calisan surec GERCEKTEN guncel mi?
+# /api/surum'daki "commit" DISKTEKI .git'ten okunuyor: git pull biter bitmez
+# yeni gorunur ve eski kodu bellekte calistiran bir sureci ELE VERMEZ. Eskiden
+# buradaki karsilastirma iki tarafi da ayni .git'ten aldigi icin hic tetiklenmiyor,
+# "TAMAM" yazip geciyordu - "guncelledim ama ozellik yok" bundandi.
+# server.js icine gomulu KOD_SURUMU ise yalnizca surec YENIDEN BASLAYINCA degisir.
+# ============================================================================
+function DiskKodSurumu {
+    param($sunucuDizini)
+    try {
+        $sj = Join-Path $sunucuDizini 'server.js'
+        if (-not (Test-Path $sj)) { return $null }
+        $m = Select-String -Path $sj -Pattern "^const KOD_SURUMU = '([^']+)'" | Select-Object -First 1
+        if ($m) { return $m.Matches[0].Groups[1].Value }
+    } catch { }
+    return $null
+}
+
+function KodTazeMi {
+    param($surum, $sunucuDizini)
+    $disk = DiskKodSurumu $sunucuDizini
+    $calisan = $surum.kodSurumu
+    if (-not $disk) { return }
+
+    if (-not $calisan) {
+        Write-Host ""
+        Write-Host "DIKKAT: Calisan surec kod surumunu bildirmiyor -> ESKI kod calisiyor." -ForegroundColor Red
+        Write-Host "Yeni menuler/uclar GELMEZ. Sunu calistir:" -ForegroundColor Yellow
+        Write-Host "    .\temizle.ps1" -ForegroundColor Yellow
+        return
+    }
+    if ($disk -ne $calisan) {
+        Write-Host ""
+        Write-Host "DIKKAT: Diskteki kod $disk ama CALISAN surec $calisan." -ForegroundColor Red
+        Write-Host "Yeniden baslatma islememis; 3000 portunu eski bir kopya tutuyor olabilir." -ForegroundColor Yellow
+        Write-Host "    .\temizle.ps1" -ForegroundColor Yellow
+        return
+    }
+    Write-Host "   kod surumu : $calisan  (GUNCEL - yeni kod calisiyor)" -ForegroundColor Cyan
+    if ($surum.ozellikler) {
+        Write-Host "   ozellikler : $($surum.ozellikler -join ', ')" -ForegroundColor DarkGray
+    }
+}
+
 # Dal SABIT YAZILMIYOR - checkout edilmis dal ne ise o cekiliyor.
 #
 # Eskiden burada tek bir dal adi yaziliydi. Baska bir dala gecildiginde bu
@@ -184,21 +229,7 @@ if ($pm2Kayitli) {
         }
         Write-Host "   oto yoklama: $otoMetin"
 
-        # git stderr'e yazarsa ErrorActionPreference='Stop' altinda sonlandirici
-        # hataya donusuyor - bu kontrol yuzunden guncelleme patlamasin.
-        $yerel = $null
-        $eskiEAP2 = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try { $yerel = (& git rev-parse --short HEAD 2>$null | Select-Object -First 1) } catch { $yerel = $null }
-        $ErrorActionPreference = $eskiEAP2
-        $global:LASTEXITCODE = 0
-
-        if ($yerel -and $surum.commit -and ($yerel.Trim() -ne $surum.commit)) {
-            Write-Host ""
-            Write-Host "UYARI: Diskteki kod $yerel ama calisan surec $($surum.commit)." -ForegroundColor Yellow
-            Write-Host "3000 portunu baska bir kopya tutuyor olabilir. Kontrol et:" -ForegroundColor Yellow
-            Write-Host "    Get-NetTCPConnection -LocalPort 3000 -State Listen | Select OwningProcess"
-        }
+        KodTazeMi $surum $sunucuDizini
     } else {
         Write-Host ""
         Write-Host "DIKKAT: Bot yeniden baslatildi ama 3000 portundan cevap alinamadi." -ForegroundColor Red
@@ -260,6 +291,7 @@ if ($pm2Kayitli) {
         Write-Host "TAMAM - bot pm2'ye kaydedildi ve calisiyor." -ForegroundColor Cyan
         Write-Host "   commit    : $($surum.commit)  (dal: $($surum.dal))"
         Write-Host "   rol botu  : $($surum.rolBotId)"
+        KodTazeMi $surum $sunucuDizini
         Write-Host "Bundan sonra bu script yeniden baslatmayi kendisi yapacak." -ForegroundColor DarkGray
     } else {
         Write-Host ""
