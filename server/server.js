@@ -3842,7 +3842,7 @@ const VER_KOMUT_KALIBI = /^\s*ver\s+(?:<@!?)?(\d{17,20})>?(?:\s+(?:<@&)?(\d{17,2
 
 // Komutta rol ID verilmezse bu rol veriliyor. Panelden degistirilebilsin diye
 // panelSettings.verRolId onceligi var; bos ise komutta rol ID istenir.
-const VER_VARSAYILAN_ROL_ID = '';
+const VER_VARSAYILAN_ROL_ID = '1547705958770278581';
 
 function verVarsayilanRol() {
     return (panelSettings && panelSettings.verRolId) || VER_VARSAYILAN_ROL_ID || '';
@@ -4789,7 +4789,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.3';
+const KOD_SURUMU = '2026-09-11.4';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.

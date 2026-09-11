@@ -763,8 +763,9 @@ ver <@kişi> <@&rol>           -> etiket biçimi de olur
   bot/entegrasyon rolü engeli, slash gönderimi ve **"rol gerçekten oluştu mu"**
   doğrulaması hep orada. Yani panelden rol vermekle birebir aynı güvenlik.
 - Cevaplar: `✅ ... rolü verildi` / `⚠️ ... zaten var` / `❌ Rol verilemedi: ...`
-- **Varsayılan rol** `panelSettings.verRolId` (yoksa `VER_VARSAYILAN_ROL_ID`).
-  Ayarlı değilken komutta rol ID verilmezse kullanım bilgisi yazılır.
+- **Varsayılan rol:** `1547705958770278581` (`VER_VARSAYILAN_ROL_ID`). Yani
+  `ver <discord-id>` demek yeterli, rol ID yazmaya gerek yok. Komutta rol ID
+  verilirse o kazanır. `panelSettings.verRolId` doluysa o her ikisini de ezer.
 - **Çakışma önlendi:** aynı kanal ID görünce ortak sunucu listesi de döküyor.
   `ver <id>` mesajı **önce** komut olarak sınanıyor; komutsa liste dökülmüyor,
   değilse sorguya düşüyor. Kendi cevaplarımız (`✅ ⚠️ ❌ 📋`) iki özelliği de
