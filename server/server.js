@@ -4062,6 +4062,27 @@ function mesajiMetneCevir(mesaj) {
     return parcalar.filter(Boolean).join('\n').trim();
 }
 
+// Mesajin BIREBIR kopyasini baska kanala tasir (Discord "ilet"/forward).
+// Neden forward: kullanici hesaplari zengin embed GONDEREMIYOR (bot-only), yani
+// gelen embed'i yeniden olusturup yollayamayiz. Forward yeni embed uretmez,
+// orijinal mesaja referans verir - bu yuzden gorunum birebir korunuyor.
+// Kutuphanede hazir bir forward yok; ham API kullaniyoruz (message_reference
+// type 1 = FORWARD).
+// NOT: efemeral (yalnizca cagirana gorunen) mesajlar iletilemez - cagiran taraf
+// bu durumda metin yedegine dusuyor.
+function mesajiIlet(hedefKanalId, mesaj) {
+    return client.api.channels(hedefKanalId).messages.post({
+        data: {
+            message_reference: {
+                type: 1,
+                message_id: mesaj.id,
+                channel_id: mesaj.channelId,
+                ...(mesaj.guildId ? { guild_id: mesaj.guildId } : {}),
+            },
+        },
+    });
+}
+
 // Uzun metni Discord sinirina gore parcalar. Satir butunlugunu korur; tek
 // basina siniri asan satiri da boler.
 function metniParcala(metin, sinir = DISCORD_MESAJ_SINIRI) {
@@ -4141,22 +4162,40 @@ async function panelSonucunuPaylas(guild, komutKanali, gameId, isteyenId) {
     }
     if (!sonucKanali) throw new Error('Sonuç kanalı bulunamadı, PANEL_SONUC_KANALI hatalı olabilir.');
 
-    let govde;
-    if (!cevap) {
-        govde = `⚠️ \`/${PLAYER_INFO_KOMUTU} gameid: ${gameId}\` gönderildi ama `
-            + `${Math.round(PLAYER_INFO_BEKLEME_MS / 1000)} sn içinde cevap gelmedi.`;
-    } else {
-        govde = mesajiMetneCevir(cevap)
-            || `⚠️ \`/${PLAYER_INFO_KOMUTU}\` cevabı alındı ama içeriği okunamadı.`;
+    // ONCE BIREBIR KOPYA: Discord'un "ilet" (forward) ozelligi mesajin AYNISINI
+    // tasiyor - embed dahil. Yeni bir embed URETMEDIGIMIZ icin "kullanici
+    // hesaplari zengin embed gonderemez" kisitina takilmiyor. Kutuphanede hazir
+    // bir forward yok, ham API ile gonderiyoruz (message_reference type 1).
+    let iletildi = false;
+    if (cevap) {
+        try {
+            await mesajiIlet(sonucKanali.id, cevap);
+            iletildi = true;
+        } catch (error) {
+            // Efemeral (yalnizca bize gorunen) cevaplar iletilemiyor; o durumda
+            // asagidaki METIN yedegi devreye giriyor - sonuc yine de tasiniyor.
+            console.log(`[Panel] Birebir iletme basarisiz, metne cevriliyor: ${error.message}`);
+        }
     }
 
-    // Cevap metni disaridan (baska botun embed'inden) geliyor: icinde etiket
-    // olsa bile kimse pinglenmesin diye parse:[] ile gonderiyoruz.
-    const parcalar = metniParcala(govde);
-    for (let i = 0; i < parcalar.length; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        const g = await sonucKanali.send({ content: parcalar[i], allowedMentions: { parse: [] } });
-        otomatikCiktiKaydet(g);
+    if (!iletildi) {
+        let govde;
+        if (!cevap) {
+            govde = `⚠️ \`/${PLAYER_INFO_KOMUTU} gameid: ${gameId}\` gönderildi ama `
+                + `${Math.round(PLAYER_INFO_BEKLEME_MS / 1000)} sn içinde cevap gelmedi.`;
+        } else {
+            govde = mesajiMetneCevir(cevap)
+                || `⚠️ \`/${PLAYER_INFO_KOMUTU}\` cevabı alındı ama içeriği okunamadı.`;
+        }
+
+        // Metin disaridan (baska botun embed'inden) geliyor: icinde etiket olsa
+        // bile kimse pinglenmesin diye parse:[] ile gonderiyoruz.
+        const parcalar = metniParcala(govde);
+        for (let i = 0; i < parcalar.length; i += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            const g = await sonucKanali.send({ content: parcalar[i], allowedMentions: { parse: [] } });
+            otomatikCiktiKaydet(g);
+        }
     }
 
     // Altina: paneli KIM verdi. Yalnizca o kisi pinglenir.
@@ -4171,7 +4210,7 @@ async function panelSonucunuPaylas(guild, komutKanali, gameId, isteyenId) {
             console.log(`[Panel] Sonuc kanalinda etiket gonderilemedi: ${error.message}`);
         }
     }
-    return { cevapGeldi: Boolean(cevap), parca: parcalar.length };
+    return { cevapGeldi: Boolean(cevap), iletildi };
 }
 
 // Ayni istek ust uste islenmesin.
@@ -5131,7 +5170,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.8';
+const KOD_SURUMU = '2026-09-11.9';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.

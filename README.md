@@ -824,9 +824,14 @@ kanalına taşınır ve **altına paneli veren yetkili etiketlenir**.
   yakalanmıyor. Dinleme komut **gönderilmeden önce** başlıyor (hızlı cevap
   kaçmasın); 12 sn içinde gelmezse sonuç kanalına "cevap gelmedi" yazılıyor -
   sessiz kalmıyor.
-- **Embed → düz metin:** kullanıcı hesapları **zengin embed gönderemiyor**
-  (bot-only). Bu yüzden cevap olduğu gibi iletilemiyor; başlık, açıklama,
-  alanlar, footer, görsel/ek linkleri okunabilir metne çevriliyor.
+- **Birebir kopya (öncelikli):** sonuç, Discord'un **"ilet" (forward)**
+  özelliğiyle taşınıyor (`mesajiIlet`, ham API, `message_reference type 1`).
+  Forward **yeni embed üretmez**, orijinal mesaja referans verir - bu yüzden
+  kullanıcı hesaplarının "zengin embed gönderemez" kısıtına takılmadan görünüm
+  **birebir korunur**. Kütüphanede hazır forward yok, ham API kullanılıyor.
+- **Metin yedeği:** efemeral (yalnızca çağırana görünen) cevaplar iletilemiyor.
+  Forward başarısız olursa embed başlık/açıklama/alanlar/footer/görsel linkleri
+  okunabilir düz metne çevrilip gönderiliyor - sonuç hiçbir durumda kaybolmuyor.
 - Uzun sonuçlar Discord sınırına göre parçalanır (`metniParcala`); satır
   bütünlüğü korunur, tek başına sınırı aşan satır da bölünür.
 - Taşınan metin **dış kaynaktan** (başka botun embed'i) geldiği için
