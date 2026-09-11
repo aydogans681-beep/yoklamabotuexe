@@ -479,6 +479,12 @@ const EMERGENCY_MEETING_DELAY_MS = 500;
 // hesabin o kisiyle ORTAK oldugu sunuculari, kisinin oradaki adini ve rollerini
 // listeliyoruz. Sonuc mesaji ayni kanala gonderiliyor.
 const ORTAK_SUNUCU_KANALI = '1470230485820112950';
+
+// Yayinci ekleme: yetkililer ISTEK kanalina "id: 1626  level: Seviye 2" yaziyor,
+// biz bunu KOMUT kanalina /yayinciekle slash komutu olarak gonderiyoruz.
+const YAYINCI_ISTEK_KANALI = '1547957553680482355';
+const YAYINCI_KOMUT_KANALI = '1530911005880746014';
+const YAYINCI_KOMUTU = 'yayinciekle';
 // Cok fazla ortak sunucu olursa hem istek hem mesaj uzunlugu patliyor.
 const ORTAK_SUNUCU_LIMITI = 40;
 // Rol/uye bilgisi kac sunucudan AYNI ANDA cekilsin.
@@ -1087,6 +1093,71 @@ async function slashGonderAdla(guild, channel, komutAdi, ...args) {
     });
     await nesne.sendSlashCommand(sahteMesaj, [], args);
     return { name: komut.name, id: komut.id, applicationId: komut.application_id };
+}
+
+// slashGonderAdla argumanlari POZISYONEL yolluyor: kutuphane options[i] ->
+// komut.options[i] esliyor. Bir komutun secenek SIRASINI bilmeden [a, b]
+// gondermek, sira tersse degerleri SESSIZCE takas eder. Bu surum degerleri
+// komutun KENDI bildirdigi siraya gore diziyor - biz yalnizca secenek ADINI
+// biliyoruz, sirasini komutun kendisinden ogreniyoruz.
+async function slashGonderAlanlarla(guild, channel, komutAdi, alanlar, esAnlamlilar = {}) {
+    let komutlar = await komutDizinileri(guild);
+    let komut = komutlar.find((c) => c.type === 1 && c.name === komutAdi);
+    if (!komut) {
+        komutlar = await komutDizinileri(guild, true);   // onbellek eski olabilir
+        komut = komutlar.find((c) => c.type === 1 && c.name === komutAdi);
+    }
+    if (!komut) {
+        throw new Error(`"/${komutAdi}" komutu sunucunun slash dizininde bulunamadı `
+            + `(${komutlar.length} komut tarandı). Komut adı değişmiş ya da botu sunucuda değil olabilir.`);
+    }
+
+    const secenekler = Array.isArray(komut.options) ? komut.options : [];
+    if (!secenekler.length) {
+        throw new Error(`"/${komutAdi}" komutunun hiç seçeneği yok.`);
+    }
+
+    const args = [];
+    const eksikZorunlu = [];
+    for (let i = 0; i < secenekler.length; i += 1) {
+        const sec = secenekler[i];
+        const ad = String(sec.name || '').toLowerCase();
+        let deger = alanlar[ad];
+        if (deger === undefined && Array.isArray(esAnlamlilar[ad])) {
+            const alt = esAnlamlilar[ad].find((a) => alanlar[a] !== undefined);
+            if (alt) deger = alanlar[alt];
+        }
+        if (deger === undefined) {
+            if (sec.required) eksikZorunlu.push(sec.name);
+            // Degeri olmayan secenekten SONRASINI gondermiyoruz: pozisyonel
+            // eslemede bosluk birakmak sonraki degerleri kaydirirdi.
+            break;
+        }
+        args.push(deger);
+    }
+
+    if (eksikZorunlu.length) {
+        throw new Error(`"/${komutAdi}" için zorunlu seçenek doldurulamadı: ${eksikZorunlu.join(', ')}. `
+            + `Komutun seçenekleri: ${secenekler.map((o) => o.name).join(', ')}`);
+    }
+    if (!args.length) {
+        throw new Error(`"/${komutAdi}" için hiçbir seçenek eşleşmedi. `
+            + `Komutun seçenekleri: ${secenekler.map((o) => o.name).join(', ')}`);
+    }
+
+    const nesne = await komutNesnesi(komut);
+    const sahteMesaj = new SlashMesaji(client, {
+        channel_id: channel.id,
+        guild_id: guild.id,
+        author: client.user,
+        content: '',
+        id: client.user.id,
+    });
+    // Choice'li secenekler ve INTEGER donusumu kutuphanede: parseChoices
+    // degeri choice ADI ya da DEGERI ile esliyor, gecersizse gecerli
+    // secenekleri listeleyen bir hata firlatiyor.
+    await nesne.sendSlashCommand(sahteMesaj, [], args);
+    return { name: komut.name, id: komut.id, applicationId: komut.application_id, args };
 }
 
 function waitForRoleBotReply(timeoutMs = 6000) {
@@ -3931,7 +4002,104 @@ async function ortakSunucuSorgusunuCalistir(message, hedefId) {
     }
 }
 
+// ============================================================================
+// --- YAYINCI EKLE: "id: 1626  level: Seviye 2" -> /yayinciekle ---
+// Yetkililer YAYINCI_ISTEK_KANALI'na alanlari yaziyor; biz YAYINCI_KOMUT_KANALI'na
+// /yayinciekle slash komutunu gonderiyoruz. Degerler komutun KENDI secenek
+// sirasina gore diziliyor (slashGonderAlanlarla) - "id" ve "seviye" hangi sirada
+// tanimlanmis olursa olsun dogru yere gidiyor.
+// ============================================================================
+// "anahtar: deger" ciftleri. Deger, BIR SONRAKI anahtara ya da satir sonuna
+// kadar suruyor; boylece "Seviye 2" gibi bosluklu degerler bozulmuyor ve
+// "level: Seviye 2 id: 1626" gibi ters sirada yazilsa bile dogru ayrisiyor.
+const YAYINCI_ALAN_KALIBI = /\b(id|seviye|level|lvl)\s*[:=]\s*([^\n]*?)(?=\s+\b(?:id|seviye|level|lvl)\s*[:=]|\s*$)/gim;
+
+function yayinciAlanlariAyristir(icerik) {
+    if (!icerik) return null;
+    const alanlar = {};
+    YAYINCI_ALAN_KALIBI.lastIndex = 0;   // global regex - durum tasimasin
+    let m = YAYINCI_ALAN_KALIBI.exec(icerik);
+    while (m) {
+        const anahtar = m[1].toLowerCase();
+        const deger = (m[2] || '').trim();
+        if (deger) {
+            if (anahtar === 'id') alanlar.id = deger;
+            else alanlar.seviye = deger;   // seviye / level / lvl
+        }
+        m = YAYINCI_ALAN_KALIBI.exec(icerik);
+    }
+    if (!alanlar.id || !alanlar.seviye) return null;   // ikisi de sart
+    return alanlar;
+}
+
+// Ayni istek ust uste islenmesin.
+const yayinciIslemde = new Set();
+
+async function yayinciCevapGonder(message, icerik) {
+    try {
+        const gonderildi = await message.channel.send({
+            content: icerik, allowedMentions: { parse: [] },
+        });
+        otomatikCiktiKaydet(gonderildi);
+    } catch (error) {
+        console.log(`[Yayinci] Kanala YAZILAMIYOR (${error.message}). `
+            + 'Ana hesabin bu kanalda "Mesaj Gonder" izni var mi?');
+    }
+}
+
+async function yayinciEkleCalistir(message, alanlar) {
+    const anahtar = `${alanlar.id}:${alanlar.seviye}`;
+    if (yayinciIslemde.has(anahtar)) return;
+    yayinciIslemde.add(anahtar);
+    try {
+        const guild = await getReadyGuild();
+        let kanal;
+        try {
+            kanal = await client.channels.fetch(YAYINCI_KOMUT_KANALI);
+        } catch (error) {
+            throw new Error(`Komut kanalı alınamadı: ${error.message}`);
+        }
+        if (!kanal) throw new Error('Komut kanalı bulunamadı, YAYINCI_KOMUT_KANALI hatalı olabilir.');
+
+        const gonderilen = await slashGonderAlanlarla(
+            guild, kanal, YAYINCI_KOMUTU,
+            { id: alanlar.id, seviye: alanlar.seviye },
+            // Bot secenegi "level" diye tanimlamis olabilir - ikisini de dene.
+            { seviye: ['level', 'lvl'], level: ['seviye', 'lvl'] },
+        );
+        console.log(`[Yayinci] /${gonderilen.name} gonderildi: ${JSON.stringify(gonderilen.args)}`);
+        // DIKKAT: cevapta "id:" yazmiyoruz - bu kanali dinledigimiz icin kendi
+        // cevabimiz yeniden tetiklenirdi. (Ayrica ✅/❌ oneki de korumada.)
+        await yayinciCevapGonder(message,
+            `✅ Gönderildi → \`/${gonderilen.name}\`  (ID ${alanlar.id} · ${alanlar.seviye})`);
+    } catch (error) {
+        console.log(`[Yayinci] Gonderilemedi (${alanlar.id} / ${alanlar.seviye}): ${error.message}`);
+        await yayinciCevapGonder(message, `❌ Yayıncı eklenemedi: ${error.message}`);
+    } finally {
+        yayinciIslemde.delete(anahtar);
+    }
+}
+
 client.on('messageCreate', (message) => {
+    // Yayinci ekleme istegi: "id: ...  level: ..." -> /yayinciekle
+    try {
+        if (message.channelId === YAYINCI_ISTEK_KANALI && message.author && !message.author.bot) {
+            const bizden = Boolean(client.user) && message.author.id === client.user.id;
+            const kendiCiktimiz = bizden
+                && (OTOMATIK_CIKTI_ONEKI.test(message.content || '')
+                    || otomatikCiktilarimiz.has(message.id));
+            if (!kendiCiktimiz) {
+                const alanlar = yayinciAlanlariAyristir(message.content);
+                if (alanlar) {
+                    console.log(`[Yayinci] ${message.author.tag} -> id=${alanlar.id} seviye=${alanlar.seviye}`);
+                    yayinciEkleCalistir(message, alanlar);
+                }
+            }
+        }
+    } catch (error) {
+        console.log(`[Yayinci] Yakalama hatasi: ${error.message}`);
+    }
+
     // Ortak sunucu sorgusu.
     // Eskiden ana hesabin BUTUN mesajlari atlaniyordu (cikti da ID icerdigi icin
     // dongu korumasi). Ama panelin sahibi sorguyu cogu zaman KENDI ana hesabiyla
@@ -4789,7 +4957,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.4';
+const KOD_SURUMU = '2026-09-11.5';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -4798,6 +4966,7 @@ const KOD_OZELLIKLERI = [
     'tablo',          // Tablo sekmesi + /api/tablo/*
     'ortak-sunucu',   // ORTAK_SUNUCU_KANALI'na ID atilinca liste
     'ver-komutu',     // ayni kanalda "ver <id> [rolId]" ile rol verme
+    'yayinci-ekle',   // "id: .. level: .." -> /yayinciekle
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
 ];

@@ -771,6 +771,33 @@ ver <@kişi> <@&rol>           -> etiket biçimi de olur
   değilse sorguya düşüyor. Kendi cevaplarımız (`✅ ⚠️ ❌ 📋`) iki özelliği de
   tetiklemiyor.
 
+### Yayıncı Ekle (Discord tarafı - sekme değil)
+
+Yetkililer **`1547957553680482355`** kanalına alanları yazıyor, bot bunu
+**`1530911005880746014`** kanalına `/yayinciekle` slash komutu olarak gönderiyor.
+
+```
+id: 1626  level: Seviye 2
+```
+
+- `id:` / `seviye:` / `level:` / `lvl:` kabul edilir, `=` de olur, büyük-küçük
+  harf farketmez, alanlar **ayrı satırda ya da ters sırada** olabilir.
+- Değer, **bir sonraki anahtara ya da satır sonuna** kadar sürer; böylece
+  `Seviye 2` gibi **boşluklu değerler** bozulmaz.
+- İkisi de yoksa mesaj yok sayılır (düz sohbet tetiklemez).
+- **Seçenekler isme göre eşlenir** (`slashGonderAlanlarla`): kütüphane
+  argümanları *pozisyonel* yolluyor (`options[i]` → `komut.options[i]`), yani
+  komutun seçenek sırasını bilmeden `[id, seviye]` göndermek sıra tersse
+  değerleri **sessizce takas ederdi**. Artık değerler komutun **kendi bildirdiği
+  sıraya** diziliyor; bot seçeneği `level` diye tanımlamışsa eş anlamlı olarak
+  o da eşleşiyor. Zorunlu bir seçenek doldurulamazsa **hiçbir şey gönderilmez**,
+  komutun seçeneklerini listeleyen bir hata yazılır.
+- `seviye` bir *choice* (hazır seçenek) ise kütüphane değeri choice'ın **adı ya
+  da değeriyle** eşler; geçersizse geçerli seçenekleri listeleyen hata döner.
+- Cevap: `✅ Gönderildi → /yayinciekle (ID 1626 · Seviye 2)`. Cevapta bilerek
+  `id:` **yazılmaz** - bu kanalı dinlediğimiz için kendi cevabımız yeniden
+  tetiklenirdi (ayrıca `✅/❌` öneki de korumada).
+
 ### TX Logs
 
 Log kanallarının **tüm geçmişi**, sunucu Discord'a bağlanır bağlanmaz arka
