@@ -4068,6 +4068,26 @@ async function yayinciEkleCalistir(message, alanlar) {
             { seviye: ['level', 'lvl'], level: ['seviye', 'lvl'] },
         );
         console.log(`[Yayinci] /${gonderilen.name} gonderildi: ${JSON.stringify(gonderilen.args)}`);
+
+        // Komutun ALTINA istegi yazan kisiyi etiketle: komut kanalinda isteğin
+        // kimden geldigi belli olsun.
+        // allowedMentions BILEREK acik ama SADECE bu kisi icin: "users" listesi
+        // yalnizca istegi yazani iceriyor, yani metinde baska bir etiket olsa
+        // bile o pinglenmiyor. (Diger otomatik mesajlarimiz parse:[] ile hic
+        // kimseyi pinglemiyor - burada etiketin bildirim gondermesi isteniyor.)
+        const isteyenId = message.author && message.author.id;
+        if (isteyenId) {
+            try {
+                const etiket = await kanal.send({
+                    content: `<@${isteyenId}>`,
+                    allowedMentions: { users: [isteyenId] },
+                });
+                otomatikCiktiKaydet(etiket);
+            } catch (error) {
+                // Etiket gidemezse komut zaten gitti - islemi basarisiz sayma.
+                console.log(`[Yayinci] Etiket gonderilemedi: ${error.message}`);
+            }
+        }
         // DIKKAT: cevapta "id:" yazmiyoruz - bu kanali dinledigimiz icin kendi
         // cevabimiz yeniden tetiklenirdi. (Ayrica ✅/❌ oneki de korumada.)
         await yayinciCevapGonder(message,
@@ -4957,7 +4977,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.5';
+const KOD_SURUMU = '2026-09-11.6';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.

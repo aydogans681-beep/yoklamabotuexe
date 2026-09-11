@@ -794,6 +794,12 @@ id: 1626  level: Seviye 2
   komutun seçeneklerini listeleyen bir hata yazılır.
 - `seviye` bir *choice* (hazır seçenek) ise kütüphane değeri choice'ın **adı ya
   da değeriyle** eşler; geçersizse geçerli seçenekleri listeleyen hata döner.
+- Komutun **altına**, komut kanalına isteği yazan kişi **etiketlenir**
+  (`<@isteyen>`): komut kanalında isteğin kimden geldiği belli olsun.
+  `allowedMentions` burada bilerek açık ama **yalnızca o kişi** için
+  (`{ users: [isteyenId] }`) - metinde başka etiket olsa bile pinglenmez.
+  Diğer bütün otomatik mesajlarımız `parse: []` ile kimseyi pinglemez.
+  Etiket gönderilemezse komut zaten gitmiştir, işlem başarısız sayılmaz.
 - Cevap: `✅ Gönderildi → /yayinciekle (ID 1626 · Seviye 2)`. Cevapta bilerek
   `id:` **yazılmaz** - bu kanalı dinlediğimiz için kendi cevabımız yeniden
   tetiklenirdi (ayrıca `✅/❌` öneki de korumada).
