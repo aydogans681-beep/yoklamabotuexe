@@ -3814,15 +3814,88 @@ const ortakSunucuIslemde = new Set();
 // (a) ciktilarimiz her zaman bu isaretle basliyor, (b) gonderdigimiz mesaj
 // ID'lerini tutuyoruz. (a) yarisa karsi guvenli: gateway olayi HTTP cevabindan
 // once gelebiliyor, o an mesaj ID'si elimizde olmuyor.
-const ORTAK_SUNUCU_CIKTI_ONEKI = /^\s*(?:\u{1F4CB}|\u274C)/u;   // 📋 veya ❌
-const ortakSunucuCiktilarimiz = new Set();
+// Ciktilarimiz HEP bu isaretlerden biriyle basliyor: 📋 (ortak sunucu listesi),
+// ❌ (hata), ✅ (rol verildi), ⚠️ (uyari). Kanaldaki otomatik cevaplarimizin
+// kendimizi tetiklemesini bu engelliyor.
+const OTOMATIK_CIKTI_ONEKI = /^\s*(?:\u{1F4CB}|\u274C|\u2705|\u26A0)/u;
+const otomatikCiktilarimiz = new Set();
 
-function ortakSunucuCiktisiKaydet(mesaj) {
+function otomatikCiktiKaydet(mesaj) {
     if (!mesaj || !mesaj.id) return;
-    ortakSunucuCiktilarimiz.add(mesaj.id);
+    otomatikCiktilarimiz.add(mesaj.id);
     // Sinirsiz buyumesin.
-    if (ortakSunucuCiktilarimiz.size > 200) {
-        ortakSunucuCiktilarimiz.delete(ortakSunucuCiktilarimiz.values().next().value);
+    if (otomatikCiktilarimiz.size > 200) {
+        otomatikCiktilarimiz.delete(otomatikCiktilarimiz.values().next().value);
+    }
+}
+
+// ============================================================================
+// --- "ver <discord-id> [rol-id]" SOHBET KOMUTU ---
+// ORTAK_SUNUCU_KANALI'na yazilir. Panelin /rol-ver altyapisini (sendRoleCommand)
+// kullaniyor: uye/rol dogrulamasi, hiyerarsi kontrolu, slash gonderimi ve
+// "rol gercekten olustu mu" dogrulamasi zaten orada.
+//   ver 123456789012345678                    -> varsayilan rolu verir
+//   ver 123456789012345678 987654321098765432 -> belirtilen rolu verir
+// Etiket bicimi de kabul ediliyor: ver <@123...> <@&987...>
+// ============================================================================
+const VER_KOMUT_KALIBI = /^\s*ver\s+(?:<@!?)?(\d{17,20})>?(?:\s+(?:<@&)?(\d{17,20})>?)?\s*$/i;
+
+// Komutta rol ID verilmezse bu rol veriliyor. Panelden degistirilebilsin diye
+// panelSettings.verRolId onceligi var; bos ise komutta rol ID istenir.
+const VER_VARSAYILAN_ROL_ID = '';
+
+function verVarsayilanRol() {
+    return (panelSettings && panelSettings.verRolId) || VER_VARSAYILAN_ROL_ID || '';
+}
+
+function verKomutunuAyristir(icerik) {
+    const m = (icerik || '').match(VER_KOMUT_KALIBI);
+    if (!m) return null;
+    return { hedefId: m[1], rolId: m[2] || null };
+}
+
+// Ayni hedef+rol icin ust uste komut gelmesin.
+const verKomutuIslemde = new Set();
+
+async function verCevapGonder(message, icerik) {
+    try {
+        const gonderildi = await message.channel.send({
+            content: icerik, allowedMentions: { parse: [] },
+        });
+        otomatikCiktiKaydet(gonderildi);
+    } catch (error) {
+        console.log(`[Ver] Kanala YAZILAMIYOR (${error.message}). `
+            + 'Ana hesabin bu kanalda "Mesaj Gonder" izni var mi?');
+    }
+}
+
+async function verKomutunuCalistir(message, hedefId, rolIdIstege) {
+    const anahtar = `${hedefId}:${rolIdIstege || '-'}`;
+    if (verKomutuIslemde.has(anahtar)) return;
+    verKomutuIslemde.add(anahtar);
+    try {
+        const rolId = rolIdIstege || verVarsayilanRol();
+        if (!rolId) {
+            await verCevapGonder(message, '❌ Varsayılan rol ayarlı değil. '
+                + 'Kullanım: `ver <discord-id> <rol-id>`');
+            return;
+        }
+        const sonuc = await sendRoleCommand('rol-ver', hedefId, rolId);
+        if (sonuc.ok) {
+            await verCevapGonder(message,
+                `✅ **${sonuc.memberTag}** kişisine **${sonuc.roleName}** rolü verildi.`);
+        } else if (sonuc.reason === 'zaten-var') {
+            await verCevapGonder(message,
+                `⚠️ Bu kişide **${sonuc.roleName}** rolü zaten var.`);
+        } else {
+            await verCevapGonder(message,
+                `❌ Rol verilemedi: ${sonuc.error || sonuc.reason}`);
+        }
+    } catch (error) {
+        console.log(`[Ver] ${hedefId} icin rol verilemedi: ${error.message}`);
+        await verCevapGonder(message, `❌ Rol verilemedi: ${error.message}`);
+    } finally {
+        verKomutuIslemde.delete(anahtar);
     }
 }
 
@@ -3839,7 +3912,7 @@ async function ortakSunucuSorgusunuCalistir(message, hedefId) {
             const gonderildi = await message.channel.send({
                 content: parcalar[i], allowedMentions: { parse: [] },
             });
-            ortakSunucuCiktisiKaydet(gonderildi);
+            otomatikCiktiKaydet(gonderildi);
         }
         console.log(`[OrtakSunucu] ${hedefId}: ${veri.toplam} ortak sunucu listelendi `
             + `(${parcalar.length} mesaj).`);
@@ -3848,7 +3921,7 @@ async function ortakSunucuSorgusunuCalistir(message, hedefId) {
         message.channel.send({
             content: `❌ \`${hedefId}\` için liste alınamadı: ${error.message}`,
             allowedMentions: { parse: [] },
-        }).then(ortakSunucuCiktisiKaydet).catch((e2) => {
+        }).then(otomatikCiktiKaydet).catch((e2) => {
             // Buraya dusuyorsak kanala hic yazamiyoruz - en sik sebep izin.
             console.log(`[OrtakSunucu] Kanala YAZILAMIYOR (${e2.message}). `
                 + 'Ana hesabin bu kanalda "Mesaj Gonder" izni var mi?');
@@ -3868,15 +3941,25 @@ client.on('messageCreate', (message) => {
         if (message.channelId === ORTAK_SUNUCU_KANALI && message.author && !message.author.bot) {
             const bizden = Boolean(client.user) && message.author.id === client.user.id;
             const kendiCiktimiz = bizden
-                && (ORTAK_SUNUCU_CIKTI_ONEKI.test(message.content || '')
-                    || ortakSunucuCiktilarimiz.has(message.id));
+                && (OTOMATIK_CIKTI_ONEKI.test(message.content || '')
+                    || otomatikCiktilarimiz.has(message.id));
             if (!kendiCiktimiz) {
-                const hedefId = ortakSunucuIdBul(message.content);
-                if (hedefId) {
-                    console.log(`[OrtakSunucu] ${message.author.tag} -> ${hedefId} sorgusu basliyor.`);
-                    ortakSunucuSorgusunuCalistir(message, hedefId);
+                // SIRA ONEMLI: once "ver <id>" bakiliyor. Aksi halde ayni mesaj
+                // hem rol verir hem de ortak sunucu listesi dokerdi (ikisi de
+                // icindeki ID'yi yakalar).
+                const verKomutu = verKomutunuAyristir(message.content);
+                if (verKomutu) {
+                    console.log(`[Ver] ${message.author.tag} -> ${verKomutu.hedefId}`
+                        + ` (rol: ${verKomutu.rolId || 'varsayilan'})`);
+                    verKomutunuCalistir(message, verKomutu.hedefId, verKomutu.rolId);
                 } else {
-                    console.log(`[OrtakSunucu] Kanala mesaj geldi ama icinde Discord ID yok, atlandi.`);
+                    const hedefId = ortakSunucuIdBul(message.content);
+                    if (hedefId) {
+                        console.log(`[OrtakSunucu] ${message.author.tag} -> ${hedefId} sorgusu basliyor.`);
+                        ortakSunucuSorgusunuCalistir(message, hedefId);
+                    } else {
+                        console.log('[OrtakSunucu] Kanala mesaj geldi ama icinde Discord ID yok, atlandi.');
+                    }
                 }
             }
         }
@@ -4706,7 +4789,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.2';
+const KOD_SURUMU = '2026-09-11.3';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -4714,6 +4797,7 @@ const KOD_OZELLIKLERI = [
     'sese-sok',       // Yoklama > Sese Sok (yonetici)
     'tablo',          // Tablo sekmesi + /api/tablo/*
     'ortak-sunucu',   // ORTAK_SUNUCU_KANALI'na ID atilinca liste
+    'ver-komutu',     // ayni kanalda "ver <id> [rolId]" ile rol verme
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
 ];

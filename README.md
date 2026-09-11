@@ -747,6 +747,29 @@ her sunucudaki **adını** ve **rollerini** liste hâlinde aynı kanala yazar.
 - Kullanıcının **gizlilik ayarları** ortak sunucuları gizliyorsa liste boş
   dönebilir; bu durum kanala açıkça yazılır.
 
+### `ver` komutu (Discord tarafı - sekme değil)
+
+Ortak sunucu kanalına (`1470230485820112950`) yazılır, o kanala yazabilen herkes
+kullanabilir:
+
+```
+ver <discord-id>              -> varsayılan rolü verir
+ver <discord-id> <rol-id>     -> belirtilen rolü verir
+ver <@kişi> <@&rol>           -> etiket biçimi de olur
+```
+
+- Panelin **`/rol-ver` altyapısını** (`sendRoleCommand`) kullanır: üye/rol
+  doğrulaması, **hiyerarşi kontrolü** (ana hesabın üstündeki rol verilemez),
+  bot/entegrasyon rolü engeli, slash gönderimi ve **"rol gerçekten oluştu mu"**
+  doğrulaması hep orada. Yani panelden rol vermekle birebir aynı güvenlik.
+- Cevaplar: `✅ ... rolü verildi` / `⚠️ ... zaten var` / `❌ Rol verilemedi: ...`
+- **Varsayılan rol** `panelSettings.verRolId` (yoksa `VER_VARSAYILAN_ROL_ID`).
+  Ayarlı değilken komutta rol ID verilmezse kullanım bilgisi yazılır.
+- **Çakışma önlendi:** aynı kanal ID görünce ortak sunucu listesi de döküyor.
+  `ver <id>` mesajı **önce** komut olarak sınanıyor; komutsa liste dökülmüyor,
+  değilse sorguya düşüyor. Kendi cevaplarımız (`✅ ⚠️ ❌ 📋`) iki özelliği de
+  tetiklemiyor.
+
 ### TX Logs
 
 Log kanallarının **tüm geçmişi**, sunucu Discord'a bağlanır bağlanmaz arka
