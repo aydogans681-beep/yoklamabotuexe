@@ -1123,10 +1123,18 @@ async function slashGonderAlanlarla(guild, channel, komutAdi, alanlar, esAnlamli
         throw new Error(`"/${komutAdi}" komutunun hiç seçeneği yok.`);
     }
 
-    const args = [];
+    // Kutuphane argumanlari POZISYONEL esliyor (options[i] -> komut.options[i])
+    // ve degeri OLMAYAN bir secenek icin bile bos bir kayit uretiyor - yani
+    // araya "undefined" koyup atlamak mumkun degil. Onceki surum bu yuzden ilk
+    // degersiz secenekte duruyordu; /player-info'da sira (user, gameid) oldugu
+    // icin gameid'ye hic sira gelmiyor ve "hicbir secenek eslesmedi" cikiyordu.
+    //
+    // Cozum: komutun bir KOPYASINI yalnizca degerini bildigimiz seceneklerle
+    // kuruyoruz. Boylece pozisyonel esleme tam da o seceneklere denk geliyor,
+    // aradaki bos secenekler hic gonderilmiyor.
+    const eslesen = [];
     const eksikZorunlu = [];
-    for (let i = 0; i < secenekler.length; i += 1) {
-        const sec = secenekler[i];
+    secenekler.forEach((sec) => {
         const ad = String(sec.name || '').toLowerCase();
         let deger = alanlar[ad];
         if (deger === undefined && Array.isArray(esAnlamlilar[ad])) {
@@ -1135,23 +1143,24 @@ async function slashGonderAlanlarla(guild, channel, komutAdi, alanlar, esAnlamli
         }
         if (deger === undefined) {
             if (sec.required) eksikZorunlu.push(sec.name);
-            // Degeri olmayan secenekten SONRASINI gondermiyoruz: pozisyonel
-            // eslemede bosluk birakmak sonraki degerleri kaydirirdi.
-            break;
+            return;   // bu secenek hic gonderilmiyor
         }
-        args.push(deger);
-    }
+        eslesen.push({ sec, deger });
+    });
 
     if (eksikZorunlu.length) {
         throw new Error(`"/${komutAdi}" için zorunlu seçenek doldurulamadı: ${eksikZorunlu.join(', ')}. `
             + `Komutun seçenekleri: ${secenekler.map((o) => o.name).join(', ')}`);
     }
-    if (!args.length) {
+    if (!eslesen.length) {
         throw new Error(`"/${komutAdi}" için hiçbir seçenek eşleşmedi. `
             + `Komutun seçenekleri: ${secenekler.map((o) => o.name).join(', ')}`);
     }
 
-    const nesne = await komutNesnesi(komut);
+    const args = eslesen.map((e) => e.deger);
+    // KLON: ham komutu DEGISTIRMIYORUZ - komutDizinileri onbellegi bozulmasin.
+    const hamKlon = { ...komut, options: eslesen.map((e) => e.sec) };
+    const nesne = await komutNesnesi(hamKlon);
     const sahteMesaj = new SlashMesaji(client, {
         channel_id: channel.id,
         guild_id: guild.id,
@@ -5122,7 +5131,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.7';
+const KOD_SURUMU = '2026-09-11.8';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.

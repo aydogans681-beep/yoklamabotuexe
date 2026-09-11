@@ -790,8 +790,16 @@ id: 1626  level: Seviye 2
   komutun seçenek sırasını bilmeden `[id, seviye]` göndermek sıra tersse
   değerleri **sessizce takas ederdi**. Artık değerler komutun **kendi bildirdiği
   sıraya** diziliyor; bot seçeneği `level` diye tanımlamışsa eş anlamlı olarak
-  o da eşleşiyor. Zorunlu bir seçenek doldurulamazsa **hiçbir şey gönderilmez**,
-  komutun seçeneklerini listeleyen bir hata yazılır.
+  o da eşleşiyor.
+- **Değeri olmayan seçenekler atlanır.** Kütüphane, değeri olmayan bir seçenek
+  için bile boş kayıt ürettiğinden araya `undefined` koyup atlamak mümkün değil.
+  Bu yüzden komutun **yalnızca değerini bildiğimiz seçeneklerden oluşan bir
+  kopyası** kuruluyor ve pozisyonel eşleme ona yapılıyor. (`/player-info`
+  seçenekleri `user, gameid` sırasında; önceki sürüm ilk değersiz seçenekte
+  durduğu için `gameid`'ye hiç sıra gelmiyor, "hiçbir seçenek eşleşmedi"
+  hatası veriyordu.) Ham komut **değiştirilmez** - komut dizini önbelleği bozulmasın.
+- Zorunlu bir seçenek doldurulamazsa **hiçbir şey gönderilmez**, komutun
+  seçeneklerini listeleyen bir hata yazılır.
 - `seviye` bir *choice* (hazır seçenek) ise kütüphane değeri choice'ın **adı ya
   da değeriyle** eşler; geçersizse geçerli seçenekleri listeleyen hata döner.
 - Komutun **altına**, komut kanalına isteği yazan kişi **etiketlenir**
