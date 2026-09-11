@@ -491,6 +491,8 @@ const YAYINCI_KOMUTU = 'yayinciekle';
 const PANEL_SONUC_KANALI = '1547991532567666863';
 const PLAYER_INFO_KOMUTU = 'player-info';
 const PLAYER_INFO_BEKLEME_MS = 12000;
+// Ertelenmis cevabin icerigi gelene kadar beklenecek sure.
+const MESAJ_DOLMA_BEKLEME_MS = 15000;
 // Cok fazla ortak sunucu olursa hem istek hem mesaj uzunlugu patliyor.
 const ORTAK_SUNUCU_LIMITI = 40;
 // Rol/uye bilgisi kac sunucudan AYNI ANDA cekilsin.
@@ -4059,7 +4061,51 @@ function mesajiMetneCevir(mesaj) {
         if (gorsel) parcalar.push(gorsel);
     });
     [...(mesaj.attachments ? mesaj.attachments.values() : [])].forEach((a) => parcalar.push(a.url));
+
+    // Bazi botlar artik klasik embed yerine "components v2" kullaniyor: metin,
+    // components icindeki oge(ler)in content alaninda duruyor. Ic ice
+    // olabildigi icin ozyinelemeli geziyoruz.
+    const bilesenGez = (liste) => {
+        (liste || []).forEach((c) => {
+            if (!c) return;
+            if (typeof c.content === 'string' && c.content.trim()) parcalar.push(c.content);
+            if (Array.isArray(c.components)) bilesenGez(c.components);
+        });
+    };
+    bilesenGez(mesaj.components);
+
     return parcalar.filter(Boolean).join('\n').trim();
+}
+
+// Slash komut cevaplari genellikle ERTELENMIS (deferred) geliyor: once BOS bir
+// mesaj olusuyor ("bot dusunuyor..."), gercek icerik saniyeler sonra DUZENLEME
+// ile ekleniyor. Bos halini kullanirsak "icerigi okunamadi" cikiyor - bu yuzden
+// once dolmasini bekliyoruz.
+function mesajBosMu(mesaj) {
+    if (!mesaj) return true;
+    if (mesaj.content && String(mesaj.content).trim()) return false;
+    if (mesaj.embeds && mesaj.embeds.length) return false;
+    if (mesaj.attachments && mesaj.attachments.size) return false;
+    if (mesaj.components && mesaj.components.length) return false;
+    return true;
+}
+
+// Mesaji periyodik olarak TAZE cekip doluyor mu diye bakar. (messageUpdate
+// olayina guvenmiyoruz: mesajin onbellekte olmasini gerektiriyor.)
+async function mesajDolmasiniBekle(mesaj, timeoutMs = MESAJ_DOLMA_BEKLEME_MS, araMs = 1000) {
+    if (!mesajBosMu(mesaj)) return mesaj;
+    const bitis = Date.now() + timeoutMs;
+    let guncel = mesaj;
+    while (Date.now() < bitis) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, araMs));
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            guncel = await mesaj.channel.messages.fetch(mesaj.id);
+        } catch (error) { /* gecici hata - tekrar denenecek */ }
+        if (!mesajBosMu(guncel)) return guncel;
+    }
+    return guncel;
 }
 
 // Mesajin BIREBIR kopyasini baska kanala tasir (Discord "ilet"/forward).
@@ -4152,7 +4198,23 @@ async function panelSonucunuPaylas(guild, komutKanali, gameId, isteyenId) {
     }
     console.log(`[Panel] /${gonderilen.name} gonderildi: ${JSON.stringify(gonderilen.args)}`);
 
-    const cevap = await cevapSozu;
+    let cevap = await cevapSozu;
+    // Ertelenmis cevap BOS gelmis olabilir - icerigi dolana kadar bekle.
+    if (cevap) {
+        cevap = await mesajDolmasiniBekle(cevap);
+        if (mesajBosMu(cevap)) {
+            // Hala bossa cevabin GERCEK sekli loglansin: bir daha tahmin
+            // etmeyelim, neyin eksik oldugunu buradan gorelim.
+            console.log('[Panel] Cevap hala BOS. Tani: ' + JSON.stringify({
+                id: cevap.id,
+                icerikUzunluk: (cevap.content || '').length,
+                embedSayisi: (cevap.embeds || []).length,
+                ekSayisi: cevap.attachments ? cevap.attachments.size : 0,
+                bilesenSayisi: (cevap.components || []).length,
+                bayraklar: cevap.flags && cevap.flags.bitfield ? cevap.flags.bitfield : null,
+            }));
+        }
+    }
 
     let sonucKanali;
     try {
@@ -4185,7 +4247,9 @@ async function panelSonucunuPaylas(guild, komutKanali, gameId, isteyenId) {
                 + `${Math.round(PLAYER_INFO_BEKLEME_MS / 1000)} sn içinde cevap gelmedi.`;
         } else {
             govde = mesajiMetneCevir(cevap)
-                || `⚠️ \`/${PLAYER_INFO_KOMUTU}\` cevabı alındı ama içeriği okunamadı.`;
+                || `⚠️ \`/${PLAYER_INFO_KOMUTU}\` cevabı alındı ama içeriği okunamadı `
+                    + '(muhtemelen yalnızca komutu gönderene görünen bir cevap). '
+                    + 'Ayrıntı için sunucu loglarında `[Panel] Cevap hala BOS` satırına bak.';
         }
 
         // Metin disaridan (baska botun embed'inden) geliyor: icinde etiket olsa
@@ -5170,7 +5234,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.9';
+const KOD_SURUMU = '2026-09-11.10';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.

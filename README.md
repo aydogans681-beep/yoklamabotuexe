@@ -829,6 +829,15 @@ kanalına taşınır ve **altına paneli veren yetkili etiketlenir**.
   Forward **yeni embed üretmez**, orijinal mesaja referans verir - bu yüzden
   kullanıcı hesaplarının "zengin embed gönderemez" kısıtına takılmadan görünüm
   **birebir korunur**. Kütüphanede hazır forward yok, ham API kullanılıyor.
+- **Ertelenmiş (deferred) cevap beklenir:** slash komutlarda bot genelde önce
+  **boş** bir mesaj oluşturur ("bot düşünüyor..."), gerçek içerik saniyeler
+  sonra **düzenlemeyle** eklenir. Boş hali kullanılırsa "içeriği okunamadı"
+  çıkar; bu yüzden mesaj periyodik **taze çekilerek** dolması beklenir
+  (`mesajDolmasiniBekle`, en fazla 15 sn). Hâlâ boşsa cevabın gerçek şekli
+  loglanır (`[Panel] Cevap hala BOS` - embed/component/ek sayıları ve flag'ler).
+- **Components v2 desteği:** bazı botlar klasik embed yerine `components`
+  içindeki metin öğelerini kullanıyor; metne çevirme bunları da özyinelemeli
+  olarak toplar.
 - **Metin yedeği:** efemeral (yalnızca çağırana görünen) cevaplar iletilemiyor.
   Forward başarısız olursa embed başlık/açıklama/alanlar/footer/görsel linkleri
   okunabilir düz metne çevrilip gönderiliyor - sonuç hiçbir durumda kaybolmuyor.
