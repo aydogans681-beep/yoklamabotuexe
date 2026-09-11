@@ -3808,6 +3808,24 @@ function ortakSunucuMesajlari(user, veri) {
 // Ayni ID icin ust uste sorgu gelmesin (spam korumasi).
 const ortakSunucuIslemde = new Set();
 
+// Kendi ciktilarimizi tanimak icin. Ana hesabi TAMAMEN atlayamayiz (panelin
+// sahibi sorguyu cogu zaman kendi ana hesabiyla yaziyor), ama cikti mesajlarimiz
+// da ID icerdigi icin onlari atlamazsak sonsuz donguye gireriz. Iki katman:
+// (a) ciktilarimiz her zaman bu isaretle basliyor, (b) gonderdigimiz mesaj
+// ID'lerini tutuyoruz. (a) yarisa karsi guvenli: gateway olayi HTTP cevabindan
+// once gelebiliyor, o an mesaj ID'si elimizde olmuyor.
+const ORTAK_SUNUCU_CIKTI_ONEKI = /^\s*(?:\u{1F4CB}|\u274C)/u;   // 📋 veya ❌
+const ortakSunucuCiktilarimiz = new Set();
+
+function ortakSunucuCiktisiKaydet(mesaj) {
+    if (!mesaj || !mesaj.id) return;
+    ortakSunucuCiktilarimiz.add(mesaj.id);
+    // Sinirsiz buyumesin.
+    if (ortakSunucuCiktilarimiz.size > 200) {
+        ortakSunucuCiktilarimiz.delete(ortakSunucuCiktilarimiz.values().next().value);
+    }
+}
+
 async function ortakSunucuSorgusunuCalistir(message, hedefId) {
     if (ortakSunucuIslemde.has(hedefId)) return;
     ortakSunucuIslemde.add(hedefId);
@@ -3818,30 +3836,49 @@ async function ortakSunucuSorgusunuCalistir(message, hedefId) {
         for (let i = 0; i < parcalar.length; i += 1) {
             // allowedMentions: hic kimse pinglenmesin - rol/kisi adlari metin olarak gidiyor.
             // eslint-disable-next-line no-await-in-loop
-            await message.channel.send({ content: parcalar[i], allowedMentions: { parse: [] } });
+            const gonderildi = await message.channel.send({
+                content: parcalar[i], allowedMentions: { parse: [] },
+            });
+            ortakSunucuCiktisiKaydet(gonderildi);
         }
-        console.log(`[OrtakSunucu] ${hedefId}: ${veri.toplam} ortak sunucu listelendi.`);
+        console.log(`[OrtakSunucu] ${hedefId}: ${veri.toplam} ortak sunucu listelendi `
+            + `(${parcalar.length} mesaj).`);
     } catch (error) {
         console.log(`[OrtakSunucu] ${hedefId} sorgusu basarisiz: ${error.message}`);
         message.channel.send({
             content: `❌ \`${hedefId}\` için liste alınamadı: ${error.message}`,
             allowedMentions: { parse: [] },
-        }).catch(() => {});
+        }).then(ortakSunucuCiktisiKaydet).catch((e2) => {
+            // Buraya dusuyorsak kanala hic yazamiyoruz - en sik sebep izin.
+            console.log(`[OrtakSunucu] Kanala YAZILAMIYOR (${e2.message}). `
+                + 'Ana hesabin bu kanalda "Mesaj Gonder" izni var mi?');
+        });
     } finally {
         ortakSunucuIslemde.delete(hedefId);
     }
 }
 
 client.on('messageCreate', (message) => {
-    // Ortak sunucu sorgusu. KENDI cevabimiz da ID iceriyor - kendi mesajlarimizi
-    // atlamazsak sonsuz donguye girerdi.
+    // Ortak sunucu sorgusu.
+    // Eskiden ana hesabin BUTUN mesajlari atlaniyordu (cikti da ID icerdigi icin
+    // dongu korumasi). Ama panelin sahibi sorguyu cogu zaman KENDI ana hesabiyla
+    // yaziyor ve "kanala yazdim, hicbir sey olmuyor" oluyordu. Artik yalnizca
+    // BIZIM URETTIGIMIZ cikti mesajlari atlaniyor.
     try {
-        if (message.channelId === ORTAK_SUNUCU_KANALI
-            && message.author
-            && !message.author.bot
-            && !(client.user && message.author.id === client.user.id)) {
-            const hedefId = ortakSunucuIdBul(message.content);
-            if (hedefId) ortakSunucuSorgusunuCalistir(message, hedefId);
+        if (message.channelId === ORTAK_SUNUCU_KANALI && message.author && !message.author.bot) {
+            const bizden = Boolean(client.user) && message.author.id === client.user.id;
+            const kendiCiktimiz = bizden
+                && (ORTAK_SUNUCU_CIKTI_ONEKI.test(message.content || '')
+                    || ortakSunucuCiktilarimiz.has(message.id));
+            if (!kendiCiktimiz) {
+                const hedefId = ortakSunucuIdBul(message.content);
+                if (hedefId) {
+                    console.log(`[OrtakSunucu] ${message.author.tag} -> ${hedefId} sorgusu basliyor.`);
+                    ortakSunucuSorgusunuCalistir(message, hedefId);
+                } else {
+                    console.log(`[OrtakSunucu] Kanala mesaj geldi ama icinde Discord ID yok, atlandi.`);
+                }
+            }
         }
     } catch (error) {
         console.log(`[OrtakSunucu] Yakalama hatasi: ${error.message}`);
@@ -4669,7 +4706,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.1';
+const KOD_SURUMU = '2026-09-11.2';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.

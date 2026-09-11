@@ -734,9 +734,16 @@ her sunucudaki **adını** ve **rollerini** liste hâlinde aynı kanala yazar.
 - Uzun sonuçlar Discord'un 2000 karakter sınırına göre **parçalara bölünür**;
   tek bir sunucunun rol listesi bile sınırı aşarsa kırpılıp `(+N rol)` yazılır.
   En fazla `ORTAK_SUNUCU_LIMITI` (40) sunucu listelenir.
-- **Sonsuz döngü koruması:** cevabın kendisi de ID içerdiği için ana hesabın
-  (ve botların) mesajları atlanır. Ayrıca aynı ID için eşzamanlı ikinci sorgu
-  çalışmaz (`ortakSunucuIslemde`).
+- **Sonsuz döngü koruması:** cevabın kendisi de ID içerdiği için atlanması şart.
+  Ama ana hesabın *bütün* mesajlarını atlamak yanlıştı: panelin sahibi sorguyu
+  çoğu zaman **kendi ana hesabıyla** yazıyor ve "kanala yazdım, hiçbir şey
+  olmuyor" oluyordu. Artık yalnızca **bizim ürettiğimiz çıktılar** atlanıyor:
+  çıktılar hep `📋`/`❌` ile başlıyor **ve** gönderdiğimiz mesaj ID'leri
+  tutuluyor (iki katman; gateway olayı HTTP cevabından önce gelebildiği için
+  tek başına ID takibi yarışa açık). Botlar yine atlanıyor, aynı ID için
+  eşzamanlı ikinci sorgu çalışmıyor (`ortakSunucuIslemde`).
+- Kanala mesaj **gönderilemezse** (en sık sebep: ana hesabın o kanalda "Mesaj
+  Gönder" izninin olmaması) bu loglara açıkça yazılır - sessizce yutulmaz.
 - Kullanıcının **gizlilik ayarları** ortak sunucuları gizliyorsa liste boş
   dönebilir; bu durum kanala açıkça yazılır.
 
