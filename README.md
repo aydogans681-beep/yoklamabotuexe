@@ -804,6 +804,29 @@ id: 1626  level: Seviye 2
   `id:` **yazılmaz** - bu kanalı dinlediğimiz için kendi cevabımız yeniden
   tetiklenirdi (ayrıca `✅/❌` öneki de korumada).
 
+### Panel Bilgisi (`/player-info` sonucu taşıma)
+
+Yayıncı eklendikten **sonra** aynı komut kanalında panel verilen kişi için
+`/player-info gameid: <id>` çalıştırılır, çıkan **cevap** `1547991532567666863`
+kanalına taşınır ve **altına paneli veren yetkili etiketlenir**.
+
+- **Cevap eşlemesi kesin:** cevap mesajının `message.interaction` alanı hangi
+  komuta ve **kimin çağrısına** ait olduğunu söylüyor; `commandName` +
+  `user.id === client.user.id` kontrolüyle kanaldaki başka bir mesaj yanlışlıkla
+  yakalanmıyor. Dinleme komut **gönderilmeden önce** başlıyor (hızlı cevap
+  kaçmasın); 12 sn içinde gelmezse sonuç kanalına "cevap gelmedi" yazılıyor -
+  sessiz kalmıyor.
+- **Embed → düz metin:** kullanıcı hesapları **zengin embed gönderemiyor**
+  (bot-only). Bu yüzden cevap olduğu gibi iletilemiyor; başlık, açıklama,
+  alanlar, footer, görsel/ek linkleri okunabilir metne çevriliyor.
+- Uzun sonuçlar Discord sınırına göre parçalanır (`metniParcala`); satır
+  bütünlüğü korunur, tek başına sınırı aşan satır da bölünür.
+- Taşınan metin **dış kaynaktan** (başka botun embed'i) geldiği için
+  `parse: []` ile gönderilir - içinde etiket olsa bile **kimse pinglenmez**.
+  Yalnızca alttaki yetkili etiketi ping atar (`{ users: [isteyenId] }`).
+- Bu adım başarısız olsa bile **yayıncı ekleme başarılı sayılır** (komut zaten
+  gitti): istek kanalına önce `✅`, sonra gerekiyorsa `⚠️` bilgisi yazılır.
+
 ### TX Logs
 
 Log kanallarının **tüm geçmişi**, sunucu Discord'a bağlanır bağlanmaz arka

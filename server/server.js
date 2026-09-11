@@ -485,6 +485,12 @@ const ORTAK_SUNUCU_KANALI = '1470230485820112950';
 const YAYINCI_ISTEK_KANALI = '1547957553680482355';
 const YAYINCI_KOMUT_KANALI = '1530911005880746014';
 const YAYINCI_KOMUTU = 'yayinciekle';
+
+// Panel verilen kisinin bilgisi: ayni komut kanalinda /player-info calistirilip
+// cikan cevap SONUC kanalina tasiniyor, altina paneli veren yetkili etiketleniyor.
+const PANEL_SONUC_KANALI = '1547991532567666863';
+const PLAYER_INFO_KOMUTU = 'player-info';
+const PLAYER_INFO_BEKLEME_MS = 12000;
 // Cok fazla ortak sunucu olursa hem istek hem mesaj uzunlugu patliyor.
 const ORTAK_SUNUCU_LIMITI = 40;
 // Rol/uye bilgisi kac sunucudan AYNI ANDA cekilsin.
@@ -4003,6 +4009,72 @@ async function ortakSunucuSorgusunuCalistir(message, hedefId) {
 }
 
 // ============================================================================
+// --- SLASH CEVABINI YAKALAMA + METNE CEVIRME ---
+// ============================================================================
+// Gonderdigimiz slash komutun CEVABINI bekler. Esleme kesin: cevap mesajinin
+// message.interaction alani hangi komuta ve KIMIN cagrisina ait oldugunu
+// soyluyor - kanaldaki baska bir mesaji yanlislikla yakalamiyoruz.
+// DIKKAT: dinlemeye komutu GONDERMEDEN once baslamak gerekiyor, yoksa hizli
+// gelen cevap kacabilir.
+function slashCevabiniBekle(kanalId, komutAdi, timeoutMs = PLAYER_INFO_BEKLEME_MS) {
+    return new Promise((resolve) => {
+        const onMessage = (message) => {
+            if (message.channelId !== kanalId) return;
+            const etkilesim = message.interaction;
+            if (!etkilesim || etkilesim.commandName !== komutAdi) return;
+            if (!etkilesim.user || !client.user || etkilesim.user.id !== client.user.id) return;
+            temizle();
+            resolve(message);
+        };
+        const timer = setTimeout(() => { temizle(); resolve(null); }, timeoutMs);
+        function temizle() {
+            clearTimeout(timer);
+            client.removeListener('messageCreate', onMessage);
+        }
+        client.on('messageCreate', onMessage);
+    });
+}
+
+// Kullanici hesaplari ZENGIN EMBED GONDEREMIYOR (bot-only bir ozellik). Bu
+// yuzden gelen cevabi oldugu gibi iletemiyoruz; embed'i okunabilir duz metne
+// cevirip tasiyoruz.
+function mesajiMetneCevir(mesaj) {
+    const parcalar = [];
+    if (mesaj.content) parcalar.push(mesaj.content);
+    (mesaj.embeds || []).forEach((embed) => {
+        if (embed.title) parcalar.push(`**${embed.title}**`);
+        if (embed.description) parcalar.push(embed.description);
+        (embed.fields || []).forEach((f) => parcalar.push(`**${f.name}:** ${f.value}`));
+        if (embed.footer && embed.footer.text) parcalar.push(`_${embed.footer.text}_`);
+        const gorsel = (embed.image && embed.image.url) || (embed.thumbnail && embed.thumbnail.url);
+        if (gorsel) parcalar.push(gorsel);
+    });
+    [...(mesaj.attachments ? mesaj.attachments.values() : [])].forEach((a) => parcalar.push(a.url));
+    return parcalar.filter(Boolean).join('\n').trim();
+}
+
+// Uzun metni Discord sinirina gore parcalar. Satir butunlugunu korur; tek
+// basina siniri asan satiri da boler.
+function metniParcala(metin, sinir = DISCORD_MESAJ_SINIRI) {
+    const parcalar = [];
+    let simdiki = '';
+    String(metin).split('\n').forEach((satir) => {
+        let kalan = satir;
+        while (kalan.length > sinir) {
+            if (simdiki) { parcalar.push(simdiki); simdiki = ''; }
+            parcalar.push(kalan.slice(0, sinir));
+            kalan = kalan.slice(sinir);
+        }
+        if (simdiki && simdiki.length + 1 + kalan.length > sinir) {
+            parcalar.push(simdiki); simdiki = '';
+        }
+        simdiki = simdiki ? `${simdiki}\n${kalan}` : kalan;
+    });
+    if (simdiki.trim()) parcalar.push(simdiki);
+    return parcalar.length ? parcalar : [''];
+}
+
+// ============================================================================
 // --- YAYINCI EKLE: "id: 1626  level: Seviye 2" -> /yayinciekle ---
 // Yetkililer YAYINCI_ISTEK_KANALI'na alanlari yaziyor; biz YAYINCI_KOMUT_KANALI'na
 // /yayinciekle slash komutunu gonderiyoruz. Degerler komutun KENDI secenek
@@ -4030,6 +4102,67 @@ function yayinciAlanlariAyristir(icerik) {
     }
     if (!alanlar.id || !alanlar.seviye) return null;   // ikisi de sart
     return alanlar;
+}
+
+// Panel verilen kisi icin /player-info calistirip cikan cevabi SONUC kanalina
+// tasir, altina paneli veren yetkiliyi etiketler.
+async function panelSonucunuPaylas(guild, komutKanali, gameId, isteyenId) {
+    // Dinlemeyi komutu GONDERMEDEN once basliyoruz (cevap cok hizli gelebilir).
+    const cevapSozu = slashCevabiniBekle(komutKanali.id, PLAYER_INFO_KOMUTU);
+    let gonderilen;
+    try {
+        gonderilen = await slashGonderAlanlarla(
+            guild, komutKanali, PLAYER_INFO_KOMUTU,
+            { gameid: gameId },
+            // Bot secenegi baska adla tanimlamis olabilir.
+            { gameid: ['game_id', 'gameId', 'id', 'oyuncu', 'player'] },
+        );
+    } catch (error) {
+        throw new Error(`/${PLAYER_INFO_KOMUTU} gönderilemedi: ${error.message}`);
+    }
+    console.log(`[Panel] /${gonderilen.name} gonderildi: ${JSON.stringify(gonderilen.args)}`);
+
+    const cevap = await cevapSozu;
+
+    let sonucKanali;
+    try {
+        sonucKanali = await client.channels.fetch(PANEL_SONUC_KANALI);
+    } catch (error) {
+        throw new Error(`Sonuç kanalı alınamadı: ${error.message}`);
+    }
+    if (!sonucKanali) throw new Error('Sonuç kanalı bulunamadı, PANEL_SONUC_KANALI hatalı olabilir.');
+
+    let govde;
+    if (!cevap) {
+        govde = `⚠️ \`/${PLAYER_INFO_KOMUTU} gameid: ${gameId}\` gönderildi ama `
+            + `${Math.round(PLAYER_INFO_BEKLEME_MS / 1000)} sn içinde cevap gelmedi.`;
+    } else {
+        govde = mesajiMetneCevir(cevap)
+            || `⚠️ \`/${PLAYER_INFO_KOMUTU}\` cevabı alındı ama içeriği okunamadı.`;
+    }
+
+    // Cevap metni disaridan (baska botun embed'inden) geliyor: icinde etiket
+    // olsa bile kimse pinglenmesin diye parse:[] ile gonderiyoruz.
+    const parcalar = metniParcala(govde);
+    for (let i = 0; i < parcalar.length; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const g = await sonucKanali.send({ content: parcalar[i], allowedMentions: { parse: [] } });
+        otomatikCiktiKaydet(g);
+    }
+
+    // Altina: paneli KIM verdi. Yalnizca o kisi pinglenir.
+    if (isteyenId) {
+        try {
+            const etiket = await sonucKanali.send({
+                content: `<@${isteyenId}>`,
+                allowedMentions: { users: [isteyenId] },
+            });
+            otomatikCiktiKaydet(etiket);
+        } catch (error) {
+            console.log(`[Panel] Sonuc kanalinda etiket gonderilemedi: ${error.message}`);
+        }
+    }
+    return { cevapGeldi: Boolean(cevap), parca: parcalar.length };
 }
 
 // Ayni istek ust uste islenmesin.
@@ -4088,10 +4221,22 @@ async function yayinciEkleCalistir(message, alanlar) {
                 console.log(`[Yayinci] Etiket gonderilemedi: ${error.message}`);
             }
         }
+
         // DIKKAT: cevapta "id:" yazmiyoruz - bu kanali dinledigimiz icin kendi
         // cevabimiz yeniden tetiklenirdi. (Ayrica ✅/❌ oneki de korumada.)
         await yayinciCevapGonder(message,
             `✅ Gönderildi → \`/${gonderilen.name}\`  (ID ${alanlar.id} · ${alanlar.seviye})`);
+
+        // Panel verilen kisinin bilgisi: /player-info calistirip sonucu SONUC
+        // kanalina tasi. Bu adim basarisiz olsa bile YAYINCI EKLEME basarili
+        // sayiliyor (komut zaten gitti) - ayrica bilgilendiriyoruz.
+        try {
+            await panelSonucunuPaylas(guild, kanal, alanlar.id, isteyenId);
+        } catch (error) {
+            console.log(`[Panel] Sonuc paylasilamadi: ${error.message}`);
+            await yayinciCevapGonder(message,
+                `⚠️ Yayıncı eklendi ama panel bilgisi paylaşılamadı: ${error.message}`);
+        }
     } catch (error) {
         console.log(`[Yayinci] Gonderilemedi (${alanlar.id} / ${alanlar.seviye}): ${error.message}`);
         await yayinciCevapGonder(message, `❌ Yayıncı eklenemedi: ${error.message}`);
@@ -4977,7 +5122,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.6';
+const KOD_SURUMU = '2026-09-11.7';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -4987,6 +5132,7 @@ const KOD_OZELLIKLERI = [
     'ortak-sunucu',   // ORTAK_SUNUCU_KANALI'na ID atilinca liste
     'ver-komutu',     // ayni kanalda "ver <id> [rolId]" ile rol verme
     'yayinci-ekle',   // "id: .. level: .." -> /yayinciekle
+    'panel-bilgi',    // /player-info sonucunu sonuc kanalina tasima
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
 ];
