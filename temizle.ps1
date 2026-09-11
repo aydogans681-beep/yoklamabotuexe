@@ -130,12 +130,17 @@ if ($kalanlar.Count -gt 0) {
 Write-Host ""
 Yaz "[4/4] Bot baslatiliyor..." "Green"
 $ErrorActionPreference = 'Continue'
-Set-Location $sunucuDizini
+$ekosistem = Join-Path $kok "ecosystem.config.js"
 try {
-    & pm2 describe yoklama 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        & pm2 restart yoklama 2>&1 | Out-Null
+    if (Test-Path $ekosistem) {
+        # guncelle.ps1 ile AYNI yol. Eskiden burada "pm2 restart yoklama"
+        # vardi; o komut sureci pm2'nin ESKI kayitli ayarlariyla aciyor ve
+        # ecosystem.config.js'i (watch=false, max_restarts, min_uptime ve
+        # 12 saatlik cron_restart) gormuyordu.
+        Set-Location $kok
+        & pm2 startOrRestart $ekosistem --update-env 2>&1 | Out-Null
     } else {
+        Set-Location $sunucuDizini
         & pm2 start server.js --name yoklama --node-args="--max-old-space-size=4096" 2>&1 | Out-Null
     }
     & pm2 save 2>&1 | Out-Null
@@ -157,16 +162,55 @@ try {
 
 Write-Host ""
 if ($surum -and $surum.ok) {
-    Yaz "TAMAM - bot tek kopya calisiyor." "Cyan"
-    Write-Host "   commit : $($surum.commit)"
-    $sonra = BotSurecleri
-    Write-Host "   surec  : $($sonra.Count)"
-    if ($sonra.Count -gt 1) {
+    Yaz "Bot ayakta." "Cyan"
+
+    # --- Gercekten YENI kod mu calisiyor? ---
+    # "commit" diskteki .git'ten okunuyor: git pull biter bitmez yeni gorunur ve
+    # eski kodu bellekte calistiran bir sureci ELE VERMEZ. KOD_SURUMU ise
+    # server.js'in ICINDE gomulu - yalnizca surec yeniden basladiginda degisir.
+    $diskKod = $null
+    try {
+        $sj = Join-Path $sunucuDizini 'server.js'
+        if (Test-Path $sj) {
+            $m = Select-String -Path $sj -Pattern "^const KOD_SURUMU = '([^']+)'" | Select-Object -First 1
+            if ($m) { $diskKod = $m.Matches[0].Groups[1].Value }
+        }
+    } catch { $diskKod = $null }
+
+    Write-Host "   commit     : $($surum.commit)   <- diskteki .git (calisan kodu kanitlamaz)"
+    Write-Host "   kod surumu : $($surum.kodSurumu)   (diskte: $diskKod)"
+    if ($surum.ozellikler) { Write-Host "   ozellikler : $($surum.ozellikler -join ', ')" }
+
+    if ($diskKod -and $surum.kodSurumu -and ($diskKod -eq $surum.kodSurumu)) {
+        Yaz "   -> CALISAN KOD GUNCEL." "Cyan"
+    } elseif ($diskKod) {
         Write-Host ""
-        Yaz "UYARI: hala birden fazla surec gorunuyor. Tekrar .\temizle.ps1 calistir." "Yellow"
+        Yaz "DIKKAT: Calisan surec ESKI kodu kullaniyor." "Red"
+        Yaz "        diskte '$diskKod' ama calisan '$($surum.kodSurumu)'." "Red"
+        Yaz "3000 portunu BASKA BIR KLASORDEKI kopya tutuyor olabilir. Kim tutuyor:" "Yellow"
+        Yaz "    Get-NetTCPConnection -LocalPort 3000 -State Listen | Select OwningProcess" "Yellow"
+        Yaz '    Get-CimInstance Win32_Process -Filter "ProcessId = <PID>" | Select CommandLine' "Yellow"
+        Yaz "Cikan yol bu klasor DEGILSE, o sureci kapat:  Stop-Process -Id <PID> -Force" "Yellow"
     }
+
+    # --- Bizim botun kac kopyasi var? ---
+    # ONEMLI: pm2'de BASKA uygulamalar da ProcessContainerFork ile calisir.
+    # Eskiden onlar da sayiliyor, "hala birden fazla surec" uyarisi bot tek
+    # kopyayken bile cikip sonsuz "tekrar calistir" dongusune sokuyordu.
+    # Artik yalnizca komut satirinda server.js GECEN (pm2 disi, elle acilmis)
+    # kopyalar sayiliyor - gercek hayaletler bunlar.
+    $oksuz = @(BotSurecleri | Where-Object { $_.CommandLine -match 'server\.js' })
+    if ($oksuz.Count -gt 0) {
+        Write-Host ""
+        Yaz "UYARI: pm2 disinda elle acilmis $($oksuz.Count) bot sureci var:" "Yellow"
+        foreach ($p in $oksuz) {
+            Write-Host ("   PID {0}  {1}" -f $p.ProcessId, $p.CommandLine) -ForegroundColor DarkGray
+        }
+        Yaz "Kapat:  Stop-Process -Id <PID> -Force" "Yellow"
+    }
+
     Write-Host ""
-    Yaz "Simdi .\tani.ps1 ile kanallara bakabilirsin." "DarkGray"
+    Yaz "Ayrinti icin:  .\tani.ps1" "DarkGray"
 } else {
     Yaz "DIKKAT: bot cevap vermiyor." "Red"
     Yaz "    pm2 logs yoklama --err --lines 30 --nostream" "Yellow"
