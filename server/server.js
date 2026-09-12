@@ -4320,8 +4320,8 @@ async function yayinTakibiBaslat() {
     });
 
     try {
-        const guild = await getReadyGuild();
-        await ensureMembersFetched(guild);
+        const guild = await yayinGuildBul();
+        await yayinUyeleriHazirla(guild);
         YAYIN_ARAMA_KANALLARI.forEach((kanalId) => {
             const kanal = guild.channels.cache.get(kanalId);
             if (!kanal || !kanal.members) return;
@@ -4368,6 +4368,40 @@ function sureBicimle(ms) {
 }
 
 // --- Saatlik rapor: eski mesaji silip yenisini atiyor ---
+// Yayin kanallari ANA sunucuda olmak zorunda degil: client.channels.fetch
+// sunucular arasi calistigi icin kanallar bulunuyordu, ama roller ANA sunucuda
+// aranip "bulunamadi" deniyordu. Guild'i IZLENEN KANALDAN turetiyoruz.
+let yayinGuildOnbellek = null;
+async function yayinGuildBul() {
+    if (yayinGuildOnbellek) return yayinGuildOnbellek;
+    for (let i = 0; i < YAYIN_ARAMA_KANALLARI.length; i += 1) {
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const kanal = await client.channels.fetch(YAYIN_ARAMA_KANALLARI[i]);
+            if (kanal && kanal.guild) {
+                yayinGuildOnbellek = kanal.guild;
+                return yayinGuildOnbellek;
+            }
+        } catch (error) { /* sonraki kanali dene */ }
+    }
+    yayinGuildOnbellek = await getReadyGuild();   // bulunamazsa ana sunucu
+    return yayinGuildOnbellek;
+}
+
+// ensureMembersFetched TEK bir promise tutuyor ve ANA sunucuya bagli; baska bir
+// sunucu icin onu kullanmak yanlis listeyi dondurur. Sunucu basina ayri tutuyoruz.
+const yayinUyeOnbellek = new Map();
+function yayinUyeleriHazirla(guild) {
+    if (guild.id === GUILD_ID) return ensureMembersFetched(guild);
+    if (!yayinUyeOnbellek.has(guild.id)) {
+        yayinUyeOnbellek.set(guild.id, guild.members.fetch().catch((error) => {
+            yayinUyeOnbellek.delete(guild.id);   // hata kalici olmasin
+            throw error;
+        }));
+    }
+    return yayinUyeOnbellek.get(guild.id);
+}
+
 // Rolu once onbellekten arar, bulamazsa API'den TAZE ceker. Rol bot
 // baglandiktan SONRA olusturulduysa onbellekte olmayabiliyor - "rol bulunamadi"
 // demeden once bunu denemek gerek.
@@ -4375,10 +4409,15 @@ async function yayinRolBul(guild, rolId) {
     const onbellek = guild.roles.cache.get(rolId);
     if (onbellek) return onbellek;
     try {
-        return await guild.roles.fetch(rolId);
-    } catch (error) {
-        return null;
-    }
+        const taze = await guild.roles.fetch(rolId);
+        if (taze) return taze;
+    } catch (error) { /* bu sunucuda yok - asagida diger sunuculara bakiyoruz */ }
+    // Son care: hesabin uyesi oldugu TUM sunucularda ara. Rol baska bir
+    // sunucudaysa da bulunsun (kanallar da oyle bulunabiliyor).
+    const bulunan = [...client.guilds.cache.values()]
+        .map((g) => g.roles.cache.get(rolId))
+        .find(Boolean);
+    return bulunan || null;
 }
 
 // Rol bulunamadiginda "hangi ID dogru?" sorusunu cevaplamak icin sunucudaki
@@ -4403,10 +4442,10 @@ function yayinAdayRoller(guild, limit = 15) {
 async function yayinRaporVerisi(pencereBas) {
     const sureler = yayinSureleriHesapla(pencereBas);
 
-    const guild = await getReadyGuild();
+    const guild = await yayinGuildBul();
     let uyeHatasi = null;
     try {
-        await ensureMembersFetched(guild);
+        await yayinUyeleriHazirla(guild);
     } catch (error) {
         uyeHatasi = error.message;
     }
@@ -4449,6 +4488,8 @@ async function yayinRaporVerisi(pencereBas) {
         // IKISI birden: guild.memberCount Discord'un RESMI sayisi, cache ise
         // bizim tuttugumuz. Arada buyuk fark varsa onbellekte ayrilmis uyeler
         // birikmis (ya da tam tersi, liste eksik cekilmis) demektir.
+        sunucuAd: guild.name || null,
+        sunucuId: guild.id,
         sunucuUye: typeof guild.memberCount === 'number' ? guild.memberCount : null,
         onbellekUye: guild.members.cache.size,
         adaylar: bulunamayanVar ? yayinAdayRoller(guild) : null,
@@ -4461,6 +4502,7 @@ function yayinTaniBlogu(veri) {
     const satirlar = veri.rolTani.map((r) => (r.ad
         ? `• ${r.ad}  (${r.id}) — ${r.adet} üye${r.durum === 'ok' ? '' : ` ⚠️ ${r.durum}`}`
         : `• ${r.id} — ⚠️ ${r.durum}`));
+    satirlar.unshift(`• Bakılan sunucu: ${veri.sunucuAd || '?'} (${veri.sunucuId})`);
     satirlar.push(`• Sunucu üyesi (Discord): ${veri.sunucuUye === null ? '?' : veri.sunucuUye}`
         + `  ·  önbellekte: ${veri.onbellekUye}`);
     if (veri.uyeHatasi) satirlar.push(`• ⚠️ Üye listesi çekilemedi: ${veri.uyeHatasi}`);
@@ -4586,7 +4628,20 @@ async function yayinRaporGonder(sebep = 'zamanlayici') {
         console.log(`[Yayin] Rapor guncellendi (${sebep}): ${acanlar.length} acan `
             + `(son ${YAYIN_GUN_SAYISI} gun), ${hicAcmayan.length} hic acmayan (tum zamanlar).`);
     } catch (error) {
+        // Eskiden yalnizca loga yaziyordu: kanalda HICBIR SEY cikmiyor, kullanici
+        // neyin ters gittigini goremiyordu. Artik hata kanala da dusuyor.
         console.log(`[Yayin] Rapor hatasi: ${error.message}`);
+        try {
+            const k = await client.channels.fetch(YAYIN_RAPOR_KANALI);
+            if (k) {
+                await k.send({
+                    content: `❌ Rapor üretilemedi: ${error.message}`,
+                    allowedMentions: { parse: [] },
+                });
+            }
+        } catch (e2) {
+            console.log(`[Yayin] Hata mesaji da gonderilemedi: ${e2.message}`);
+        }
     } finally {
         yayinRaporCalisiyor = false;
     }
@@ -5923,7 +5978,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.8';
+const KOD_SURUMU = '2026-09-12.9';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
