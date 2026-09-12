@@ -4897,7 +4897,8 @@ const YAYIN_ORNEK_KALIBI = /^\s*yay[ıi]n\s*[-_ ]?\s*[öo]rnek\s*$/i;
 // Raporu elle tazelemek icin (zamanlayiciyi beklemeden).
 const YAYIN_RAPOR_KALIBI = /^\s*yay[ıi]n\s*[-_ ]?\s*rapor\s*$/i;
 // Veri kanalindan sure toplama.
-const YAYIN_VERI_KALIBI = /^\s*yay[ıi]n\s*[-_ ]?\s*(?:veri|topla)\s*$/i;
+// ver[iı]: "YAYIN VERI" Turkce kurala gore "verı" oluyor (I -> ı).
+const YAYIN_VERI_KALIBI = /^\s*yay[ıi]n\s*[-_ ]?\s*(?:ver[iı]|topla)\s*$/i;
 
 // Bir mesajin HAM yapisini okunabilir bicimde ozetler: icerik, embed baslik/
 // aciklama/alanlari, bilesen ve ek sayilari. Ayristiriciyi buna bakarak yazacagiz.
@@ -5318,15 +5319,28 @@ client.on('messageCreate', (message) => {
         const raporKanali = message.channelId === YAYIN_RAPOR_KANALI
             || message.channelId === YAYIN_YOK_KANALI;
         if (raporKanali && message.author && !message.author.bot) {
-            const icerik = message.content || '';
+            // Turkce buyuk/kucuk harf: /i bayragi "İ" -> "i" donusumunu dogru
+            // yapmiyor ("YAYIN VERİ" eslesmiyordu). Once tr'ye gore kucultuyoruz.
+            const icerik = String(message.content || '').toLocaleLowerCase('tr');
+            // ANINDA geri bildirim: "komut ulasti mi, yoksa eski kod mu
+            // calisiyor" ayrimini yapabilmek icin. Sessizlik en kotu cikti.
+            const basladiBildir = (metin) => {
+                message.channel.send({ content: metin, allowedMentions: { parse: [] } })
+                    .then(otomatikCiktiKaydet)
+                    .catch((e) => console.log(`[Yayin] Bildirim gonderilemedi: ${e.message}`));
+            };
             if (message.channelId === YAYIN_RAPOR_KANALI && YAYIN_ORNEK_KALIBI.test(icerik)) {
                 console.log(`[YayinOrnek] ${message.author.tag} ornek dokumu istedi.`);
+                basladiBildir('⏳ Kanalların mesaj yapısı çıkarılıyor...');
                 yayinOrnekDok(message);
             } else if (YAYIN_RAPOR_KALIBI.test(icerik)) {
                 console.log(`[Yayin] ${message.author.tag} raporu elle tazeledi.`);
+                basladiBildir('⏳ Yayın raporu hazırlanıyor...');
                 yayinRaporGonder('elle').catch(() => {});
             } else if (YAYIN_VERI_KALIBI.test(icerik)) {
                 console.log(`[Veri] ${message.author.tag} veri toplamayi baslatti.`);
+                basladiBildir(`⏳ Veri kanalı taranıyor (son ${YAYIN_GUN_SAYISI} gün)... `
+                    + 'Mesaj sayısına göre biraz sürebilir.');
                 veriRaporGonder('elle').catch(() => {});
             }
         }
@@ -6210,7 +6224,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.12';
+const KOD_SURUMU = '2026-09-12.13';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
