@@ -507,6 +507,11 @@ const YAYIN_RAPOR_KANALI = '1548274410220429403';
 // Hic yayin acmayanlar AYRI kanala dusuyor.
 const YAYIN_YOK_KANALI = '1548282130558230598';
 const YAYIN_GUN_SAYISI = 15;          // rapor donemi: son 15 gun
+// Tek bir yayin oturumunun sayilabilecek EN UZUN suresi. Bir "Yayin Baslatildi"
+// logu var ama "Sonlandirildi" logu hic dusmediyse (bot kapanmasi, silinen
+// mesaj) oturum sonsuza kadar acik gorunur; sinir olmasa kisiye raporun tum
+// donemi (15 gun = 360 saat) yayin suresi olarak yazilirdi.
+const YAYIN_EN_UZUN_OTURUM_MS = 24 * 60 * 60 * 1000;
 const YAYIN_ORNEK_ADET = 5;           // teshiste kanal basina kac mesaj
 const PLAYER_INFO_KOMUTU = 'player-info';
 const PLAYER_INFO_BEKLEME_MS = 12000;
@@ -4399,6 +4404,10 @@ function sureyiAyristir(metin) {
     if (bulundu) return Math.round(ms);
 
     // "3:20" / "3:20:15" (saat:dakika[:saniye])
+    // YALNIZCA metinde acik bir sure etiketi varsa. Aksi halde log'daki SAAT
+    // bilgisi ("Bitis Zamani: 14:30") 14,5 SAATLIK bir sure sanilirdi ve kisi
+    // hic yapmadigi yayin saatleriyle raporda gorunurdu.
+    if (!/s[uü]re|toplam|duration|uzunluk|gecen/.test(t)) return 0;
     const bicim = t.match(/(?:^|\s)(\d{1,3}):([0-5]\d)(?::([0-5]\d))?(?:\s|$)/);
     if (bicim) {
         return (Number(bicim[1]) * 3600 + Number(bicim[2]) * 60 + Number(bicim[3] || 0)) * 1000;
@@ -4406,12 +4415,17 @@ function sureyiAyristir(metin) {
     return 0;
 }
 
-// Mesajdaki kisiyi bulur: once etiket, sonra ham ID.
+// Mesajdaki kisiyi bulur: once kisi etiketi, sonra "ad | id", sonra ham ID.
 function veriKisiBul(metin) {
     if (!metin) return null;
     const etiket = metin.match(/<@!?(\d{17,20})>/);
     if (etiket) return etiket[1];
-    const ham = metin.match(/(?:^|\D)(\d{17,20})(?:\D|$)/);
+    // KANAL (<#...>), ROL (<@&...>) ve zaman damgalarini (<t:...>) temizliyoruz:
+    // ham ID aramasi bunlari KISI sanip yayin suresini yanlis kisiye yazardi.
+    const temiz = String(metin).replace(/<(?:#|@&|t:)[^>]*>/g, ' ');
+    const boru = temiz.match(/\|\s*(\d{17,20})\b/);
+    if (boru) return boru[1];
+    const ham = temiz.match(/(?:^|\D)(\d{17,20})(?:\D|$)/);
     return ham ? ham[1] : null;
 }
 
@@ -4463,8 +4477,11 @@ function yayinOlayiAyristir(mesaj) {
 }
 
 // Basla/bitti olaylarini kisi basina eslestirip sureyi cikarir.
-// Sureler PENCEREYE kirpiliyor: pencereden once baslayip icinde biten yayinin
-// yalnizca kesisen kismi sayiliyor.
+//
+// HER sure bir ARALIGA (baslangic-bitis) cevrilip PENCEREYE kirpiliyor. Bu
+// sart: olay listesi kadroyu cikarabilmek icin 90 GUNLUK tarandigindan, 15
+// gunluk raporu hesaplarken pencere disindaki kayitlar elenmezse 40 gun once
+// yayin acip bu donemde HIC ACMAYAN biri raporda saatlerle gorunur.
 function yayinOlaylariniEslestir(olaylar, pencereBas, pencereBit) {
     const kisiler = new Map();
     olaylar.forEach((o) => {
@@ -4491,20 +4508,28 @@ function yayinOlaylariniEslestir(olaylar, pencereBas, pencereBit) {
                 acik = o.zaman;          // ust uste "basla" gelirse sonuncusu gecerli
                 return;
             }
-            // bitti
-            if (o.sure > 0) {            // bitis mesajinda hazir sure varsa onu kullan
-                ms += o.sure;
-                acik = null;
-                return;
-            }
+            // --- bitti ---
+            let bas;
             if (acik !== null) {
-                ms += kirp(acik, o.zaman);
-                acik = null;
+                bas = acik;              // gercek basla/bitti cifti: en guvenilir
+            } else if (o.sure > 0) {
+                // "Basla" gorulmedi ama bitis mesajinda hazir sure var: bitis
+                // zamanindan GERIYE sayip aralik kuruyoruz ki kirpilabilsin.
+                bas = o.zaman - Math.min(o.sure, YAYIN_EN_UZUN_OTURUM_MS);
+            } else {
+                return;                  // ne basla ne sure - sayilacak bir sey yok
             }
+            ms += kirp(bas, o.zaman);
+            acik = null;
         });
-        if (acik !== null) {             // hala yayinda: SU ANA kadar say
-            ms += kirp(acik, Math.min(simdi, pencereBit));
-            acikKalan.set(userId, acik);
+        if (acik !== null) {
+            // Hala acik gorunen oturum. BAYAT olabilir (bot kapanmis, "bitti"
+            // logu dusmemis): sinirsiz sayilsa kisiye 15 GUNLUK yayin suresi
+            // yazilirdi. Tek oturum ust siniriyla kesiyoruz.
+            const bit = Math.min(simdi, pencereBit, acik + YAYIN_EN_UZUN_OTURUM_MS);
+            ms += kirp(acik, bit);
+            // "Su an yayinda" isareti yalnizca makul suredir acik oturumlar icin.
+            if (simdi - acik <= YAYIN_EN_UZUN_OTURUM_MS) acikKalan.set(userId, acik);
         }
         if (ms > 0) toplam.set(userId, ms);
     });
@@ -4515,8 +4540,9 @@ function yayinOlaylariniEslestir(olaylar, pencereBas, pencereBit) {
 // gunSayisi: RAPOR penceresi. gecmisGun: kadroyu cikarmak icin taranacak daha
 // genis pencere ("eskiden yayin acmis ama bu donemde acmamis" kisiler icin).
 async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
-    const sinirZaman = Date.now() - gunSayisi * 24 * 60 * 60 * 1000;
-    const gecmisSinir = Date.now() - gecmisGun * 24 * 60 * 60 * 1000;
+    const simdiMs = Date.now();
+    const sinirZaman = simdiMs - gunSayisi * 24 * 60 * 60 * 1000;
+    const gecmisSinir = simdiMs - gecmisGun * 24 * 60 * 60 * 1000;
     let kanal;
     try {
         kanal = await client.channels.fetch(YAYIN_VERI_KANALI);
@@ -4585,17 +4611,31 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
     const { toplam, acikKalan } = yayinOlaylariniEslestir(olaylar, sinirZaman, Date.now());
     // Ayni taramadan GECMIS pencere: kimler bu kanalda hic gorunmus?
     const gecmis = yayinOlaylariniEslestir(olaylar, gecmisSinir, Date.now()).toplam;
-    // Kalip disi tekil sureler: ilgili pencereye dusuyorsa ekle.
-    tekilSureler.forEach((t) => {
-        if (t.zaman >= sinirZaman) toplam.set(t.userId, (toplam.get(t.userId) || 0) + t.ms);
-        if (t.zaman >= gecmisSinir) gecmis.set(t.userId, (gecmis.get(t.userId) || 0) + t.ms);
-    });
+    // Kalip disi tekil sureler. Mesajin kendi zamani BITIS kabul edilip geriye
+    // dogru bir aralik kuruluyor; boylece pencereye tasan kismi ayiklanabiliyor
+    // (duz "zaman >= sinir" kontrolu, sinirin hemen icinde loglanan 10 saatlik
+    // eski bir yayini tamamiyla bu doneme yazardi).
+    const tekilEkle = (hedef, pencereBas) => {
+        tekilSureler.forEach((t) => {
+            const sure = Math.min(t.ms, YAYIN_EN_UZUN_OTURUM_MS);
+            const pay = Math.max(0, Math.min(t.zaman, simdiMs) - Math.max(t.zaman - sure, pencereBas));
+            if (pay > 0) hedef.set(t.userId, (hedef.get(t.userId) || 0) + pay);
+        });
+    };
+    tekilEkle(toplam, sinirZaman);
+    tekilEkle(gecmis, gecmisSinir);
+    // Tarama KADRO icin 90 gunluk; rapor yalnizca son "gunSayisi" gune ait.
+    // Bu iki sayiyi rapora yaziyoruz ki "neden bu kisi yok" sorusu cevaplansin.
+    const pencereOlay = olaylar.filter((o) => o.zaman >= sinirZaman).length;
     return {
         toplam, acikKalan, gecmis, cozulemeyen, taranan,
         olaySayisi: olaylar.length,
+        pencereOlay,
+        gunSayisi,
+        gecmisGun,
         tekilSayisi: tekilSureler.length,
-        baslaSayisi: olaylar.filter((o) => o.tur === 'basla').length,
-        bittiSayisi: olaylar.filter((o) => o.tur === 'bitti').length,
+        baslaSayisi: olaylar.filter((o) => o.tur === 'basla' && o.zaman >= sinirZaman).length,
+        bittiSayisi: olaylar.filter((o) => o.tur === 'bitti' && o.zaman >= sinirZaman).length,
         kanalAd: kanal.name || YAYIN_VERI_KANALI,
     };
 }
@@ -4616,9 +4656,12 @@ async function veriRaporGonder(sebep = 'elle') {
         const genelToplam = satirlar.reduce((t, r) => t + r.ms, 0);
         const damga = `<t:${Math.floor(Date.now() / 1000)}:f>`;
         const bas = `# ⏱️ Yayın Süreleri — son ${YAYIN_GUN_SAYISI} gün\n`
-            + `Kaynak: #${sonuc.kanalAd} · Taranan: **${sonuc.taranan}** mesaj · `
-            + `Olay: **${sonuc.baslaSayisi}** başladı / **${sonuc.bittiSayisi}** bitti\n`
+            + `Kaynak: #${sonuc.kanalAd} · Taranan: **${sonuc.taranan}** mesaj `
+            + `(${sonuc.gecmisGun} gün) · Bu dönem: **${sonuc.pencereOlay}** olay `
+            + `(**${sonuc.baslaSayisi}** başladı / **${sonuc.bittiSayisi}** bitti)\n`
             + `Yayıncı: **${satirlar.length}** · Toplam: **${sureBicimle(genelToplam)}**\n`
+            + `_Yalnızca son ${YAYIN_GUN_SAYISI} güne düşen süreler sayıldı; `
+            + `daha eski yayınlar bu listede yok._\n`
             + `_Son güncelleme: ${damga}_\n`;
 
         const bloklar = [];
@@ -4681,7 +4724,7 @@ async function veriRaporGonder(sebep = 'elle') {
         const yokBas = `# 🚫 Bu Dönem Yayın Açmayanlar — son ${YAYIN_GUN_SAYISI} gün\n`
             + `**${acmayanlar.length}/${kadro.size}** kişi bu dönemde hiç yayın açmamış.\n`
             + `_Kadro kaynağı: ${rolBulundu ? `${rolBulundu} yayıncı rolü + ` : ''}`
-            + `veri kanalı geçmişi (90 gün)_\n`
+            + `veri kanalı geçmişi (${sonuc.gecmisGun} gün)_\n`
             + `_Son güncelleme: ${damga}_\n`;
 
         const yokBloklar = [];
@@ -4693,8 +4736,15 @@ async function veriRaporGonder(sebep = 'elle') {
         } else {
             const metin = acmayanlar.map((r, i) => {
                 const sira = `${i + 1}.`.padStart(3);
-                // "gecmis" kaynakli kisi: daha once acmis ama bu donemde yok.
-                const not = r.kaynak === 'gecmis' ? ' _(önceki dönemlerde açmış)_' : '';
+                // "gecmis" kaynakli kisi: daha once acmis ama BU donemde yok.
+                // Onceki donem toplamini da yaziyoruz ki liste denetlenebilsin
+                // ("bu adam yayin acmis" itirazinin cevabi: evet, ama 15 gun
+                // oncesinden eski).
+                const onceki = sonuc.gecmis.get(r.userId) || 0;
+                const not = r.kaynak === 'gecmis'
+                    ? ` — _önceki ${sonuc.gecmisGun} günde ${sureBicimle(onceki)}, `
+                        + `bu dönemde 0_`
+                    : ' — _hiç kaydı yok_';
                 return `\`${sira}\` <@${r.userId}>${not}`;
             });
             for (let i = 0; i < metin.length; i += 15) {
@@ -6435,7 +6485,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.17';
+const KOD_SURUMU = '2026-09-12.18';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6449,6 +6499,7 @@ const KOD_OZELLIKLERI = [
     'yayin-ornek',    // yayin saati icin mesaj yapisi teshisi
     'yayin-takip',    // ses/Go Live sure kaydi + saatlik rapor
     'yayin-veri',     // veri kanalindan sure toplama
+    'yayin-pencere',  // sureler rapor penceresine kirpiliyor (eski yayin sizmiyor)
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
 ];
