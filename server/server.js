@@ -4299,16 +4299,42 @@ async function yayinOrnekDok(message) {
                 bloklar.push(`**❌ [${etiket}] \`${id}\`** — kanal bulunamadı.`);
                 continue;
             }
+            const tur = kanal.type || '?';
+            const basBilgi = `**📁 [${etiket}] ${kanal.name || id}** \`${id}\` · tür: \`${tur}\``;
+
+            // SES kanallarinda mesaj yok (kanal.messages tanimsiz). Bunun yerine
+            // O ANKI uyeler ve yayin (Go Live) durumu yaziliyor - "kac saat yayin
+            // acti" sorusunun kaynagi buysa bunu bilmemiz gerek.
+            if (SES_KANAL_TIPLERI.has(kanal.type)) {
+                const uyeler = kanal.members ? [...kanal.members.values()] : [];
+                const satirlar = uyeler.map((m) => {
+                    const v = m.voice || {};
+                    const durum = [
+                        v.streaming ? 'YAYINDA (Go Live)' : null,
+                        v.selfVideo ? 'kamera' : null,
+                    ].filter(Boolean).join(', ') || 'sadece seste';
+                    return `${m.displayName}  —  ${m.id}  —  ${durum}`;
+                });
+                bloklar.push(`${basBilgi}\n🔊 **Ses kanalı** — şu an **${uyeler.length}** kişi`
+                    + (satirlar.length ? `\n\`\`\`\n${satirlar.join('\n')}\n\`\`\`` : '\n_(şu an kimse yok)_'));
+                continue;
+            }
+
+            if (!kanal.messages || typeof kanal.messages.fetch !== 'function') {
+                bloklar.push(`${basBilgi}\n_(mesaj okunamıyor — metin kanalı değil)_`);
+                continue;
+            }
+
             let toplu;
             try {
                 // eslint-disable-next-line no-await-in-loop
                 toplu = await kanal.messages.fetch({ limit: YAYIN_ORNEK_ADET });
             } catch (error) {
-                bloklar.push(`**❌ [${etiket}] #${kanal.name || id}** — mesajlar okunamadı: ${error.message}`);
+                bloklar.push(`${basBilgi}\n❌ mesajlar okunamadı: ${error.message}`);
                 continue;
             }
             const liste = [...toplu.values()];
-            const baslik = `**📁 [${etiket}] #${kanal.name || id}** \`${id}\` — ${liste.length} mesaj`;
+            const baslik = `${basBilgi} — ${liste.length} mesaj`;
             if (!liste.length) {
                 bloklar.push(`${baslik}\n_(mesaj görünmüyor)_`);
                 continue;
@@ -5439,7 +5465,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.2';
+const KOD_SURUMU = '2026-09-12.3';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
