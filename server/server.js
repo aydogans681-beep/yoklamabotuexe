@@ -4541,11 +4541,15 @@ async function yayinRaporGonder(sebep = 'zamanlayici') {
 
 
 function yayinRaporZamanlayici() {
+    // Ilk rapor acilistan kisa sure sonra: aksi halde yeniden baslatmanin
+    // ardindan kanallar bir saat boyunca bos/bayat kaliyordu. 2 dakika gecikme
+    // uye onbelleginin dolmasina zaman taniyor (rol uyeleri bos cikmasin).
+    setTimeout(() => yayinRaporGonder('acilis').catch(() => {}), 2 * 60 * 1000);
     setInterval(() => {
         yayinKayitBudama();
         yayinRaporGonder('saatlik').catch(() => {});
     }, YAYIN_RAPOR_ARALIK_MS);
-    console.log('[Yayin] Saatlik rapor zamanlayicisi kuruldu.');
+    console.log('[Yayin] Rapor zamanlayicisi kuruldu (ilk rapor ~2 dk sonra, sonra saatlik).');
 }
 
 // ============================================================================
@@ -4971,9 +4975,14 @@ client.on('messageCreate', (message) => {
     // Yayin saati teshisi: RAPOR kanalina "yayin ornek" yazilinca kanallarin
     // mesaj YAPISI dokuluyor (ayristirici bicimi bilmeden yazilamaz).
     try {
-        if (message.channelId === YAYIN_RAPOR_KANALI && message.author && !message.author.bot) {
+        // "yayin rapor" HER IKI rapor kanalinda da calissin: kullanici "hic
+        // acmayanlar" kanalindayken de tazeleyebilmeli (tek cagri ikisini birden
+        // gunceller). "yayin ornek" teshisi yalnizca ana kanalda.
+        const raporKanali = message.channelId === YAYIN_RAPOR_KANALI
+            || message.channelId === YAYIN_YOK_KANALI;
+        if (raporKanali && message.author && !message.author.bot) {
             const icerik = message.content || '';
-            if (YAYIN_ORNEK_KALIBI.test(icerik)) {
+            if (message.channelId === YAYIN_RAPOR_KANALI && YAYIN_ORNEK_KALIBI.test(icerik)) {
                 console.log(`[YayinOrnek] ${message.author.tag} ornek dokumu istedi.`);
                 yayinOrnekDok(message);
             } else if (YAYIN_RAPOR_KALIBI.test(icerik)) {
@@ -5861,7 +5870,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.6';
+const KOD_SURUMU = '2026-09-12.7';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
