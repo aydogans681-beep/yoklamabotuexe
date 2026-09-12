@@ -62,6 +62,10 @@ Thumbs.db
 # guncelle.ps1'in "yerel degisiklik var" kontrolu her seferinde takilirdi.
 server/public/logo.*
 
+# Yayin saati kayitlari - botun tuttugu ses/Go Live sure kaydi. Sunucunun
+# urettigi veri, her makinede farkli; depoda yeri yok.
+yayin-kayitlari.json
+
 # package-lock.json - npm "npm install" sirasinda otomatik uretir. Sunucudaki
 # npm surumu/platformu depodakinden farkli uretince "M server/package-lock.json"
 # olarak takip edilen bir degisiklik kaliyordu ve guncelle.ps1 "kaydedilmemis

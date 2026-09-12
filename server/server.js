@@ -728,7 +728,19 @@ function markConnected(source) {
     primeMembers()
         .then(() => primeAllLogs())
         .catch((error) => console.log(`[Hazirlik] Arka plan yuklemesi hata verdi: ${error.message}`));
+
+    // Yayin takibi: Discord gecmis ses/yayin verisi vermedigi icin kayit ne kadar
+    // gec baslarsa o kadar veri kalici olarak kaybolur - uye listesini beklemeden
+    // kendi icinde hallediyor.
+    if (!yayinTakibiKuruldu) {
+        yayinTakibiKuruldu = true;
+        yayinTakibiBaslat()
+            .then(() => yayinRaporZamanlayici())
+            .catch((error) => console.log(`[Yayin] Takip baslatilamadi: ${error.message}`));
+    }
 }
+
+let yayinTakibiKuruldu = false;
 
 function startReadyPolling() {
     if (readyPollTimer) clearInterval(readyPollTimer);
@@ -4168,12 +4180,317 @@ function metniParcala(metin, sinir = DISCORD_MESAJ_SINIRI) {
 }
 
 // ============================================================================
+// --- YAYIN SAATI TAKIBI ---
+// ONEMLI: Discord GECMIS ses/yayin verisini saklamiyor. Bir kanalda kimin ne
+// zaman yayin actigini yalnizca O AN gorebiliyoruz. Bu yuzden "son 15 gunde kac
+// saat" sorusu ancak KAYIT TUTARSAK cevaplanabiliyor - takip ne kadar gec
+// baslarsa o kadar veri kalici olarak kayboluyor.
+//
+// Iki sure ayri ayri tutuluyor:
+//   ses   -> izlenen ses kanallarinda bulunma suresi
+//   yayin -> o kanallarda Go Live (streaming) suresi
+// Hangisinin istendigi netlesene kadar ikisi de kaydediliyor; yanlis tahmin
+// yuzunden veri kaybetmeyelim.
+// ============================================================================
+const YAYIN_KAYIT_PATH = path.join(ROOT_DIR, 'yayin-kayitlari.json');
+const YAYIN_SAKLAMA_GUN = 45;              // rapor 15 gun; fazlasi guvenlik payi
+const YAYIN_RAPOR_ARALIK_MS = 60 * 60 * 1000;   // saatte bir
+
+// acik: "tur:userId" -> { channelId, baslangic }
+// tamam: [{ tur, userId, channelId, baslangic, bitis }]
+let yayinKayit = { acik: {}, tamam: [], sonKayit: 0, raporMesajId: null };
+
+function yayinKayitYukle() {
+    try {
+        if (!fs.existsSync(YAYIN_KAYIT_PATH)) return;
+        const ham = JSON.parse(fs.readFileSync(YAYIN_KAYIT_PATH, 'utf8'));
+        yayinKayit = {
+            acik: ham.acik && typeof ham.acik === 'object' ? ham.acik : {},
+            tamam: Array.isArray(ham.tamam) ? ham.tamam : [],
+            sonKayit: Number(ham.sonKayit) || 0,
+            raporMesajId: ham.raporMesajId || null,
+        };
+        console.log(`[Yayin] Kayitlar yuklendi: ${yayinKayit.tamam.length} oturum, `
+            + `${Object.keys(yayinKayit.acik).length} acik.`);
+    } catch (error) {
+        console.log(`[Yayin] Kayit dosyasi okunamadi: ${error.message}`);
+    }
+}
+
+function yayinKayitYaz() {
+    try {
+        yayinKayit.sonKayit = Date.now();
+        const gecici = `${YAYIN_KAYIT_PATH}.tmp`;
+        fs.writeFileSync(gecici, JSON.stringify(yayinKayit));
+        fs.renameSync(gecici, YAYIN_KAYIT_PATH);
+    } catch (error) {
+        console.log(`[Yayin] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+// Eski kayitlari atar - dosya sonsuza kadar buyumesin.
+function yayinKayitBudama() {
+    const sinir = Date.now() - YAYIN_SAKLAMA_GUN * 24 * 60 * 60 * 1000;
+    const once = yayinKayit.tamam.length;
+    yayinKayit.tamam = yayinKayit.tamam.filter((o) => o.bitis >= sinir);
+    if (yayinKayit.tamam.length !== once) {
+        console.log(`[Yayin] ${once - yayinKayit.tamam.length} eski oturum budandi.`);
+    }
+}
+
+function yayinOturumAc(tur, userId, channelId, zaman = Date.now()) {
+    const anahtar = `${tur}:${userId}`;
+    if (yayinKayit.acik[anahtar]) return;          // zaten acik
+    yayinKayit.acik[anahtar] = { channelId, baslangic: zaman };
+}
+
+function yayinOturumKapat(tur, userId, zaman = Date.now()) {
+    const anahtar = `${tur}:${userId}`;
+    const oturum = yayinKayit.acik[anahtar];
+    if (!oturum) return;
+    delete yayinKayit.acik[anahtar];
+    // Saticiliga karsi: negatif/sacma sureleri yazma.
+    if (zaman > oturum.baslangic) {
+        yayinKayit.tamam.push({
+            tur, userId, channelId: oturum.channelId,
+            baslangic: oturum.baslangic, bitis: zaman,
+        });
+    }
+}
+
+// Uye izlenen rollerden birine sahip mi?
+function yayinciMi(member) {
+    if (!member || !member.roles) return false;
+    return YAYIN_ROLLERI.some((r) => member.roles.cache.has(r));
+}
+
+function izlenenSesKanaliMi(channelId) {
+    return Boolean(channelId) && YAYIN_ARAMA_KANALLARI.includes(channelId);
+}
+
+// voiceStateUpdate: ses kanalina girme/cikma ve Go Live acma/kapama.
+function yayinVoiceStateIsle(eski, yeni) {
+    const member = (yeni && yeni.member) || (eski && eski.member);
+    if (!yayinciMi(member)) return;
+    const userId = member.id;
+    const simdi = Date.now();
+
+    const eskiKanal = eski ? eski.channelId : null;
+    const yeniKanal = yeni ? yeni.channelId : null;
+    const eskiIzlenen = izlenenSesKanaliMi(eskiKanal);
+    const yeniIzlenen = izlenenSesKanaliMi(yeniKanal);
+
+    // --- seste bulunma ---
+    if (eskiIzlenen && (!yeniIzlenen || eskiKanal !== yeniKanal)) {
+        yayinOturumKapat('ses', userId, simdi);
+    }
+    if (yeniIzlenen && (!eskiIzlenen || eskiKanal !== yeniKanal)) {
+        yayinOturumAc('ses', userId, yeniKanal, simdi);
+    }
+
+    // --- Go Live ---
+    // Kanal DEGISTIRME de kapat+ac olarak isleniyor: yayin surerken C1'den
+    // C2'ye gecince oturum eski kanalda takili kaliyordu (sure devam ediyordu
+    // ama kayit yanlis kanali gosteriyordu). 'ses' tarafinda bu zaten boyleydi.
+    const eskiYayin = Boolean(eski && eski.streaming) && eskiIzlenen;
+    const yeniYayin = Boolean(yeni && yeni.streaming) && yeniIzlenen;
+    const yayinKanalDegisti = eskiYayin && yeniYayin && eskiKanal !== yeniKanal;
+    if ((eskiYayin && !yeniYayin) || yayinKanalDegisti) {
+        yayinOturumKapat('yayin', userId, simdi);
+    }
+    if ((yeniYayin && !eskiYayin) || yayinKanalDegisti) {
+        yayinOturumAc('yayin', userId, yeniKanal, simdi);
+    }
+
+    yayinKayitYaz();
+}
+
+// Acilista: onceki calismadan kalan ACIK oturumlari son kayit aninda kapat
+// (bot kapaliyken gecen sure sayilmasin), sonra su anki duruma gore yeniden ac.
+async function yayinTakibiBaslat() {
+    yayinKayitYukle();
+
+    const kapanis = yayinKayit.sonKayit || Date.now();
+    Object.keys(yayinKayit.acik).forEach((anahtar) => {
+        const [tur, userId] = anahtar.split(':');
+        yayinOturumKapat(tur, userId, kapanis);
+    });
+
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        YAYIN_ARAMA_KANALLARI.forEach((kanalId) => {
+            const kanal = guild.channels.cache.get(kanalId);
+            if (!kanal || !kanal.members) return;
+            kanal.members.forEach((m) => {
+                if (!yayinciMi(m)) return;
+                yayinOturumAc('ses', m.id, kanalId);
+                if (m.voice && m.voice.streaming) yayinOturumAc('yayin', m.id, kanalId);
+            });
+        });
+    } catch (error) {
+        console.log(`[Yayin] Baslangic taramasi yapilamadi: ${error.message}`);
+    }
+
+    yayinKayitBudama();
+    yayinKayitYaz();
+    const acik = Object.keys(yayinKayit.acik).length;
+    console.log(`[Yayin] Takip basladi. Acik oturum: ${acik}, kayitli: ${yayinKayit.tamam.length}.`);
+}
+
+// Pencere icindeki toplam sureler. Acik oturumlar "su ana kadar" sayiliyor.
+// Oturum pencereyi tasiyorsa yalnizca KESISEN kismi sayiliyor.
+function yayinSureleriHesapla(pencereBas, pencereBit = Date.now()) {
+    const toplam = new Map();   // userId -> { sesMs, yayinMs }
+    const ekle = (userId, tur, ms) => {
+        if (ms <= 0) return;
+        if (!toplam.has(userId)) toplam.set(userId, { sesMs: 0, yayinMs: 0 });
+        const k = toplam.get(userId);
+        if (tur === 'yayin') k.yayinMs += ms; else k.sesMs += ms;
+    };
+    const kesisim = (a1, a2) => Math.max(0, Math.min(a2, pencereBit) - Math.max(a1, pencereBas));
+
+    yayinKayit.tamam.forEach((o) => ekle(o.userId, o.tur, kesisim(o.baslangic, o.bitis)));
+    Object.keys(yayinKayit.acik).forEach((anahtar) => {
+        const [tur, userId] = anahtar.split(':');
+        ekle(userId, tur, kesisim(yayinKayit.acik[anahtar].baslangic, pencereBit));
+    });
+    return toplam;
+}
+
+function sureBicimle(ms) {
+    const dk = Math.floor(ms / 60000);
+    const saat = Math.floor(dk / 60);
+    return `${saat} sa ${dk % 60} dk`;
+}
+
+// --- Saatlik rapor: eski mesaji silip yenisini atiyor ---
+async function yayinRaporBloklari() {
+    const pencereBas = Date.now() - YAYIN_GUN_SAYISI * 24 * 60 * 60 * 1000;
+    const sureler = yayinSureleriHesapla(pencereBas);
+
+    const guild = await getReadyGuild();
+    try { await ensureMembersFetched(guild); } catch (error) { /* onbellek yeterli olabilir */ }
+
+    // Rollerdeki HERKES listede olsun - hic yayin acmayan da "0" olarak gorunsun.
+    const kisiler = new Map();
+    YAYIN_ROLLERI.forEach((rolId) => {
+        const rol = guild.roles.cache.get(rolId);
+        if (!rol) return;
+        rol.members.forEach((m) => {
+            if (!kisiler.has(m.id)) kisiler.set(m.id, m.displayName);
+        });
+    });
+    // Rolden cikmis ama veride suresi olanlar da kaybolmasin.
+    sureler.forEach((_v, userId) => {
+        if (!kisiler.has(userId)) {
+            const m = guild.members.cache.get(userId);
+            kisiler.set(userId, m ? m.displayName : userId);
+        }
+    });
+
+    const satirlar = [...kisiler.entries()].map(([userId, ad]) => {
+        const k = sureler.get(userId) || { sesMs: 0, yayinMs: 0 };
+        return { ad, userId, ...k };
+    }).sort((a, b) => (b.yayinMs - a.yayinMs) || (b.sesMs - a.sesMs)
+        || String(a.ad).localeCompare(String(b.ad), 'tr'));
+
+    const toplamYayin = satirlar.reduce((t, r) => t + r.yayinMs, 0);
+    const aktif = satirlar.filter((r) => r.yayinMs > 0).length;
+
+    const bas = `# 📺 Yayın Saatleri — son ${YAYIN_GUN_SAYISI} gün\n`
+        + `Yayın açan: **${aktif}/${satirlar.length}** · Toplam: **${sureBicimle(toplamYayin)}**\n`
+        + `_Son güncelleme: <t:${Math.floor(Date.now() / 1000)}:R>_\n`;
+
+    if (!satirlar.length) {
+        return { bas, bloklar: ['_(rollerde kimse bulunamadı)_'] };
+    }
+
+    // Hizali tablo: kod blogunda sabit genislik.
+    const adGenislik = Math.min(22, Math.max(8, ...satirlar.map((r) => String(r.ad).length)));
+    const bloklar = [];
+    const satirMetni = satirlar.map((r, i) => {
+        const ad = String(r.ad).slice(0, adGenislik).padEnd(adGenislik);
+        return `${String(i + 1).padStart(2)}. ${ad}  yayın ${sureBicimle(r.yayinMs).padStart(9)}`
+            + `   seste ${sureBicimle(r.sesMs).padStart(9)}`;
+    });
+    // 20'serli gruplar: tek kod blogu cok uzarsa bolunsun.
+    for (let i = 0; i < satirMetni.length; i += 20) {
+        bloklar.push('```\n' + satirMetni.slice(i, i + 20).join('\n') + '\n```');
+    }
+    return { bas, bloklar };
+}
+
+let yayinRaporCalisiyor = false;
+
+async function yayinRaporGonder(sebep = 'zamanlayici') {
+    if (yayinRaporCalisiyor) return;
+    yayinRaporCalisiyor = true;
+    try {
+        let kanal;
+        try {
+            kanal = await client.channels.fetch(YAYIN_RAPOR_KANALI);
+        } catch (error) {
+            throw new Error(`Rapor kanalı alınamadı: ${error.message}`);
+        }
+        if (!kanal) throw new Error('Rapor kanalı bulunamadı.');
+
+        const { bas, bloklar } = await yayinRaporBloklari();
+        const parcalar = bloklariParcala(bas, bloklar);
+
+        // ONCE yeni mesajlari at, SONRA eskiyi sil: silme basarisiz olursa bile
+        // kanalda guncel rapor duruyor (ters sirada yapsaydik rapor kaybolabilirdi).
+        const yeniIdler = [];
+        for (let i = 0; i < parcalar.length; i += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            const g = await kanal.send({ content: parcalar[i], allowedMentions: { parse: [] } });
+            otomatikCiktiKaydet(g);
+            if (g && g.id) yeniIdler.push(g.id);
+        }
+
+        const eskiler = Array.isArray(yayinKayit.raporMesajId)
+            ? yayinKayit.raporMesajId
+            : (yayinKayit.raporMesajId ? [yayinKayit.raporMesajId] : []);
+        for (let i = 0; i < eskiler.length; i += 1) {
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                const eski = await kanal.messages.fetch(eskiler[i]);
+                // eslint-disable-next-line no-await-in-loop
+                if (eski) await eski.delete();
+            } catch (error) {
+                // Zaten silinmis ya da erisilemiyor - rapor yine de guncel.
+                console.log(`[Yayin] Eski rapor silinemedi (${eskiler[i]}): ${error.message}`);
+            }
+        }
+
+        yayinKayit.raporMesajId = yeniIdler;
+        yayinKayitYaz();
+        console.log(`[Yayin] Rapor guncellendi (${sebep}): ${parcalar.length} mesaj, `
+            + `${eskiler.length} eski mesaj silindi.`);
+    } catch (error) {
+        console.log(`[Yayin] Rapor gonderilemedi: ${error.message}`);
+    } finally {
+        yayinRaporCalisiyor = false;
+    }
+}
+
+function yayinRaporZamanlayici() {
+    setInterval(() => {
+        yayinKayitBudama();
+        yayinRaporGonder('saatlik').catch(() => {});
+    }, YAYIN_RAPOR_ARALIK_MS);
+    console.log('[Yayin] Saatlik rapor zamanlayicisi kuruldu.');
+}
+
+// ============================================================================
 // --- YAYIN SAATI: MESAJ YAPISI TESHISI ---
 // "Kac saat yayin acti" hesabi mesaj ayristirmaya dayaniyor; bicimi tahmin
 // etmek yanlis saat uretir. Bu yuzden once gercek mesajlarin sekli dokuluyor:
 // RAPOR kanalina "yayin ornek" yazmak yeterli.
 // ============================================================================
 const YAYIN_ORNEK_KALIBI = /^\s*yay[ıi]n\s*[-_ ]?\s*[öo]rnek\s*$/i;
+// Raporu elle tazelemek icin (zamanlayiciyi beklemeden).
+const YAYIN_RAPOR_KALIBI = /^\s*yay[ıi]n\s*[-_ ]?\s*rapor\s*$/i;
 
 // Bir mesajin HAM yapisini okunabilir bicimde ozetler: icerik, embed baslik/
 // aciklama/alanlari, bilesen ve ek sayilari. Ayristiriciyi buna bakarak yazacagiz.
@@ -4576,14 +4893,27 @@ async function yayinciEkleCalistir(message, alanlar) {
     }
 }
 
+client.on('voiceStateUpdate', (eski, yeni) => {
+    try {
+        yayinVoiceStateIsle(eski, yeni);
+    } catch (error) {
+        console.log(`[Yayin] voiceStateUpdate hatasi: ${error.message}`);
+    }
+});
+
 client.on('messageCreate', (message) => {
     // Yayin saati teshisi: RAPOR kanalina "yayin ornek" yazilinca kanallarin
     // mesaj YAPISI dokuluyor (ayristirici bicimi bilmeden yazilamaz).
     try {
-        if (message.channelId === YAYIN_RAPOR_KANALI && message.author && !message.author.bot
-            && YAYIN_ORNEK_KALIBI.test(message.content || '')) {
-            console.log(`[YayinOrnek] ${message.author.tag} ornek dokumu istedi.`);
-            yayinOrnekDok(message);
+        if (message.channelId === YAYIN_RAPOR_KANALI && message.author && !message.author.bot) {
+            const icerik = message.content || '';
+            if (YAYIN_ORNEK_KALIBI.test(icerik)) {
+                console.log(`[YayinOrnek] ${message.author.tag} ornek dokumu istedi.`);
+                yayinOrnekDok(message);
+            } else if (YAYIN_RAPOR_KALIBI.test(icerik)) {
+                console.log(`[Yayin] ${message.author.tag} raporu elle tazeledi.`);
+                yayinRaporGonder('elle').catch(() => {});
+            }
         }
     } catch (error) {
         console.log(`[YayinOrnek] Yakalama hatasi: ${error.message}`);
@@ -5465,7 +5795,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.3';
+const KOD_SURUMU = '2026-09-12.4';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -5477,6 +5807,7 @@ const KOD_OZELLIKLERI = [
     'yayinci-ekle',   // "id: .. level: .." -> /yayinciekle
     'panel-bilgi',    // /player-info sonucunu sonuc kanalina tasima
     'yayin-ornek',    // yayin saati icin mesaj yapisi teshisi
+    'yayin-takip',    // ses/Go Live sure kaydi + saatlik rapor
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
 ];
