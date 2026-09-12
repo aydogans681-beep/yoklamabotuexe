@@ -504,6 +504,8 @@ const YAYIN_ARAMA_KANALLARI = [
 ];
 const YAYIN_VERI_KANALI = '1476221680388145364';
 const YAYIN_RAPOR_KANALI = '1548274410220429403';
+// Hic yayin acmayanlar AYRI kanala dusuyor.
+const YAYIN_YOK_KANALI = '1548282130558230598';
 const YAYIN_GUN_SAYISI = 15;          // rapor donemi: son 15 gun
 const YAYIN_ORNEK_ADET = 5;           // teshiste kanal basina kac mesaj
 const PLAYER_INFO_KOMUTU = 'player-info';
@@ -4198,7 +4200,7 @@ const YAYIN_RAPOR_ARALIK_MS = 60 * 60 * 1000;   // saatte bir
 
 // acik: "tur:userId" -> { channelId, baslangic }
 // tamam: [{ tur, userId, channelId, baslangic, bitis }]
-let yayinKayit = { acik: {}, tamam: [], sonKayit: 0, raporMesajId: null };
+let yayinKayit = { acik: {}, tamam: [], sonKayit: 0, raporMesajId: null, yokRaporMesajId: null };
 
 function yayinKayitYukle() {
     try {
@@ -4209,6 +4211,7 @@ function yayinKayitYukle() {
             tamam: Array.isArray(ham.tamam) ? ham.tamam : [],
             sonKayit: Number(ham.sonKayit) || 0,
             raporMesajId: ham.raporMesajId || null,
+            yokRaporMesajId: ham.yokRaporMesajId || null,
         };
         console.log(`[Yayin] Kayitlar yuklendi: ${yayinKayit.tamam.length} oturum, `
             + `${Object.keys(yayinKayit.acik).length} acik.`);
@@ -4365,21 +4368,20 @@ function sureBicimle(ms) {
 }
 
 // --- Saatlik rapor: eski mesaji silip yenisini atiyor ---
-async function yayinRaporBloklari() {
+// Rapor verisi: rollerdeki herkes + pencere icindeki sureleri.
+async function yayinRaporVerisi() {
     const pencereBas = Date.now() - YAYIN_GUN_SAYISI * 24 * 60 * 60 * 1000;
     const sureler = yayinSureleriHesapla(pencereBas);
 
     const guild = await getReadyGuild();
     try { await ensureMembersFetched(guild); } catch (error) { /* onbellek yeterli olabilir */ }
 
-    // Rollerdeki HERKES listede olsun - hic yayin acmayan da "0" olarak gorunsun.
+    // Rollerdeki HERKES listeye girsin - hic yayin acmayan da gorunsun.
     const kisiler = new Map();
     YAYIN_ROLLERI.forEach((rolId) => {
         const rol = guild.roles.cache.get(rolId);
         if (!rol) return;
-        rol.members.forEach((m) => {
-            if (!kisiler.has(m.id)) kisiler.set(m.id, m.displayName);
-        });
+        rol.members.forEach((m) => { if (!kisiler.has(m.id)) kisiler.set(m.id, m.displayName); });
     });
     // Rolden cikmis ama veride suresi olanlar da kaybolmasin.
     sureler.forEach((_v, userId) => {
@@ -4389,36 +4391,64 @@ async function yayinRaporBloklari() {
         }
     });
 
-    const satirlar = [...kisiler.entries()].map(([userId, ad]) => {
-        const k = sureler.get(userId) || { sesMs: 0, yayinMs: 0 };
-        return { ad, userId, ...k };
-    }).sort((a, b) => (b.yayinMs - a.yayinMs) || (b.sesMs - a.sesMs)
-        || String(a.ad).localeCompare(String(b.ad), 'tr'));
+    return [...kisiler.entries()]
+        .map(([userId, ad]) => ({ ad, userId, ...(sureler.get(userId) || { sesMs: 0, yayinMs: 0 }) }))
+        .sort((a, b) => (b.yayinMs - a.yayinMs) || (b.sesMs - a.sesMs)
+            || String(a.ad).localeCompare(String(b.ad), 'tr'));
+}
 
-    const toplamYayin = satirlar.reduce((t, r) => t + r.yayinMs, 0);
-    const aktif = satirlar.filter((r) => r.yayinMs > 0).length;
-
-    const bas = `# 📺 Yayın Saatleri — son ${YAYIN_GUN_SAYISI} gün\n`
-        + `Yayın açan: **${aktif}/${satirlar.length}** · Toplam: **${sureBicimle(toplamYayin)}**\n`
-        + `_Son güncelleme: <t:${Math.floor(Date.now() / 1000)}:R>_\n`;
-
-    if (!satirlar.length) {
-        return { bas, bloklar: ['_(rollerde kimse bulunamadı)_'] };
-    }
-
-    // Hizali tablo: kod blogunda sabit genislik.
-    const adGenislik = Math.min(22, Math.max(8, ...satirlar.map((r) => String(r.ad).length)));
-    const bloklar = [];
-    const satirMetni = satirlar.map((r, i) => {
-        const ad = String(r.ad).slice(0, adGenislik).padEnd(adGenislik);
+// Hizali tablo. 20'serli gruplar: tek kod blogu cok uzamasin.
+function yayinTabloBloklari(satirlar) {
+    if (!satirlar.length) return ['_(kimse yok)_'];
+    const adGen = Math.min(22, Math.max(8, ...satirlar.map((r) => String(r.ad).length)));
+    const metin = satirlar.map((r, i) => {
+        const ad = String(r.ad).slice(0, adGen).padEnd(adGen);
         return `${String(i + 1).padStart(2)}. ${ad}  yayın ${sureBicimle(r.yayinMs).padStart(9)}`
             + `   seste ${sureBicimle(r.sesMs).padStart(9)}`;
     });
-    // 20'serli gruplar: tek kod blogu cok uzarsa bolunsun.
-    for (let i = 0; i < satirMetni.length; i += 20) {
-        bloklar.push('```\n' + satirMetni.slice(i, i + 20).join('\n') + '\n```');
+    const bloklar = [];
+    for (let i = 0; i < metin.length; i += 20) {
+        bloklar.push('```\n' + metin.slice(i, i + 20).join('\n') + '\n```');
     }
-    return { bas, bloklar };
+    return bloklar;
+}
+
+// ONCE yeni mesajlari atar, SONRA eskileri siler: silme patlasa bile kanalda
+// guncel rapor kalir (ters sirada yapsaydik rapor tamamen kaybolabilirdi).
+// Mesaj id'leri diske yaziliyor, yeniden baslatmada da dogru mesaj siliniyor.
+async function yayinRaporYayinla(kanalId, bas, bloklar, idAnahtar) {
+    let kanal;
+    try {
+        kanal = await client.channels.fetch(kanalId);
+    } catch (error) {
+        throw new Error(`Kanal alınamadı (${kanalId}): ${error.message}`);
+    }
+    if (!kanal) throw new Error(`Kanal bulunamadı: ${kanalId}`);
+
+    const parcalar = bloklariParcala(bas, bloklar);
+    const yeniIdler = [];
+    for (let i = 0; i < parcalar.length; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const g = await kanal.send({ content: parcalar[i], allowedMentions: { parse: [] } });
+        otomatikCiktiKaydet(g);
+        if (g && g.id) yeniIdler.push(g.id);
+    }
+
+    const eskiler = Array.isArray(yayinKayit[idAnahtar])
+        ? yayinKayit[idAnahtar]
+        : (yayinKayit[idAnahtar] ? [yayinKayit[idAnahtar]] : []);
+    for (let i = 0; i < eskiler.length; i += 1) {
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const eski = await kanal.messages.fetch(eskiler[i]);
+            // eslint-disable-next-line no-await-in-loop
+            if (eski) await eski.delete();
+        } catch (error) {
+            console.log(`[Yayin] Eski rapor silinemedi (${eskiler[i]}): ${error.message}`);
+        }
+    }
+    yayinKayit[idAnahtar] = yeniIdler;
+    return { yeni: yeniIdler.length, silinen: eskiler.length };
 }
 
 let yayinRaporCalisiyor = false;
@@ -4427,52 +4457,45 @@ async function yayinRaporGonder(sebep = 'zamanlayici') {
     if (yayinRaporCalisiyor) return;
     yayinRaporCalisiyor = true;
     try {
-        let kanal;
+        const satirlar = await yayinRaporVerisi();
+        const acanlar = satirlar.filter((r) => r.yayinMs > 0);
+        const acmayanlar = satirlar.filter((r) => r.yayinMs <= 0);
+        const toplam = satirlar.reduce((t, r) => t + r.yayinMs, 0);
+        const damga = `<t:${Math.floor(Date.now() / 1000)}:R>`;
+
+        // --- 1) Ana rapor: herkes ---
+        const anaBas = `# 📺 Yayın Saatleri — son ${YAYIN_GUN_SAYISI} gün\n`
+            + `Yayın açan: **${acanlar.length}/${satirlar.length}** · Toplam: **${sureBicimle(toplam)}**\n`
+            + `_Son güncelleme: ${damga}_\n`;
         try {
-            kanal = await client.channels.fetch(YAYIN_RAPOR_KANALI);
+            await yayinRaporYayinla(YAYIN_RAPOR_KANALI, anaBas, yayinTabloBloklari(satirlar), 'raporMesajId');
         } catch (error) {
-            throw new Error(`Rapor kanalı alınamadı: ${error.message}`);
-        }
-        if (!kanal) throw new Error('Rapor kanalı bulunamadı.');
-
-        const { bas, bloklar } = await yayinRaporBloklari();
-        const parcalar = bloklariParcala(bas, bloklar);
-
-        // ONCE yeni mesajlari at, SONRA eskiyi sil: silme basarisiz olursa bile
-        // kanalda guncel rapor duruyor (ters sirada yapsaydik rapor kaybolabilirdi).
-        const yeniIdler = [];
-        for (let i = 0; i < parcalar.length; i += 1) {
-            // eslint-disable-next-line no-await-in-loop
-            const g = await kanal.send({ content: parcalar[i], allowedMentions: { parse: [] } });
-            otomatikCiktiKaydet(g);
-            if (g && g.id) yeniIdler.push(g.id);
+            console.log(`[Yayin] Ana rapor gonderilemedi: ${error.message}`);
         }
 
-        const eskiler = Array.isArray(yayinKayit.raporMesajId)
-            ? yayinKayit.raporMesajId
-            : (yayinKayit.raporMesajId ? [yayinKayit.raporMesajId] : []);
-        for (let i = 0; i < eskiler.length; i += 1) {
-            try {
-                // eslint-disable-next-line no-await-in-loop
-                const eski = await kanal.messages.fetch(eskiler[i]);
-                // eslint-disable-next-line no-await-in-loop
-                if (eski) await eski.delete();
-            } catch (error) {
-                // Zaten silinmis ya da erisilemiyor - rapor yine de guncel.
-                console.log(`[Yayin] Eski rapor silinemedi (${eskiler[i]}): ${error.message}`);
-            }
+        // --- 2) Hic yayin acmayanlar: AYRI kanal ---
+        // Ayri try: biri patlarsa digeri yine de guncellensin.
+        const yokBas = `# 🚫 Hiç Yayın Açmayanlar — son ${YAYIN_GUN_SAYISI} gün\n`
+            + `**${acmayanlar.length}/${satirlar.length}** kişi hiç Go Live açmadı.\n`
+            + `_Son güncelleme: ${damga}_\n`;
+        const yokBloklar = acmayanlar.length
+            ? yayinTabloBloklari(acmayanlar)
+            : ['✅ _Herkes en az bir kez yayın açmış._'];
+        try {
+            await yayinRaporYayinla(YAYIN_YOK_KANALI, yokBas, yokBloklar, 'yokRaporMesajId');
+        } catch (error) {
+            console.log(`[Yayin] "Yayin acmayanlar" raporu gonderilemedi: ${error.message}`);
         }
 
-        yayinKayit.raporMesajId = yeniIdler;
         yayinKayitYaz();
-        console.log(`[Yayin] Rapor guncellendi (${sebep}): ${parcalar.length} mesaj, `
-            + `${eskiler.length} eski mesaj silindi.`);
+        console.log(`[Yayin] Rapor guncellendi (${sebep}): ${acanlar.length} acan, ${acmayanlar.length} acmayan.`);
     } catch (error) {
-        console.log(`[Yayin] Rapor gonderilemedi: ${error.message}`);
+        console.log(`[Yayin] Rapor hatasi: ${error.message}`);
     } finally {
         yayinRaporCalisiyor = false;
     }
 }
+
 
 function yayinRaporZamanlayici() {
     setInterval(() => {
@@ -5795,7 +5818,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.4';
+const KOD_SURUMU = '2026-09-12.5';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
