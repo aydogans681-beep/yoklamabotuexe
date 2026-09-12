@@ -4368,6 +4368,33 @@ function sureBicimle(ms) {
 }
 
 // --- Saatlik rapor: eski mesaji silip yenisini atiyor ---
+// Rolu once onbellekten arar, bulamazsa API'den TAZE ceker. Rol bot
+// baglandiktan SONRA olusturulduysa onbellekte olmayabiliyor - "rol bulunamadi"
+// demeden once bunu denemek gerek.
+async function yayinRolBul(guild, rolId) {
+    const onbellek = guild.roles.cache.get(rolId);
+    if (onbellek) return onbellek;
+    try {
+        return await guild.roles.fetch(rolId);
+    } catch (error) {
+        return null;
+    }
+}
+
+// Rol bulunamadiginda "hangi ID dogru?" sorusunu cevaplamak icin sunucudaki
+// GERCEK rolleri listeler. Adinda yayin/stream gecenler oncelikli.
+function yayinAdayRoller(guild, limit = 15) {
+    const kalip = /yay[ıi]n|stream|publisher/i;
+    const hepsi = [...guild.roles.cache.values()].filter((r) => r.id !== guild.id);
+    const eslesen = hepsi.filter((r) => kalip.test(r.name || ''));
+    const liste = (eslesen.length ? eslesen : [...hepsi].sort(byHierarchyDesc)).slice(0, limit);
+    return {
+        eslesmeVar: eslesen.length > 0,
+        toplam: hepsi.length,
+        satirlar: liste.map((r) => `${String(r.name).slice(0, 28).padEnd(28)} ${r.id}  (${r.members ? r.members.size : '?'} üye)`),
+    };
+}
+
 // Rapor verisi: rollerdeki herkes + pencere icindeki sureleri.
 // pencereBas = 0 verilirse TUM ZAMANLAR hesaplanir.
 // Liste bos cikarsa NEDENINI de donduruyoruz: "rollerde kimse bulunamadi" tek
@@ -4385,16 +4412,22 @@ async function yayinRaporVerisi(pencereBas) {
     }
 
     const kisiler = new Map();
-    const rolTani = YAYIN_ROLLERI.map((rolId) => {
-        const rol = guild.roles.cache.get(rolId);
-        if (!rol) return { id: rolId, ad: null, adet: 0, durum: 'rol bulunamadı (ID yanlış olabilir)' };
+    const rolTani = [];
+    for (let i = 0; i < YAYIN_ROLLERI.length; i += 1) {
+        const rolId = YAYIN_ROLLERI[i];
+        // eslint-disable-next-line no-await-in-loop
+        const rol = await yayinRolBul(guild, rolId);
+        if (!rol) {
+            rolTani.push({ id: rolId, ad: null, adet: 0, durum: 'rol bulunamadı (ID yanlış olabilir)' });
+            continue;
+        }
         let adet = 0;
         rol.members.forEach((m) => {
             adet += 1;
             if (!kisiler.has(m.id)) kisiler.set(m.id, m.displayName);
         });
-        return { id: rolId, ad: rol.name, adet, durum: adet ? 'ok' : 'rolde üye görünmüyor' };
-    });
+        rolTani.push({ id: rolId, ad: rol.name, adet, durum: adet ? 'ok' : 'rolde üye görünmüyor' });
+    }
 
     // Rolden cikmis ama veride suresi olanlar da kaybolmasin.
     sureler.forEach((_v, userId) => {
@@ -4409,7 +4442,17 @@ async function yayinRaporVerisi(pencereBas) {
         .sort((a, b) => (b.yayinMs - a.yayinMs) || (b.sesMs - a.sesMs)
             || String(a.ad).localeCompare(String(b.ad), 'tr'));
 
-    return { satirlar, rolTani, uyeHatasi, onbellekUye: guild.members.cache.size };
+    // Rol bulunamadiysa dogru ID'yi secebilmek icin aday listesi de donuyor.
+    const bulunamayanVar = rolTani.some((r) => !r.ad);
+    return {
+        satirlar, rolTani, uyeHatasi,
+        // IKISI birden: guild.memberCount Discord'un RESMI sayisi, cache ise
+        // bizim tuttugumuz. Arada buyuk fark varsa onbellekte ayrilmis uyeler
+        // birikmis (ya da tam tersi, liste eksik cekilmis) demektir.
+        sunucuUye: typeof guild.memberCount === 'number' ? guild.memberCount : null,
+        onbellekUye: guild.members.cache.size,
+        adaylar: bulunamayanVar ? yayinAdayRoller(guild) : null,
+    };
 }
 
 // Liste bos oldugunda sebebi yazan blok. Boylece "kimse yok" yerine NE oldugu
@@ -4418,9 +4461,19 @@ function yayinTaniBlogu(veri) {
     const satirlar = veri.rolTani.map((r) => (r.ad
         ? `• ${r.ad}  (${r.id}) — ${r.adet} üye${r.durum === 'ok' ? '' : ` ⚠️ ${r.durum}`}`
         : `• ${r.id} — ⚠️ ${r.durum}`));
-    satirlar.push(`• Sunucu üye önbelleği: ${veri.onbellekUye} kişi`);
+    satirlar.push(`• Sunucu üyesi (Discord): ${veri.sunucuUye === null ? '?' : veri.sunucuUye}`
+        + `  ·  önbellekte: ${veri.onbellekUye}`);
     if (veri.uyeHatasi) satirlar.push(`• ⚠️ Üye listesi çekilemedi: ${veri.uyeHatasi}`);
-    return `⚠️ **Rollerde kimse bulunamadı.** Teşhis:\n\`\`\`\n${satirlar.join('\n')}\n\`\`\``;
+
+    let metin = `⚠️ **Rollerde kimse bulunamadı.** Teşhis:\n\`\`\`\n${satirlar.join('\n')}\n\`\`\``;
+    // Rol bulunamadiysa DOGRU ID'yi secebilmesi icin sunucudaki gercek rolleri yaz.
+    if (veri.adaylar && veri.adaylar.satirlar.length) {
+        metin += `\n**Sunucudaki roller** (${veri.adaylar.toplam} rol`
+            + `${veri.adaylar.eslesmeVar ? ", adında \"yayın/stream\" geçenler" : ', ilk 15'}):`
+            + `\n\`\`\`\n${veri.adaylar.satirlar.join('\n')}\n\`\`\``
+            + '\nDoğru rol ID\'sini bana ilet, koda yazayım.';
+    }
+    return metin;
 }
 
 
@@ -5870,7 +5923,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.7';
+const KOD_SURUMU = '2026-09-12.8';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
