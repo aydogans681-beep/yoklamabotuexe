@@ -6224,7 +6224,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.13';
+const KOD_SURUMU = '2026-09-12.14';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -9310,6 +9310,10 @@ server.listen(PORT, () => {
     try {
         console.log(`[Sistem] Calisan kod: ${__filename} (${fs.statSync(__filename).mtime.toISOString()})`);
     } catch (error) { /* yoksay */ }
+    // Calisan kod surumu ACILISTA loga yazilsin: "pm2 logs" bakan biri hangi
+    // surumun ayakta oldugunu ilk bakista gorsun. Guncelleme uygulanmis mi
+    // sorusu defalarca vakit kaybettirdi.
+    console.log(`[Sistem] Kod surumu: ${KOD_SURUMU}  |  ozellikler: ${KOD_OZELLIKLERI.join(', ')}`);
     console.log('[Sistem] Surum kontrolu: http://localhost:' + PORT + '/api/surum');
 });
 
