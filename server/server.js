@@ -4511,8 +4511,11 @@ function yayinOlaylariniEslestir(olaylar, pencereBas, pencereBit) {
 }
 
 // Kanali son N gun icin tarar, kisi basina sureyi toplar.
-async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI) {
+// gunSayisi: RAPOR penceresi. gecmisGun: kadroyu cikarmak icin taranacak daha
+// genis pencere ("eskiden yayin acmis ama bu donemde acmamis" kisiler icin).
+async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
     const sinirZaman = Date.now() - gunSayisi * 24 * 60 * 60 * 1000;
+    const gecmisSinir = Date.now() - gecmisGun * 24 * 60 * 60 * 1000;
     let kanal;
     try {
         kanal = await client.channels.fetch(YAYIN_VERI_KANALI);
@@ -4530,7 +4533,9 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI) {
     let beforeId;
     // Pencereden ONCE baslayip icinde biten yayinlari da eslestirebilmek icin
     // biraz geriye tasiyoruz; sureler yine pencereye kirpiliyor.
-    const cekmeSiniri = sinirZaman - 2 * 24 * 60 * 60 * 1000;
+    // Kadroyu cikarabilmek icin GECMIS pencere kadar geriye gidiyoruz; rapor
+    // suresi yine yalnizca sinirZaman penceresine gore hesaplaniyor.
+    const cekmeSiniri = Math.min(gecmisSinir, sinirZaman - 2 * 24 * 60 * 60 * 1000);
 
     for (;;) {
         const secenek = { limit: 100 };
@@ -4566,8 +4571,10 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI) {
     }
 
     const { toplam, acikKalan } = yayinOlaylariniEslestir(olaylar, sinirZaman, Date.now());
+    // Ayni taramadan GECMIS pencere: kimler bu kanalda hic gorunmus?
+    const gecmis = yayinOlaylariniEslestir(olaylar, gecmisSinir, Date.now()).toplam;
     return {
-        toplam, acikKalan, cozulemeyen, taranan,
+        toplam, acikKalan, gecmis, cozulemeyen, taranan,
         olaySayisi: olaylar.length,
         baslaSayisi: olaylar.filter((o) => o.tur === 'basla').length,
         bittiSayisi: olaylar.filter((o) => o.tur === 'bitti').length,
@@ -4623,6 +4630,72 @@ async function veriRaporGonder(sebep = 'elle') {
         }
 
         await yayinRaporYayinla(YAYIN_RAPOR_KANALI, bas, bloklar, 'veriRaporMesajId');
+
+        // --- HIC YAYIN ACMAYANLAR: ayri kanal ---
+        // "Kim yayin acmaliydi?" sorusu icin bir KADRO lazim. Iki kaynak:
+        //   1) Yayinci rolleri - asil dogru kaynak (bulunabiliyorsa)
+        //   2) Veri kanalinda GECMISTE (son 90 gun) gorunen herkes - roller
+        //      bulunamazsa en azindan "eskiden acmis ama bu donemde acmamis"
+        //      kisiler cikiyor. Rol olmadan "hic acmamis" bilinemez, cunku hic
+        //      acmayan kisi log kanalinda hic gorunmez.
+        const kadro = new Map();          // userId -> kaynak
+        let rolBulundu = 0;
+        try {
+            const guild = await yayinGuildBul();
+            for (let i = 0; i < YAYIN_ROLLERI.length; i += 1) {
+                // eslint-disable-next-line no-await-in-loop
+                const rol = await yayinRolBul(guild, YAYIN_ROLLERI[i]);
+                if (!rol || !rol.members) continue;
+                rolBulundu += 1;
+                rol.members.forEach((m) => kadro.set(m.id, 'rol'));
+            }
+        } catch (error) {
+            console.log(`[Veri] Rol kadrosu alinamadi: ${error.message}`);
+        }
+        sonuc.gecmis.forEach((_ms, userId) => {
+            if (!kadro.has(userId)) kadro.set(userId, 'gecmis');
+        });
+
+        const acmayanlar = [...kadro.entries()]
+            .filter(([userId]) => !sonuc.toplam.has(userId))
+            .map(([userId, kaynak]) => ({ userId, kaynak }));
+
+        const yokBas = `# 🚫 Bu Dönem Yayın Açmayanlar — son ${YAYIN_GUN_SAYISI} gün\n`
+            + `**${acmayanlar.length}/${kadro.size}** kişi bu dönemde hiç yayın açmamış.\n`
+            + `_Kadro kaynağı: ${rolBulundu ? `${rolBulundu} yayıncı rolü + ` : ''}`
+            + `veri kanalı geçmişi (90 gün)_\n`
+            + `_Son güncelleme: ${damga}_\n`;
+
+        const yokBloklar = [];
+        if (!kadro.size) {
+            yokBloklar.push('_(kadro çıkarılamadı: ne yayıncı rolü bulundu ne de '
+                + 'veri kanalında geçmiş kayıt var)_');
+        } else if (!acmayanlar.length) {
+            yokBloklar.push('✅ _Kadrodaki herkes bu dönemde yayın açmış._');
+        } else {
+            const metin = acmayanlar.map((r, i) => {
+                const sira = `${i + 1}.`.padStart(3);
+                // "gecmis" kaynakli kisi: daha once acmis ama bu donemde yok.
+                const not = r.kaynak === 'gecmis' ? ' _(önceki dönemlerde açmış)_' : '';
+                return `\`${sira}\` <@${r.userId}>${not}`;
+            });
+            for (let i = 0; i < metin.length; i += 15) {
+                yokBloklar.push(metin.slice(i, i + 15).join('\n'));
+            }
+        }
+        if (!rolBulundu) {
+            yokBloklar.push('⚠️ _Yayıncı rolleri bulunamadığı için "hiç yayın açmamış" '
+                + 'kişiler tam çıkarılamıyor: hiç açmayan biri log kanalında hiç görünmez. '
+                + 'Doğru rol ID\'leri verilirse liste eksiksiz olur._');
+        }
+
+        // Ayri try: ana rapor gitmisse bu patlasa da onu bozmasin.
+        try {
+            await yayinRaporYayinla(YAYIN_YOK_KANALI, yokBas, yokBloklar, 'yokRaporMesajId');
+        } catch (error) {
+            console.log(`[Veri] "Acmayanlar" raporu gonderilemedi: ${error.message}`);
+        }
+
         yayinKayitYaz();
         console.log(`[Veri] Rapor (${sebep}): ${sonuc.taranan} mesaj, `
             + `${sonuc.baslaSayisi} basla / ${sonuc.bittiSayisi} bitti, `
@@ -6312,7 +6385,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.15';
+const KOD_SURUMU = '2026-09-12.16';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
