@@ -4402,6 +4402,26 @@ function yayinUyeleriHazirla(guild) {
     return yayinUyeOnbellek.get(guild.id);
 }
 
+// Rol olarak bulunamayan bir ID aslinda NE? Kanal mi, kullanici mi, hicbir sey
+// mi? "rol bulunamadi" tek basina yetmiyor - ID dogruysa nerede oldugunu,
+// yanlissa ne oldugunu soylemek gerek.
+async function yayinIdNedir(id) {
+    try {
+        const kanal = await client.channels.fetch(id);
+        if (kanal) {
+            return `bu bir KANAL: ${kanal.name || id}`
+                + `${kanal.guild ? ` (sunucu: ${kanal.guild.name})` : ''}`;
+        }
+    } catch (error) { /* kanal degil */ }
+    try {
+        const kullanici = await client.users.fetch(id);
+        if (kullanici) return `bu bir KULLANICI: ${kullanici.tag}`;
+    } catch (error) { /* kullanici degil */ }
+    const sunucu = client.guilds.cache.get(id);
+    if (sunucu) return `bu bir SUNUCU: ${sunucu.name}`;
+    return 'hiçbir sunucuda rol/kanal/kullanıcı olarak bulunamadı';
+}
+
 // Rolu once onbellekten arar, bulamazsa API'den TAZE ceker. Rol bot
 // baglandiktan SONRA olusturulduysa onbellekte olmayabiliyor - "rol bulunamadi"
 // demeden once bunu denemek gerek.
@@ -4412,12 +4432,24 @@ async function yayinRolBul(guild, rolId) {
         const taze = await guild.roles.fetch(rolId);
         if (taze) return taze;
     } catch (error) { /* bu sunucuda yok - asagida diger sunuculara bakiyoruz */ }
-    // Son care: hesabin uyesi oldugu TUM sunucularda ara. Rol baska bir
-    // sunucudaysa da bulunsun (kanallar da oyle bulunabiliyor).
-    const bulunan = [...client.guilds.cache.values()]
+    // Onbellek taramasi: rol baska bir sunucudaysa da bulunsun.
+    const onbelleklerde = [...client.guilds.cache.values()]
         .map((g) => g.roles.cache.get(rolId))
         .find(Boolean);
-    return bulunan || null;
+    if (onbelleklerde) return onbelleklerde;
+
+    // Son care: ANA sunucuda TAZE fetch. Rol bot baglandiktan sonra
+    // olusturulduysa onbellekte olmaz; her sunucuda taze cekmek 80+ istek
+    // demek oldugu icin yalnizca ana sunucuyu deniyoruz (yayin sunucusu zaten
+    // yukarida taze cekildi).
+    try {
+        const ana = client.guilds.cache.get(GUILD_ID);
+        if (ana && ana.id !== guild.id) {
+            const taze = await ana.roles.fetch(rolId);
+            if (taze) return taze;
+        }
+    } catch (error) { /* orada da yok */ }
+    return null;
 }
 
 // Rol bulunamadiginda "hangi ID dogru?" sorusunu cevaplamak icin sunucudaki
@@ -4457,7 +4489,9 @@ async function yayinRaporVerisi(pencereBas) {
         // eslint-disable-next-line no-await-in-loop
         const rol = await yayinRolBul(guild, rolId);
         if (!rol) {
-            rolTani.push({ id: rolId, ad: null, adet: 0, durum: 'rol bulunamadı (ID yanlış olabilir)' });
+            // eslint-disable-next-line no-await-in-loop
+            const neymis = await yayinIdNedir(rolId);
+            rolTani.push({ id: rolId, ad: null, adet: 0, durum: `rol değil → ${neymis}` });
             continue;
         }
         let adet = 0;
@@ -4465,7 +4499,11 @@ async function yayinRaporVerisi(pencereBas) {
             adet += 1;
             if (!kisiler.has(m.id)) kisiler.set(m.id, m.displayName);
         });
-        rolTani.push({ id: rolId, ad: rol.name, adet, durum: adet ? 'ok' : 'rolde üye görünmüyor' });
+        rolTani.push({
+            id: rolId, ad: rol.name, adet,
+            nerede: rol.guild ? rol.guild.name : null,
+            durum: adet ? 'ok' : 'rolde üye görünmüyor',
+        });
     }
 
     // Rolden cikmis ama veride suresi olanlar da kaybolmasin.
@@ -4500,7 +4538,8 @@ async function yayinRaporVerisi(pencereBas) {
 // gorunuyor: rol mu yok, uye onbellegi mi bos.
 function yayinTaniBlogu(veri) {
     const satirlar = veri.rolTani.map((r) => (r.ad
-        ? `• ${r.ad}  (${r.id}) — ${r.adet} üye${r.durum === 'ok' ? '' : ` ⚠️ ${r.durum}`}`
+        ? `• ${r.ad}  (${r.id}) — ${r.adet} üye`
+            + `${r.nerede ? `  [${r.nerede}]` : ''}${r.durum === 'ok' ? '' : `  ⚠️ ${r.durum}`}`
         : `• ${r.id} — ⚠️ ${r.durum}`));
     satirlar.unshift(`• Bakılan sunucu: ${veri.sunucuAd || '?'} (${veri.sunucuId})`);
     satirlar.push(`• Sunucu üyesi (Discord): ${veri.sunucuUye === null ? '?' : veri.sunucuUye}`
@@ -5978,7 +6017,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.9';
+const KOD_SURUMU = '2026-09-12.11';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
