@@ -4199,17 +4199,92 @@ function mesajYapisiniOzetle(mesaj) {
     return satirlar.join('\n');
 }
 
+// Bloklari (her biri kendi icinde BUTUN) siniri asmadan mesajlara dagitir.
+// metniParcala satir bazli boldugu icin bir kod blogunun ORTASINDAN kesebiliyor
+// ve bicim bozuluyordu; burada bolme yalnizca blok sinirlarinda oluyor.
+function bloklariParcala(bas, bloklar, sinir = DISCORD_MESAJ_SINIRI) {
+    const parcalar = [];
+    let simdiki = bas || '';
+    bloklar.forEach((blok) => {
+        if (blok.length > sinir) {
+            // Tek basina siniri asan blok - onu satir bazli bolmek zorundayiz.
+            if (simdiki.trim()) { parcalar.push(simdiki); simdiki = ''; }
+            metniParcala(blok, sinir).forEach((x) => parcalar.push(x));
+            return;
+        }
+        const ek = simdiki ? `\n${blok}` : blok;
+        if (simdiki.length + ek.length > sinir) {
+            parcalar.push(simdiki);
+            simdiki = blok;
+            return;
+        }
+        simdiki += ek;
+    });
+    if (simdiki.trim()) parcalar.push(simdiki);
+    return parcalar.length ? parcalar : [bas || ''];
+}
+
+// Yayinci rollerindeki uyeler. Rapor bu kisilerin uzerinden cikacak.
+async function yayinRolUyeleri() {
+    const guild = await getReadyGuild();
+    try {
+        await ensureMembersFetched(guild);
+    } catch (error) {
+        console.log(`[YayinOrnek] Uye listesi alinamadi: ${error.message}`);
+    }
+    return YAYIN_ROLLERI.map((rolId) => {
+        const rol = guild.roles.cache.get(rolId);
+        if (!rol) return { id: rolId, ad: null, uyeler: [], hata: 'rol bulunamadı' };
+        const uyeler = [...rol.members.values()]
+            .map((m) => ({ id: m.id, ad: m.displayName, tag: m.user.tag }))
+            .sort((a, b) => String(a.ad).localeCompare(String(b.ad), 'tr'));
+        return { id: rolId, ad: rol.name, uyeler, hata: null };
+    });
+}
+
+// Rol bolumunu okunabilir bicimde yazar. Kisi listesi kod blogunda -
+// hizalanmis ve kopyalamasi kolay.
+function yayinRolBlogu(rolBilgisi, limit = 30) {
+    if (rolBilgisi.hata) {
+        return `**❌ Rol ${rolBilgisi.id}** — ${rolBilgisi.hata}`;
+    }
+    const n = rolBilgisi.uyeler.length;
+    const gosterilecek = rolBilgisi.uyeler.slice(0, limit);
+    const satirlar = gosterilecek.map((u) => `${u.ad}  —  ${u.id}`);
+    const fazla = n > gosterilecek.length ? `\n… +${n - gosterilecek.length} kişi daha` : '';
+    return `**👤 ${rolBilgisi.ad}** \`${rolBilgisi.id}\` — **${n} kişi**\n`
+        + (n ? `\`\`\`\n${satirlar.join('\n')}${fazla}\n\`\`\`` : '_(bu rolde kimse yok)_');
+}
+
 let yayinOrnekCalisiyor = false;
 
 async function yayinOrnekDok(message) {
     if (yayinOrnekCalisiyor) return;
     yayinOrnekCalisiyor = true;
     try {
+        message.channel.sendTyping().catch(() => {});
+        const bloklar = [];
+
+        // --- 1) Roller ve o rollerdeki kisiler ---
+        let roller = [];
+        try {
+            roller = await yayinRolUyeleri();
+        } catch (error) {
+            bloklar.push(`**❌ Roller okunamadı:** ${error.message}`);
+        }
+        if (roller.length) {
+            const hepsi = new Set();
+            roller.forEach((r) => r.uyeler.forEach((u) => hepsi.add(u.id)));
+            bloklar.push(`## 👥 Yayıncı Rolleri\n**Toplam benzersiz kişi: ${hepsi.size}**`);
+            roller.forEach((r) => bloklar.push(yayinRolBlogu(r)));
+        }
+
+        // --- 2) Kanallardaki mesajlarin HAM yapisi ---
+        bloklar.push(`## 📨 Kanal Mesajları (son ${YAYIN_ORNEK_ADET})`);
         const hedefler = [
             ...YAYIN_ARAMA_KANALLARI.map((id) => ({ id, etiket: 'ARAMA' })),
-            { id: YAYIN_VERI_KANALI, etiket: 'VERI' },
+            { id: YAYIN_VERI_KANALI, etiket: 'VERİ' },
         ];
-        const bolumler = [];
         for (let i = 0; i < hedefler.length; i += 1) {
             const { id, etiket } = hedefler[i];
             let kanal = null;
@@ -4217,11 +4292,11 @@ async function yayinOrnekDok(message) {
                 // eslint-disable-next-line no-await-in-loop
                 kanal = await client.channels.fetch(id);
             } catch (error) {
-                bolumler.push(`\n===== ${etiket} ${id} =====\n❌ Kanal alınamadı: ${error.message}`);
+                bloklar.push(`**❌ [${etiket}] \`${id}\`** — kanal alınamadı: ${error.message}`);
                 continue;
             }
             if (!kanal) {
-                bolumler.push(`\n===== ${etiket} ${id} =====\n❌ Kanal bulunamadı.`);
+                bloklar.push(`**❌ [${etiket}] \`${id}\`** — kanal bulunamadı.`);
                 continue;
             }
             let toplu;
@@ -4229,19 +4304,26 @@ async function yayinOrnekDok(message) {
                 // eslint-disable-next-line no-await-in-loop
                 toplu = await kanal.messages.fetch({ limit: YAYIN_ORNEK_ADET });
             } catch (error) {
-                bolumler.push(`\n===== ${etiket} ${kanal.name || id} =====\n❌ Mesajlar okunamadı: ${error.message}`);
+                bloklar.push(`**❌ [${etiket}] #${kanal.name || id}** — mesajlar okunamadı: ${error.message}`);
                 continue;
             }
             const liste = [...toplu.values()];
-            const bas = `\n===== ${etiket} #${kanal.name || id} (${id}) — ${liste.length} mesaj =====`;
-            bolumler.push(bas + (liste.length
-                ? `\n${liste.map(mesajYapisiniOzetle).join('\n')}`
-                : '\n(kanal boş ya da mesaj görünmüyor)'));
+            const baslik = `**📁 [${etiket}] #${kanal.name || id}** \`${id}\` — ${liste.length} mesaj`;
+            if (!liste.length) {
+                bloklar.push(`${baslik}\n_(mesaj görünmüyor)_`);
+                continue;
+            }
+            // Her mesaj AYRI blok: bolme kod blogunun ortasina denk gelmesin.
+            bloklar.push(baslik);
+            liste.forEach((m) => bloklar.push(`\`\`\`\n${mesajYapisiniOzetle(m)}\n\`\`\``));
         }
 
-        const bas = `🔎 **Yayın saati teşhisi** — son ${YAYIN_ORNEK_ADET} mesajın ham yapısı.\n`
-            + 'Bunu Claude\'a ilet: ayrıştırıcı buna göre yazılacak.';
-        const parcalar = metniParcala(`${bas}\n${bolumler.join('\n')}`);
+        const bas = `# 🔎 Yayın Saati Teşhisi\n`
+            + `Dönem: **son ${YAYIN_GUN_SAYISI} gün** · Rol: **${YAYIN_ROLLERI.length}** · `
+            + `Kanal: **${YAYIN_ARAMA_KANALLARI.length + 1}**\n`
+            + `_Bu çıktıyı Claude'a ilet — ayrıştırıcı buna göre yazılacak._\n`;
+
+        const parcalar = bloklariParcala(bas, bloklar);
         for (let i = 0; i < parcalar.length; i += 1) {
             // eslint-disable-next-line no-await-in-loop
             const g = await message.channel.send({
@@ -4249,7 +4331,7 @@ async function yayinOrnekDok(message) {
             });
             otomatikCiktiKaydet(g);
         }
-        console.log(`[YayinOrnek] ${hedefler.length} kanalin yapisi dokuldu (${parcalar.length} mesaj).`);
+        console.log(`[YayinOrnek] Dokum tamam: ${bloklar.length} blok, ${parcalar.length} mesaj.`);
     } catch (error) {
         console.log(`[YayinOrnek] Hata: ${error.message}`);
         message.channel.send({
@@ -5357,7 +5439,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.1';
+const KOD_SURUMU = '2026-09-12.2';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
