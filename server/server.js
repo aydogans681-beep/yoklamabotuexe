@@ -4427,6 +4427,89 @@ function veriMesajMetni(mesaj) {
     return parcalar.filter(Boolean).join('\n');
 }
 
+// Yayin log embed'ini okur. GERCEK bicim (kullanicidan alindi):
+//   baslik : "🟢 Yayın Başlatıldı"
+//   alan   : "👤 Yayıncı:"          = "her0lce | 1297156863669960734"
+//   alan   : "🕐 Başlangıç Zamanı:" = "<t:1789209431:F>"
+//   alan   : "📍 Kanal:"            = "<#1476220348570665021>"
+// Hazir sure YOK - sure, basla/bitti ciftlerinin farkindan cikiyor.
+function yayinOlayiAyristir(mesaj) {
+    const metin = veriMesajMetni(mesaj);
+    if (!metin) return null;
+    const t = metin.toLocaleLowerCase('tr');
+
+    let tur = null;
+    if (/ba[sş]lat|ba[sş]lad/.test(t)) tur = 'basla';
+    else if (/sonland|bitti|bit[iı]r|kapat|durdur|sona er/.test(t)) tur = 'bitti';
+    if (!tur) return null;
+
+    // Kisi: "ad | 1297156863669960734" bicimi ONCE denenir - kanal etiketi
+    // (<#...>) ya da baska bir ID'yi kisi sanmayalim.
+    let userId = null;
+    const boruluk = metin.match(/\|\s*(\d{17,20})\b/);
+    if (boruluk) [, userId] = boruluk;
+    if (!userId) {
+        const et = metin.match(/<@!?(\d{17,20})>/);
+        if (et) [, userId] = et;
+    }
+    if (!userId) return null;
+
+    // Zaman: <t:1789209431:F> varsa o, yoksa mesajin kendi zamani.
+    const damga = metin.match(/<t:(\d{9,13})(?::[a-zA-Z])?>/);
+    const zaman = damga ? Number(damga[1]) * 1000 : mesaj.createdTimestamp;
+
+    return { tur, userId, zaman, sure: sureyiAyristir(metin) };
+}
+
+// Basla/bitti olaylarini kisi basina eslestirip sureyi cikarir.
+// Sureler PENCEREYE kirpiliyor: pencereden once baslayip icinde biten yayinin
+// yalnizca kesisen kismi sayiliyor.
+function yayinOlaylariniEslestir(olaylar, pencereBas, pencereBit) {
+    const kisiler = new Map();
+    olaylar.forEach((o) => {
+        if (!kisiler.has(o.userId)) kisiler.set(o.userId, []);
+        kisiler.get(o.userId).push(o);
+    });
+
+    const toplam = new Map();
+    const acikKalan = new Map();
+    const simdi = Date.now();
+    // Kirpma YALNIZCA pencereye yapiliyor. Tamamlanmis oturumlari "su an"a da
+    // kirpmak yanlisti: log bitis zamanini soyluyorsa o gecerlidir (sunucu
+    // saati birkac dakika kaymissa bile sure eksik hesaplanmamali).
+    // "Su an" siniri yalnizca HALA ACIK oturumlar icin anlamli.
+    const kirp = (bas, bit) => Math.max(0,
+        Math.min(bit, pencereBit) - Math.max(bas, pencereBas));
+
+    kisiler.forEach((liste, userId) => {
+        liste.sort((a, b) => a.zaman - b.zaman);
+        let acik = null;
+        let ms = 0;
+        liste.forEach((o) => {
+            if (o.tur === 'basla') {
+                acik = o.zaman;          // ust uste "basla" gelirse sonuncusu gecerli
+                return;
+            }
+            // bitti
+            if (o.sure > 0) {            // bitis mesajinda hazir sure varsa onu kullan
+                ms += o.sure;
+                acik = null;
+                return;
+            }
+            if (acik !== null) {
+                ms += kirp(acik, o.zaman);
+                acik = null;
+            }
+        });
+        if (acik !== null) {             // hala yayinda: SU ANA kadar say
+            ms += kirp(acik, Math.min(simdi, pencereBit));
+            acikKalan.set(userId, acik);
+        }
+        if (ms > 0) toplam.set(userId, ms);
+    });
+    return { toplam, acikKalan };
+}
+
 // Kanali son N gun icin tarar, kisi basina sureyi toplar.
 async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI) {
     const sinirZaman = Date.now() - gunSayisi * 24 * 60 * 60 * 1000;
@@ -4441,11 +4524,13 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI) {
         throw new Error(`Veri kanalı mesaj okumaya uygun değil (tür: ${kanal.type}).`);
     }
 
-    const toplam = new Map();     // userId -> ms
+    const olaylar = [];
     const cozulemeyen = [];       // ornekler (bicimi ogrenmek icin)
     let taranan = 0;
-    let sureliMesaj = 0;
     let beforeId;
+    // Pencereden ONCE baslayip icinde biten yayinlari da eslestirebilmek icin
+    // biraz geriye tasiyoruz; sureler yine pencereye kirpiliyor.
+    const cekmeSiniri = sinirZaman - 2 * 24 * 60 * 60 * 1000;
 
     for (;;) {
         const secenek = { limit: 100 };
@@ -4461,19 +4546,16 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI) {
 
         let pencereDisi = false;
         toplu.forEach((m) => {
-            if (m.createdTimestamp < sinirZaman) { pencereDisi = true; return; }
+            if (m.createdTimestamp < cekmeSiniri) { pencereDisi = true; return; }
             taranan += 1;
-            const metin = veriMesajMetni(m);
-            const ms = sureyiAyristir(metin);
-            const kisi = veriKisiBul(metin);
-            if (ms > 0 && kisi) {
-                toplam.set(kisi, (toplam.get(kisi) || 0) + ms);
-                sureliMesaj += 1;
-            } else if (metin.trim() && cozulemeyen.length < 5) {
-                cozulemeyen.push({
-                    metin: metin.slice(0, 300),
-                    sureVar: ms > 0, kisiVar: Boolean(kisi),
-                });
+            const olay = yayinOlayiAyristir(m);
+            if (olay) {
+                olaylar.push(olay);
+            } else {
+                const metin = veriMesajMetni(m);
+                if (metin.trim() && cozulemeyen.length < 5) {
+                    cozulemeyen.push({ metin: metin.slice(0, 300) });
+                }
             }
         });
 
@@ -4483,7 +4565,14 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI) {
         await new Promise((r) => setTimeout(r, 250));   // rate limit'e nazik
     }
 
-    return { toplam, cozulemeyen, taranan, sureliMesaj, kanalAd: kanal.name || YAYIN_VERI_KANALI };
+    const { toplam, acikKalan } = yayinOlaylariniEslestir(olaylar, sinirZaman, Date.now());
+    return {
+        toplam, acikKalan, cozulemeyen, taranan,
+        olaySayisi: olaylar.length,
+        baslaSayisi: olaylar.filter((o) => o.tur === 'basla').length,
+        bittiSayisi: olaylar.filter((o) => o.tur === 'bitti').length,
+        kanalAd: kanal.name || YAYIN_VERI_KANALI,
+    };
 }
 
 let veriToplamaCalisiyor = false;
@@ -4494,51 +4583,50 @@ async function veriRaporGonder(sebep = 'elle') {
     veriToplamaCalisiyor = true;
     try {
         const sonuc = await veriKanaliTopla(YAYIN_GUN_SAYISI);
-        const guild = await yayinGuildBul();
 
         const satirlar = [...sonuc.toplam.entries()]
-            .map(([userId, ms]) => {
-                const uye = guild.members.cache.get(userId) || client.users.cache.get(userId);
-                const ad = (uye && (uye.displayName || uye.username)) || userId;
-                return { ad, userId, ms };
-            })
-            .sort((a, b) => b.ms - a.ms || String(a.ad).localeCompare(String(b.ad), 'tr'));
+            .map(([userId, ms]) => ({ userId, ms, yayinda: sonuc.acikKalan.has(userId) }))
+            .sort((a, b) => b.ms - a.ms);
 
         const genelToplam = satirlar.reduce((t, r) => t + r.ms, 0);
         const damga = `<t:${Math.floor(Date.now() / 1000)}:f>`;
-        const bas = `# ⏱️ Yayın Süreleri (veri kanalı) — son ${YAYIN_GUN_SAYISI} gün\n`
-            + `Kaynak: #${sonuc.kanalAd} · Taranan mesaj: **${sonuc.taranan}** · `
-            + `Süre içeren: **${sonuc.sureliMesaj}**\n`
-            + `Kişi: **${satirlar.length}** · Toplam: **${sureBicimle(genelToplam)}**\n`
+        const bas = `# ⏱️ Yayın Süreleri — son ${YAYIN_GUN_SAYISI} gün\n`
+            + `Kaynak: #${sonuc.kanalAd} · Taranan: **${sonuc.taranan}** mesaj · `
+            + `Olay: **${sonuc.baslaSayisi}** başladı / **${sonuc.bittiSayisi}** bitti\n`
+            + `Yayıncı: **${satirlar.length}** · Toplam: **${sureBicimle(genelToplam)}**\n`
             + `_Son güncelleme: ${damga}_\n`;
 
         const bloklar = [];
         if (satirlar.length) {
-            const adGen = Math.min(22, Math.max(8, ...satirlar.map((r) => String(r.ad).length)));
-            const metin = satirlar.map((r, i) => `${String(i + 1).padStart(2)}. `
-                + `${String(r.ad).slice(0, adGen).padEnd(adGen)}  ${sureBicimle(r.ms).padStart(10)}`);
-            for (let i = 0; i < metin.length; i += 20) {
-                bloklar.push('```\n' + metin.slice(i, i + 20).join('\n') + '\n```');
+            // KOD BLOGU DEGIL: etiketin tiklanabilir gorunmesi icin duz metin
+            // olmali (kod blogunda <@id> ham metin olarak kalir).
+            // allowedMentions parse:[] oldugu icin kimse PINGLENMIYOR - etiket
+            // yalnizca isim/link olarak gorunuyor.
+            const metin = satirlar.map((r, i) => {
+                const sira = `${i + 1}.`.padStart(3);
+                const canli = r.yayinda ? ' 🔴' : '';
+                return `\`${sira}\` <@${r.userId}> — **${sureBicimle(r.ms)}**${canli}`;
+            });
+            for (let i = 0; i < metin.length; i += 15) {
+                bloklar.push(metin.slice(i, i + 15).join('\n'));
+            }
+            if (sonuc.acikKalan.size) {
+                bloklar.push(`🔴 = şu an yayında (süresi anlık sayılıyor)`);
             }
         } else {
-            bloklar.push('_(süre içeren mesaj bulunamadı)_');
+            bloklar.push('_(bu dönemde eşleşen yayın kaydı bulunamadı)_');
         }
 
-        // Cozulemeyen ornekler: bicimi daraltmak icin. Hepsi cozulduyse yazilmiyor.
         if (sonuc.cozulemeyen.length) {
-            bloklar.push(`**⚠️ Çözülemeyen ${sonuc.cozulemeyen.length} örnek** `
-                + '(bunları Claude\'a ilet, ayrıştırıcı daraltılsın):');
-            sonuc.cozulemeyen.forEach((c) => {
-                bloklar.push('```\n'
-                    + `[süre: ${c.sureVar ? 'var' : 'YOK'} · kişi: ${c.kisiVar ? 'var' : 'YOK'}]\n`
-                    + `${c.metin}\n\`\`\``);
-            });
+            bloklar.push(`**⚠️ Tanınmayan ${sonuc.cozulemeyen.length} mesaj örneği:**`);
+            sonuc.cozulemeyen.forEach((c) => bloklar.push('```\n' + c.metin + '\n```'));
         }
 
         await yayinRaporYayinla(YAYIN_RAPOR_KANALI, bas, bloklar, 'veriRaporMesajId');
         yayinKayitYaz();
-        console.log(`[Veri] Rapor (${sebep}): ${sonuc.taranan} mesaj tarandi, `
-            + `${satirlar.length} kisi, ${sonuc.cozulemeyen.length} cozulemeyen ornek.`);
+        console.log(`[Veri] Rapor (${sebep}): ${sonuc.taranan} mesaj, `
+            + `${sonuc.baslaSayisi} basla / ${sonuc.bittiSayisi} bitti, `
+            + `${satirlar.length} yayinci, ${sonuc.cozulemeyen.length} taninmayan.`);
     } catch (error) {
         console.log(`[Veri] Toplama hatasi: ${error.message}`);
         try {
@@ -6224,7 +6312,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.14';
+const KOD_SURUMU = '2026-09-12.15';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
