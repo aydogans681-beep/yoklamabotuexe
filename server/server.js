@@ -4200,7 +4200,7 @@ const YAYIN_RAPOR_ARALIK_MS = 60 * 60 * 1000;   // saatte bir
 
 // acik: "tur:userId" -> { channelId, baslangic }
 // tamam: [{ tur, userId, channelId, baslangic, bitis }]
-let yayinKayit = { acik: {}, tamam: [], sonKayit: 0, raporMesajId: null, yokRaporMesajId: null, veriRaporMesajId: null };
+let yayinKayit = { acik: {}, tamam: [], sonKayit: 0, raporMesajId: null, yokRaporMesajId: null, veriRaporMesajId: null, veriYokRaporMesajId: null };
 
 function yayinKayitYukle() {
     try {
@@ -4213,6 +4213,7 @@ function yayinKayitYukle() {
             raporMesajId: ham.raporMesajId || null,
             yokRaporMesajId: ham.yokRaporMesajId || null,
             veriRaporMesajId: ham.veriRaporMesajId || null,
+            veriYokRaporMesajId: ham.veriYokRaporMesajId || null,
         };
         console.log(`[Yayin] Kayitlar yuklendi: ${yayinKayit.tamam.length} oturum, `
             + `${Object.keys(yayinKayit.acik).length} acik.`);
@@ -4528,6 +4529,7 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
     }
 
     const olaylar = [];
+    const tekilSureler = [];      // kalip disi ama kisi+sure iceren mesajlar
     const cozulemeyen = [];       // ornekler (bicimi ogrenmek icin)
     let taranan = 0;
     let beforeId;
@@ -4556,11 +4558,21 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
             const olay = yayinOlayiAyristir(m);
             if (olay) {
                 olaylar.push(olay);
-            } else {
-                const metin = veriMesajMetni(m);
-                if (metin.trim() && cozulemeyen.length < 5) {
-                    cozulemeyen.push({ metin: metin.slice(0, 300) });
-                }
+                return;
+            }
+            // Basla/bitti kalibina uymayan ama KISI + SURE iceren mesajlar:
+            // bunlar tek basina bir oturum sayiliyor. Onceki surum yalnizca
+            // boyle mesajlari okuyordu; eslestirmeye gecerken o kapsami
+            // kaybetmemek icin yedek olarak duruyor.
+            const metin = veriMesajMetni(m);
+            const ms = sureyiAyristir(metin);
+            const kisi = veriKisiBul(metin);
+            if (ms > 0 && kisi) {
+                tekilSureler.push({ userId: kisi, ms, zaman: m.createdTimestamp });
+                return;
+            }
+            if (metin.trim() && cozulemeyen.length < 5) {
+                cozulemeyen.push({ metin: metin.slice(0, 300) });
             }
         });
 
@@ -4573,9 +4585,15 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
     const { toplam, acikKalan } = yayinOlaylariniEslestir(olaylar, sinirZaman, Date.now());
     // Ayni taramadan GECMIS pencere: kimler bu kanalda hic gorunmus?
     const gecmis = yayinOlaylariniEslestir(olaylar, gecmisSinir, Date.now()).toplam;
+    // Kalip disi tekil sureler: ilgili pencereye dusuyorsa ekle.
+    tekilSureler.forEach((t) => {
+        if (t.zaman >= sinirZaman) toplam.set(t.userId, (toplam.get(t.userId) || 0) + t.ms);
+        if (t.zaman >= gecmisSinir) gecmis.set(t.userId, (gecmis.get(t.userId) || 0) + t.ms);
+    });
     return {
         toplam, acikKalan, gecmis, cozulemeyen, taranan,
         olaySayisi: olaylar.length,
+        tekilSayisi: tekilSureler.length,
         baslaSayisi: olaylar.filter((o) => o.tur === 'basla').length,
         bittiSayisi: olaylar.filter((o) => o.tur === 'bitti').length,
         kanalAd: kanal.name || YAYIN_VERI_KANALI,
@@ -4691,7 +4709,9 @@ async function veriRaporGonder(sebep = 'elle') {
 
         // Ayri try: ana rapor gitmisse bu patlasa da onu bozmasin.
         try {
-            await yayinRaporYayinla(YAYIN_YOK_KANALI, yokBas, yokBloklar, 'yokRaporMesajId');
+            // AYRI anahtar: rol/ses tabanli rapor da ayni kanala yaziyor,
+            // ayni anahtari paylasirlarsa birbirlerinin mesajini silerlerdi.
+            await yayinRaporYayinla(YAYIN_YOK_KANALI, yokBas, yokBloklar, 'veriYokRaporMesajId');
         } catch (error) {
             console.log(`[Veri] "Acmayanlar" raporu gonderilemedi: ${error.message}`);
         }
@@ -5037,15 +5057,32 @@ async function yayinRaporGonder(sebep = 'zamanlayici') {
 
 
 function yayinRaporZamanlayici() {
-    // Ilk rapor acilistan kisa sure sonra: aksi halde yeniden baslatmanin
-    // ardindan kanallar bir saat boyunca bos/bayat kaliyordu. 2 dakika gecikme
-    // uye onbelleginin dolmasina zaman taniyor (rol uyeleri bos cikmasin).
-    setTimeout(() => yayinRaporGonder('acilis').catch(() => {}), 2 * 60 * 1000);
+    // VERI kanali raporu calisiyor (roller bulunamadigi icin rol/ses tabanli
+    // rapor bos cikiyordu), o yuzden otomatik gonderim bunun uzerinden.
+    // Rol tabanli rapor "yayin rapor" ile elle calistirilabiliyor.
+    // Ilk rapor acilistan ~2 dk sonra: yeniden baslatmanin ardindan kanallar
+    // bir saat boyunca bayat kalmasin.
+    setTimeout(() => veriRaporGonder('acilis').catch(() => {}), 2 * 60 * 1000);
     setInterval(() => {
         yayinKayitBudama();
-        yayinRaporGonder('saatlik').catch(() => {});
+        veriRaporGonder('saatlik').catch(() => {});
     }, YAYIN_RAPOR_ARALIK_MS);
     console.log('[Yayin] Rapor zamanlayicisi kuruldu (ilk rapor ~2 dk sonra, sonra saatlik).');
+}
+
+// --- Yeni yayin acilinca ANINDA tazele ---
+// Veri kanalina yeni bir "Yayın Başlatıldı" dusunce raporu hemen guncelliyoruz.
+// Toplu olaylarda pesi sira rapor atmamak icin kisa bir bekleme (debounce):
+// 30 sn icinde gelen tum olaylar TEK guncellemede toplaniyor.
+const YAYIN_TAZELE_GECIKME_MS = 30 * 1000;
+let yayinTazeleTimer = null;
+
+function yayinRaporuTazeleyiPlanla(sebep) {
+    if (yayinTazeleTimer) return;      // zaten planli - ust uste atmiyoruz
+    yayinTazeleTimer = setTimeout(() => {
+        yayinTazeleTimer = null;
+        veriRaporGonder(sebep).catch(() => {});
+    }, YAYIN_TAZELE_GECIKME_MS);
 }
 
 // ============================================================================
@@ -5471,6 +5508,19 @@ client.on('voiceStateUpdate', (eski, yeni) => {
 });
 
 client.on('messageCreate', (message) => {
+    // Veri kanalina yeni yayin olayi dustu mu? Dustuyse raporu tazele.
+    try {
+        if (message.channelId === YAYIN_VERI_KANALI) {
+            const olay = yayinOlayiAyristir(message);
+            if (olay) {
+                console.log(`[Veri] Yeni olay (${olay.tur}) - rapor tazelenecek.`);
+                yayinRaporuTazeleyiPlanla('yeni-yayin');
+            }
+        }
+    } catch (error) {
+        console.log(`[Veri] Canli olay yakalama hatasi: ${error.message}`);
+    }
+
     // Yayin saati teshisi: RAPOR kanalina "yayin ornek" yazilinca kanallarin
     // mesaj YAPISI dokuluyor (ayristirici bicimi bilmeden yazilamaz).
     try {
@@ -6385,7 +6435,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.16';
+const KOD_SURUMU = '2026-09-12.17';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
