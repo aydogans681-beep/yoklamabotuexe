@@ -489,6 +489,23 @@ const YAYINCI_KOMUTU = 'yayinciekle';
 // Panel verilen kisinin bilgisi: ayni komut kanalinda /player-info calistirilip
 // cikan cevap SONUC kanalina tasiniyor, altina paneli veren yetkili etiketleniyor.
 const PANEL_SONUC_KANALI = '1547991532567666863';
+
+// --- YAYIN SAATI RAPORU ---
+// Yayincilarin son N gunde kac saat yayin actigini cikaracagiz. Mesaj bicimleri
+// (hazir sure mi, ac/kapat ciftleri mi) bilinmeden dogru ayristirici yazilamaz;
+// bu yuzden once RAPOR kanalina "yayin ornek" yazilinca asagidaki kanallardan
+// son mesajlarin HAM YAPISI dokuluyor. Ayristirici o cikti gorulduk ten sonra
+// yazilacak.
+const YAYIN_ROLLERI = ['1548274549391364167', '1548274557998334033'];
+const YAYIN_ARAMA_KANALLARI = [
+    '1476229354974609548',
+    '1539300691175145633',
+    '1542113213435482253',
+];
+const YAYIN_VERI_KANALI = '1476221680388145364';
+const YAYIN_RAPOR_KANALI = '1548274410220429403';
+const YAYIN_GUN_SAYISI = 15;          // rapor donemi: son 15 gun
+const YAYIN_ORNEK_ADET = 5;           // teshiste kanal basina kac mesaj
 const PLAYER_INFO_KOMUTU = 'player-info';
 const PLAYER_INFO_BEKLEME_MS = 12000;
 // Ertelenmis cevabin icerigi gelene kadar beklenecek sure.
@@ -4151,6 +4168,100 @@ function metniParcala(metin, sinir = DISCORD_MESAJ_SINIRI) {
 }
 
 // ============================================================================
+// --- YAYIN SAATI: MESAJ YAPISI TESHISI ---
+// "Kac saat yayin acti" hesabi mesaj ayristirmaya dayaniyor; bicimi tahmin
+// etmek yanlis saat uretir. Bu yuzden once gercek mesajlarin sekli dokuluyor:
+// RAPOR kanalina "yayin ornek" yazmak yeterli.
+// ============================================================================
+const YAYIN_ORNEK_KALIBI = /^\s*yay[ıi]n\s*[-_ ]?\s*[öo]rnek\s*$/i;
+
+// Bir mesajin HAM yapisini okunabilir bicimde ozetler: icerik, embed baslik/
+// aciklama/alanlari, bilesen ve ek sayilari. Ayristiriciyi buna bakarak yazacagiz.
+function mesajYapisiniOzetle(mesaj) {
+    const satirlar = [];
+    const yazar = mesaj.author ? mesaj.author.tag : '?';
+    satirlar.push(`• yazar: ${yazar}${mesaj.author && mesaj.author.bot ? ' [BOT]' : ''}`);
+    satirlar.push(`  tarih: ${new Date(mesaj.createdTimestamp).toISOString()}`);
+    if (mesaj.content) satirlar.push(`  icerik: ${JSON.stringify(String(mesaj.content).slice(0, 300))}`);
+    (mesaj.embeds || []).forEach((e, i) => {
+        satirlar.push(`  embed#${i + 1}:`);
+        if (e.title) satirlar.push(`    baslik: ${JSON.stringify(String(e.title).slice(0, 200))}`);
+        if (e.author && e.author.name) satirlar.push(`    yazarAlani: ${JSON.stringify(String(e.author.name).slice(0, 200))}`);
+        if (e.description) satirlar.push(`    aciklama: ${JSON.stringify(String(e.description).slice(0, 400))}`);
+        (e.fields || []).forEach((f) => {
+            satirlar.push(`    alan ${JSON.stringify(f.name)} = ${JSON.stringify(String(f.value).slice(0, 200))}`);
+        });
+        if (e.footer && e.footer.text) satirlar.push(`    footer: ${JSON.stringify(String(e.footer.text).slice(0, 200))}`);
+    });
+    if (mesaj.components && mesaj.components.length) satirlar.push(`  bilesen: ${mesaj.components.length} adet`);
+    if (mesaj.attachments && mesaj.attachments.size) satirlar.push(`  ek: ${mesaj.attachments.size} adet`);
+    if (satirlar.length === 2) satirlar.push('  (icerik/embed YOK - bos gorunuyor)');
+    return satirlar.join('\n');
+}
+
+let yayinOrnekCalisiyor = false;
+
+async function yayinOrnekDok(message) {
+    if (yayinOrnekCalisiyor) return;
+    yayinOrnekCalisiyor = true;
+    try {
+        const hedefler = [
+            ...YAYIN_ARAMA_KANALLARI.map((id) => ({ id, etiket: 'ARAMA' })),
+            { id: YAYIN_VERI_KANALI, etiket: 'VERI' },
+        ];
+        const bolumler = [];
+        for (let i = 0; i < hedefler.length; i += 1) {
+            const { id, etiket } = hedefler[i];
+            let kanal = null;
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                kanal = await client.channels.fetch(id);
+            } catch (error) {
+                bolumler.push(`\n===== ${etiket} ${id} =====\n❌ Kanal alınamadı: ${error.message}`);
+                continue;
+            }
+            if (!kanal) {
+                bolumler.push(`\n===== ${etiket} ${id} =====\n❌ Kanal bulunamadı.`);
+                continue;
+            }
+            let toplu;
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                toplu = await kanal.messages.fetch({ limit: YAYIN_ORNEK_ADET });
+            } catch (error) {
+                bolumler.push(`\n===== ${etiket} ${kanal.name || id} =====\n❌ Mesajlar okunamadı: ${error.message}`);
+                continue;
+            }
+            const liste = [...toplu.values()];
+            const bas = `\n===== ${etiket} #${kanal.name || id} (${id}) — ${liste.length} mesaj =====`;
+            bolumler.push(bas + (liste.length
+                ? `\n${liste.map(mesajYapisiniOzetle).join('\n')}`
+                : '\n(kanal boş ya da mesaj görünmüyor)'));
+        }
+
+        const bas = `🔎 **Yayın saati teşhisi** — son ${YAYIN_ORNEK_ADET} mesajın ham yapısı.\n`
+            + 'Bunu Claude\'a ilet: ayrıştırıcı buna göre yazılacak.';
+        const parcalar = metniParcala(`${bas}\n${bolumler.join('\n')}`);
+        for (let i = 0; i < parcalar.length; i += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            const g = await message.channel.send({
+                content: parcalar[i], allowedMentions: { parse: [] },
+            });
+            otomatikCiktiKaydet(g);
+        }
+        console.log(`[YayinOrnek] ${hedefler.length} kanalin yapisi dokuldu (${parcalar.length} mesaj).`);
+    } catch (error) {
+        console.log(`[YayinOrnek] Hata: ${error.message}`);
+        message.channel.send({
+            content: `❌ Örnek dökümü alınamadı: ${error.message}`,
+            allowedMentions: { parse: [] },
+        }).catch(() => {});
+    } finally {
+        yayinOrnekCalisiyor = false;
+    }
+}
+
+// ============================================================================
 // --- YAYINCI EKLE: "id: 1626  level: Seviye 2" -> /yayinciekle ---
 // Yetkililer YAYINCI_ISTEK_KANALI'na alanlari yaziyor; biz YAYINCI_KOMUT_KANALI'na
 // /yayinciekle slash komutunu gonderiyoruz. Degerler komutun KENDI secenek
@@ -4358,6 +4469,18 @@ async function yayinciEkleCalistir(message, alanlar) {
 }
 
 client.on('messageCreate', (message) => {
+    // Yayin saati teshisi: RAPOR kanalina "yayin ornek" yazilinca kanallarin
+    // mesaj YAPISI dokuluyor (ayristirici bicimi bilmeden yazilamaz).
+    try {
+        if (message.channelId === YAYIN_RAPOR_KANALI && message.author && !message.author.bot
+            && YAYIN_ORNEK_KALIBI.test(message.content || '')) {
+            console.log(`[YayinOrnek] ${message.author.tag} ornek dokumu istedi.`);
+            yayinOrnekDok(message);
+        }
+    } catch (error) {
+        console.log(`[YayinOrnek] Yakalama hatasi: ${error.message}`);
+    }
+
     // Yayinci ekleme istegi: "id: ...  level: ..." -> /yayinciekle
     try {
         if (message.channelId === YAYINCI_ISTEK_KANALI && message.author && !message.author.bot) {
@@ -5234,7 +5357,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-11.10';
+const KOD_SURUMU = '2026-09-12.1';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -5245,6 +5368,7 @@ const KOD_OZELLIKLERI = [
     'ver-komutu',     // ayni kanalda "ver <id> [rolId]" ile rol verme
     'yayinci-ekle',   // "id: .. level: .." -> /yayinciekle
     'panel-bilgi',    // /player-info sonucunu sonuc kanalina tasima
+    'yayin-ornek',    // yayin saati icin mesaj yapisi teshisi
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
 ];
