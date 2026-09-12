@@ -4369,20 +4369,33 @@ function sureBicimle(ms) {
 
 // --- Saatlik rapor: eski mesaji silip yenisini atiyor ---
 // Rapor verisi: rollerdeki herkes + pencere icindeki sureleri.
-async function yayinRaporVerisi() {
-    const pencereBas = Date.now() - YAYIN_GUN_SAYISI * 24 * 60 * 60 * 1000;
+// pencereBas = 0 verilirse TUM ZAMANLAR hesaplanir.
+// Liste bos cikarsa NEDENINI de donduruyoruz: "rollerde kimse bulunamadi" tek
+// basina hicbir sey anlatmiyordu - rol ID'si mi yanlis, yoksa uye onbellegi mi
+// dolmamis, ayirt edilemiyordu.
+async function yayinRaporVerisi(pencereBas) {
     const sureler = yayinSureleriHesapla(pencereBas);
 
     const guild = await getReadyGuild();
-    try { await ensureMembersFetched(guild); } catch (error) { /* onbellek yeterli olabilir */ }
+    let uyeHatasi = null;
+    try {
+        await ensureMembersFetched(guild);
+    } catch (error) {
+        uyeHatasi = error.message;
+    }
 
-    // Rollerdeki HERKES listeye girsin - hic yayin acmayan da gorunsun.
     const kisiler = new Map();
-    YAYIN_ROLLERI.forEach((rolId) => {
+    const rolTani = YAYIN_ROLLERI.map((rolId) => {
         const rol = guild.roles.cache.get(rolId);
-        if (!rol) return;
-        rol.members.forEach((m) => { if (!kisiler.has(m.id)) kisiler.set(m.id, m.displayName); });
+        if (!rol) return { id: rolId, ad: null, adet: 0, durum: 'rol bulunamadı (ID yanlış olabilir)' };
+        let adet = 0;
+        rol.members.forEach((m) => {
+            adet += 1;
+            if (!kisiler.has(m.id)) kisiler.set(m.id, m.displayName);
+        });
+        return { id: rolId, ad: rol.name, adet, durum: adet ? 'ok' : 'rolde üye görünmüyor' };
     });
+
     // Rolden cikmis ama veride suresi olanlar da kaybolmasin.
     sureler.forEach((_v, userId) => {
         if (!kisiler.has(userId)) {
@@ -4391,11 +4404,25 @@ async function yayinRaporVerisi() {
         }
     });
 
-    return [...kisiler.entries()]
+    const satirlar = [...kisiler.entries()]
         .map(([userId, ad]) => ({ ad, userId, ...(sureler.get(userId) || { sesMs: 0, yayinMs: 0 }) }))
         .sort((a, b) => (b.yayinMs - a.yayinMs) || (b.sesMs - a.sesMs)
             || String(a.ad).localeCompare(String(b.ad), 'tr'));
+
+    return { satirlar, rolTani, uyeHatasi, onbellekUye: guild.members.cache.size };
 }
+
+// Liste bos oldugunda sebebi yazan blok. Boylece "kimse yok" yerine NE oldugu
+// gorunuyor: rol mu yok, uye onbellegi mi bos.
+function yayinTaniBlogu(veri) {
+    const satirlar = veri.rolTani.map((r) => (r.ad
+        ? `• ${r.ad}  (${r.id}) — ${r.adet} üye${r.durum === 'ok' ? '' : ` ⚠️ ${r.durum}`}`
+        : `• ${r.id} — ⚠️ ${r.durum}`));
+    satirlar.push(`• Sunucu üye önbelleği: ${veri.onbellekUye} kişi`);
+    if (veri.uyeHatasi) satirlar.push(`• ⚠️ Üye listesi çekilemedi: ${veri.uyeHatasi}`);
+    return `⚠️ **Rollerde kimse bulunamadı.** Teşhis:\n\`\`\`\n${satirlar.join('\n')}\n\`\`\``;
+}
+
 
 // Hizali tablo. 20'serli gruplar: tek kod blogu cok uzamasin.
 function yayinTabloBloklari(satirlar) {
@@ -4457,30 +4484,45 @@ async function yayinRaporGonder(sebep = 'zamanlayici') {
     if (yayinRaporCalisiyor) return;
     yayinRaporCalisiyor = true;
     try {
-        const satirlar = await yayinRaporVerisi();
-        const acanlar = satirlar.filter((r) => r.yayinMs > 0);
-        const acmayanlar = satirlar.filter((r) => r.yayinMs <= 0);
-        const toplam = satirlar.reduce((t, r) => t + r.yayinMs, 0);
-        const damga = `<t:${Math.floor(Date.now() / 1000)}:R>`;
+        const pencereBas = Date.now() - YAYIN_GUN_SAYISI * 24 * 60 * 60 * 1000;
+        // Ana rapor: son N gun. "Hic yayin acmayanlar": TUM ZAMANLAR (istendi) -
+        // yani takip basladigindan beri bir kez bile Go Live acmamis olanlar.
+        const donem = await yayinRaporVerisi(pencereBas);
+        const hepZaman = await yayinRaporVerisi(0);
 
-        // --- 1) Ana rapor: herkes ---
+        const acanlar = donem.satirlar.filter((r) => r.yayinMs > 0);
+        const toplam = donem.satirlar.reduce((t, r) => t + r.yayinMs, 0);
+        // Mutlak zaman damgasi: sunucu saati kayarsa ":R" (goreli) "3 dakika
+        // sonra" gibi sacma sonuc veriyordu.
+        const damga = `<t:${Math.floor(Date.now() / 1000)}:f>`;
+
+        // --- 1) Ana rapor: herkes, son N gun ---
         const anaBas = `# 📺 Yayın Saatleri — son ${YAYIN_GUN_SAYISI} gün\n`
-            + `Yayın açan: **${acanlar.length}/${satirlar.length}** · Toplam: **${sureBicimle(toplam)}**\n`
+            + `Yayın açan: **${acanlar.length}/${donem.satirlar.length}** · Toplam: **${sureBicimle(toplam)}**\n`
             + `_Son güncelleme: ${damga}_\n`;
+        const anaBloklar = donem.satirlar.length
+            ? yayinTabloBloklari(donem.satirlar)
+            : [yayinTaniBlogu(donem)];
         try {
-            await yayinRaporYayinla(YAYIN_RAPOR_KANALI, anaBas, yayinTabloBloklari(satirlar), 'raporMesajId');
+            await yayinRaporYayinla(YAYIN_RAPOR_KANALI, anaBas, anaBloklar, 'raporMesajId');
         } catch (error) {
             console.log(`[Yayin] Ana rapor gonderilemedi: ${error.message}`);
         }
 
-        // --- 2) Hic yayin acmayanlar: AYRI kanal ---
+        // --- 2) Hic yayin acmayanlar: TUM ZAMANLAR, ayri kanal ---
         // Ayri try: biri patlarsa digeri yine de guncellensin.
-        const yokBas = `# 🚫 Hiç Yayın Açmayanlar — son ${YAYIN_GUN_SAYISI} gün\n`
-            + `**${acmayanlar.length}/${satirlar.length}** kişi hiç Go Live açmadı.\n`
+        const hicAcmayan = hepZaman.satirlar.filter((r) => r.yayinMs <= 0);
+        const yokBas = `# 🚫 Hiç Yayın Açmayanlar — **tüm zamanlar**\n`
+            + `**${hicAcmayan.length}/${hepZaman.satirlar.length}** kişi bugüne kadar hiç Go Live açmadı.\n`
             + `_Son güncelleme: ${damga}_\n`;
-        const yokBloklar = acmayanlar.length
-            ? yayinTabloBloklari(acmayanlar)
-            : ['✅ _Herkes en az bir kez yayın açmış._'];
+        let yokBloklar;
+        if (!hepZaman.satirlar.length) {
+            yokBloklar = [yayinTaniBlogu(hepZaman)];
+        } else if (!hicAcmayan.length) {
+            yokBloklar = ['✅ _Herkes en az bir kez yayın açmış._'];
+        } else {
+            yokBloklar = yayinTabloBloklari(hicAcmayan);
+        }
         try {
             await yayinRaporYayinla(YAYIN_YOK_KANALI, yokBas, yokBloklar, 'yokRaporMesajId');
         } catch (error) {
@@ -4488,7 +4530,8 @@ async function yayinRaporGonder(sebep = 'zamanlayici') {
         }
 
         yayinKayitYaz();
-        console.log(`[Yayin] Rapor guncellendi (${sebep}): ${acanlar.length} acan, ${acmayanlar.length} acmayan.`);
+        console.log(`[Yayin] Rapor guncellendi (${sebep}): ${acanlar.length} acan `
+            + `(son ${YAYIN_GUN_SAYISI} gun), ${hicAcmayan.length} hic acmayan (tum zamanlar).`);
     } catch (error) {
         console.log(`[Yayin] Rapor hatasi: ${error.message}`);
     } finally {
@@ -5818,7 +5861,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.5';
+const KOD_SURUMU = '2026-09-12.6';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
