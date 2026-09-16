@@ -5808,7 +5808,9 @@ function karneGunSecimiCiz() {
         ? karneUyeler.filter((u) => u.displayName.toLocaleLowerCase('tr').includes(terim)
             || u.tag.toLocaleLowerCase('tr').includes(terim))
         : karneUyeler;
-    karneKisi.innerHTML = liste.map((u) => `<option value="${u.id}">${u.displayName}</option>`).join('');
+    karneKisi.innerHTML = liste
+        .map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.displayName)}</option>`)
+        .join('');
     // Ekranda GOSTERILEN kisi listede duruyorsa secili kalsin. Aksi halde
     // tarayici ilk secenege atliyor ama 'change' olayi atesLENMIYOR: kutuda
     // bir isim, kartta baska bir isim gorunurdu.
@@ -5848,7 +5850,7 @@ function karneBarCiz(gunluk) {
         const oran = Math.round((g.sn / enYuksek) * 100);
         const gunAd = `${g.gun.slice(8)}.${g.gun.slice(5, 7)}`;
         const etiket = i % adim === 0 ? gunAd : '';
-        return `<div class="karne-bar-sutun" title="${gunAd} — ${sureBicimle(g.sn)}">`
+        return `<div class="karne-bar-sutun" title="${escapeHtml(`${gunAd} — ${sureBicimle(g.sn)}`)}">`
             + `<div class="karne-bar-dolu" style="height:${Math.max(oran, 2)}%"></div>`
             + `<span class="karne-bar-etiket">${etiket}</span></div>`;
     }).join('');
@@ -5858,8 +5860,15 @@ function karneCiz(k) {
     document.getElementById('karneAvatar').src = k.kisi.avatarURL;
     document.getElementById('karneAd').textContent = k.kisi.displayName;
     document.getElementById('karneTag').textContent = `${k.kisi.tag} · ${k.kisi.id}`;
+    // Rol ADI Discord'dan geliyor: sunucu sahibi rolu "<img onerror=...>" diye
+    // adlandirabilir. RENK de style icine girdigi icin tirnaktan kacip yeni
+    // ozellik ekleyebilirdi - bu yuzden hex kalibina uymayan renk atiliyor.
     document.getElementById('karneRoller').innerHTML = k.kisi.roller
-        .map((r) => `<span class="karne-rol" style="border-color:${r.color !== '#000000' ? r.color : 'var(--cizgi)'}">${r.name}</span>`)
+        .map((r) => {
+            const renk = /^#[0-9a-fA-F]{6}$/.test(r.color || '') && r.color !== '#000000'
+                ? r.color : 'var(--border)';
+            return `<span class="karne-rol" style="border-color:${renk}">${escapeHtml(r.name)}</span>`;
+        })
         .join('');
     document.getElementById('karneTarihler').textContent =
         `Sunucuya katıldı: ${karneTarih(k.kisi.katilma)} · Hesap açılışı: ${karneTarih(k.kisi.hesapAcilis)}`;
@@ -5911,24 +5920,31 @@ function karneCiz(k) {
 
     // --- Etkinlik tablosu ---
     document.getElementById('karneEtkinlik').innerHTML = k.etkinlik.map((e) => {
-        if (!e.hazir) return `<div class="karne-satir"><span>${e.label}</span><span class="muted">${e.sebep}</span></div>`;
+        if (!e.hazir) {
+            return `<div class="karne-satir"><span>${escapeHtml(e.label)}</span>`
+                + `<span class="muted">${escapeHtml(e.sebep)}</span></div>`;
+        }
         const son = e.sonMesaj ? karneTarih(e.sonMesaj) : 'hiç';
-        return `<div class="karne-satir"><span>${e.label}</span>`
-            + `<span><b>${e.adet}</b> mesaj <span class="muted">· son: ${son}</span></span></div>`;
+        return `<div class="karne-satir"><span>${escapeHtml(e.label)}</span>`
+            + `<span><b>${Number(e.adet) || 0}</b> mesaj <span class="muted">· son: ${son}</span></span></div>`;
     }).join('') || '<div class="empty-hint">Etkinlik kanalı tanımlı değil.</div>';
 
     // --- Uyari gecmisi ---
     document.getElementById('karneUyariListe').innerHTML = u.gecmis.length
         ? u.gecmis.map((w) => {
+            // SEBEP yetkilinin serbest yazdigi metin: panelde calisan bir
+            // yuk buraya birakilabilirdi ve karneyi acan YONETICININ
+            // tarayicisinda calisirdi.
             const tip = w.type === 'undone' ? 'geri alındı' : 'verildi';
-            return `<div class="karne-satir"><span>${karneTarih(w.at)} — <b>${w.label || '—'}</b> ${tip}</span>`
-                + `<span class="muted">${w.reason || ''}</span></div>`;
+            return `<div class="karne-satir"><span>${karneTarih(w.at)} — `
+                + `<b>${escapeHtml(w.label || '—')}</b> ${tip}</span>`
+                + `<span class="muted">${escapeHtml(w.reason || '')}</span></div>`;
         }).join('')
         : '<div class="empty-hint">Uyarı kaydı yok.</div>';
 
     // --- Kacirilan yoklamalar ---
     document.getElementById('karneKacirilan').innerHTML = y.kacirilan.length
-        ? y.kacirilan.map((g) => `<div class="karne-satir"><span>${g}</span></div>`).join('')
+        ? y.kacirilan.map((g) => `<div class="karne-satir"><span>${escapeHtml(g)}</span></div>`).join('')
         : '<div class="empty-hint">Bu dönemde kaçırılan yoklama yok.</div>';
 
     karneGovde.style.display = '';
