@@ -4429,6 +4429,40 @@ function veriKisiBul(metin) {
     return ham ? ham[1] : null;
 }
 
+// Embed alanlarindan adi kalibi tutan ILK alanin degerini verir.
+// Sure/tarih gibi degerleri mesajin TAMAMINDA aramak yerine kendi alanindan
+// okumak icin: "16 Eylul 2026 ... 18:34" gibi bir TARIH, tum metni tarayan
+// sure ayristiricisina yem olmasin.
+function veriAlanBul(mesaj, kalip) {
+    const embedler = mesaj.embeds || [];
+    for (let i = 0; i < embedler.length; i += 1) {
+        const alanlar = embedler[i].fields || [];
+        for (let j = 0; j < alanlar.length; j += 1) {
+            const ad = String(alanlar[j].name || '').toLocaleLowerCase('tr');
+            if (kalip.test(ad)) return String(alanlar[j].value || '');
+        }
+    }
+    return null;
+}
+
+const TR_AYLAR = ['ocak', 'şubat', 'mart', 'nisan', 'mayıs', 'haziran',
+    'temmuz', 'ağustos', 'eylül', 'ekim', 'kasım', 'aralık'];
+
+// "16 Eylul 2026 Carsamba 18:34" -> ms. Yayin log'u <t:...> damgasi yerine duz
+// Turkce tarih yaziyor; iki tarihin FARKI sunucu saat diliminden bagimsiz
+// oldugu icin sure hesabinda guvenle kullanilabiliyor.
+function turkceTarihAyristir(metin) {
+    if (!metin) return null;
+    const t = String(metin).toLocaleLowerCase('tr');
+    const m = t.match(/(\d{1,2})\s+([a-zçğıöşü]+)\s+(\d{4})[^\d]*(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    const ay = TR_AYLAR.indexOf(m[2]);
+    if (ay < 0) return null;
+    const d = new Date(Number(m[3]), ay, Number(m[1]), Number(m[4]), Number(m[5]), 0, 0);
+    const ms = d.getTime();
+    return Number.isNaN(ms) ? null : ms;
+}
+
 // Mesajin tum metnini (icerik + embed alanlari) tek parcada verir.
 function veriMesajMetni(mesaj) {
     const parcalar = [mesaj.content || ''];
@@ -4442,20 +4476,32 @@ function veriMesajMetni(mesaj) {
     return parcalar.filter(Boolean).join('\n');
 }
 
-// Yayin log embed'ini okur. GERCEK bicim (kullanicidan alindi):
-//   baslik : "🟢 Yayın Başlatıldı"
-//   alan   : "👤 Yayıncı:"          = "her0lce | 1297156863669960734"
-//   alan   : "🕐 Başlangıç Zamanı:" = "<t:1789209431:F>"
-//   alan   : "📍 Kanal:"            = "<#1476220348570665021>"
-// Hazir sure YOK - sure, basla/bitti ciftlerinin farkindan cikiyor.
+// Yayin log embed'ini okur. Kanalda IKI bicim birden var:
+//
+//  (1) "🟢 Yayın Başlatıldı" + "🕐 Başlangıç Zamanı: <t:1789209431:F>"
+//  (2) KAPANIS ozeti - kendi basina yeterli:
+//        baslik : "🔴 Yayın Bitirildi"
+//        alan   : "👤 Yayıncı"     = "```syk4n_ | 1420421574582075444```"
+//        alan   : "🟢 Başlangıç"   = "16 Eylül 2026 Çarşamba 18:34"
+//        alan   : "🔴 Bitiş"       = "16 Eylül 2026 Çarşamba 20:19"
+//        alan   : "⏱️ Toplam Süre" = "`1 saat 45 dakika`"
+//
+// Olay turu once BASLIKTAN okunuyor: (2) numarali mesajin govdesinde
+// "Başlangıç" alani var, tur tum metinden cikarilsaydi bir gun bu kapanis
+// mesaji ACILIS sanilabilirdi.
 function yayinOlayiAyristir(mesaj) {
     const metin = veriMesajMetni(mesaj);
     if (!metin) return null;
     const t = metin.toLocaleLowerCase('tr');
 
-    let tur = null;
-    if (/ba[sş]lat|ba[sş]lad/.test(t)) tur = 'basla';
-    else if (/sonland|bitti|bit[iı]r|kapat|durdur|sona er/.test(t)) tur = 'bitti';
+    const turBul = (s) => {
+        if (/ba[sş]lat|ba[sş]lad/.test(s)) return 'basla';
+        if (/sonland|bitti|bit[iı]r|kapat|durdur|sona er/.test(s)) return 'bitti';
+        return null;
+    };
+    const baslik = (mesaj.embeds || []).map((e) => e.title || '').join(' ')
+        .toLocaleLowerCase('tr');
+    const tur = turBul(baslik) || turBul(t);
     if (!tur) return null;
 
     // Kisi: "ad | 1297156863669960734" bicimi ONCE denenir - kanal etiketi
@@ -4469,11 +4515,28 @@ function yayinOlayiAyristir(mesaj) {
     }
     if (!userId) return null;
 
-    // Zaman: <t:1789209431:F> varsa o, yoksa mesajin kendi zamani.
+    // Zaman: <t:1789209431:F> varsa o, yoksa mesajin kendi zamani. Duz Turkce
+    // tarihi ZAMAN olarak kullanmiyoruz: log'u yazan botun saat dilimi bizim
+    // sunucunundan farkli olabilir. createdTimestamp mutlak ve guvenli.
     const damga = metin.match(/<t:(\d{9,13})(?::[a-zA-Z])?>/);
     const zaman = damga ? Number(damga[1]) * 1000 : mesaj.createdTimestamp;
 
-    return { tur, userId, zaman, sure: sureyiAyristir(metin) };
+    // Sure: ONCE kendi alanindan ("Toplam Süre"), sonra Baslangic/Bitis
+    // farkindan (iki tarihin FARKI saat diliminden bagimsizdir), en son
+    // caresizlikten tum metinden.
+    let sure = 0;
+    const sureAlan = veriAlanBul(mesaj, /s[uü]re/);
+    if (sureAlan) sure = sureyiAyristir(sureAlan);
+    if (!sure) {
+        const basAlan = veriAlanBul(mesaj, /ba[sş]lang|ba[sş]lat|ba[sş]lad/);
+        const bitAlan = veriAlanBul(mesaj, /biti[sş]|bit[iı]r|sonlan/);
+        const b1 = turkceTarihAyristir(basAlan);
+        const b2 = turkceTarihAyristir(bitAlan);
+        if (b1 && b2 && b2 > b1) sure = b2 - b1;
+    }
+    if (!sure) sure = sureyiAyristir(metin);
+
+    return { tur, userId, zaman, sure };
 }
 
 // Basla/bitti olaylarini kisi basina eslestirip sureyi cikarir.
@@ -4509,13 +4572,17 @@ function yayinOlaylariniEslestir(olaylar, pencereBas, pencereBit) {
                 return;
             }
             // --- bitti ---
+            // ONCELIK log'un kendi yazdigi "Toplam Sure"de. Sebebi: bir
+            // yayinin kapanis logu dusmezse (bot kapali, mesaj silinmis) acik
+            // kalan "Baslatildi" bir SONRAKI kapanisa baglaniyor ve sureyi kat
+            // kat sisiriyor - log "1 saat 45 dakika" derken 12 saat yaziliyordu.
+            // Hazir sure, bitis zamanindan geriye sayilarak ARALIGA cevriliyor
+            // ki rapor penceresine kirpilabilsin.
             let bas;
-            if (acik !== null) {
-                bas = acik;              // gercek basla/bitti cifti: en guvenilir
-            } else if (o.sure > 0) {
-                // "Basla" gorulmedi ama bitis mesajinda hazir sure var: bitis
-                // zamanindan GERIYE sayip aralik kuruyoruz ki kirpilabilsin.
+            if (o.sure > 0) {
                 bas = o.zaman - Math.min(o.sure, YAYIN_EN_UZUN_OTURUM_MS);
+            } else if (acik !== null) {
+                bas = acik;              // hazir sure yok: basla/bitti cifti
             } else {
                 return;                  // ne basla ne sure - sayilacak bir sey yok
             }
@@ -4627,10 +4694,15 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
     // Tarama KADRO icin 90 gunluk; rapor yalnizca son "gunSayisi" gune ait.
     // Bu iki sayiyi rapora yaziyoruz ki "neden bu kisi yok" sorusu cevaplansin.
     const pencereOlay = olaylar.filter((o) => o.zaman >= sinirZaman).length;
+    // Log'un kendi "Toplam Sure" alanindan okunan kapanis sayisi: rapordaki
+    // sureler gercekten log'un yazdigi degerlerden mi geliyor, gorulsun.
+    const logSureli = olaylar.filter((o) => o.tur === 'bitti' && o.sure > 0
+        && o.zaman >= sinirZaman).length;
     return {
         toplam, acikKalan, gecmis, cozulemeyen, taranan,
         olaySayisi: olaylar.length,
         pencereOlay,
+        logSureli,
         gunSayisi,
         gecmisGun,
         tekilSayisi: tekilSureler.length,
@@ -4658,7 +4730,8 @@ async function veriRaporGonder(sebep = 'elle') {
         const bas = `# ⏱️ Yayın Süreleri — son ${YAYIN_GUN_SAYISI} gün\n`
             + `Kaynak: #${sonuc.kanalAd} · Taranan: **${sonuc.taranan}** mesaj `
             + `(${sonuc.gecmisGun} gün) · Bu dönem: **${sonuc.pencereOlay}** olay `
-            + `(**${sonuc.baslaSayisi}** başladı / **${sonuc.bittiSayisi}** bitti)\n`
+            + `(**${sonuc.baslaSayisi}** başladı / **${sonuc.bittiSayisi}** bitti, `
+            + `**${sonuc.logSureli}**'inde log süresi yazıyor)\n`
             + `Yayıncı: **${satirlar.length}** · Toplam: **${sureBicimle(genelToplam)}**\n`
             + `_Yalnızca son ${YAYIN_GUN_SAYISI} güne düşen süreler sayıldı; `
             + `daha eski yayınlar bu listede yok._\n`
@@ -6485,7 +6558,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-12.18';
+const KOD_SURUMU = '2026-09-16.19';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6500,6 +6573,7 @@ const KOD_OZELLIKLERI = [
     'yayin-takip',    // ses/Go Live sure kaydi + saatlik rapor
     'yayin-veri',     // veri kanalindan sure toplama
     'yayin-pencere',  // sureler rapor penceresine kirpiliyor (eski yayin sizmiyor)
+    'yayin-logsure',  // log'un kendi "Toplam Sure" alani esas aliniyor
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
 ];
