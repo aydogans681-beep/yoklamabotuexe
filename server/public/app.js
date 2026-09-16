@@ -3095,6 +3095,9 @@ const AUDIT_TYPES = {
     'sese-sok':       { label: 'Sese Sok',       sinif: 't-islem' },
     'sesten-cik':     { label: 'Sesten Çık',     sinif: 't-islem' },
     'tablo-gonder':   { label: 'Tablo Gönder',   sinif: 't-islem' },
+    // Kotuye kullanim izleri - normal kullanimda hic gorunmezler.
+    'hiz-siniri':     { label: 'Hız Sınırı',      sinif: 't-girishata' },
+    'toplu-okuma':    { label: 'Toplu Veri Çekme', sinif: 't-girishata' },
 };
 
 let auditOffset = 0;

@@ -6537,6 +6537,104 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
+
+// ============================================================================
+// --- ISTEK HIZ SINIRI ve TOPLU OKUMA IZI ---
+// F12/DevTools ENGELLENEMEZ: tarayiciya giden veri kullanicinindir, konsolu
+// kapatma numaralari saniyeler icinde asilir ve sahte guvenlik olur. Asil
+// engellenebilir sey su: yetkili hesabini bir betige verip butun kanallari
+// saniyeler icinde bosaltmak. Burasi iki isi yapiyor:
+//   1) Dakikalik istek tavani - toplu cekimi insan hizina indiriyor.
+//   2) Dakikada SUNULAN SATIR sayaci - esik asilinca Hesap Gunlugu'ne kayit
+//      dusuyor, yani toplu cekim gorunur oluyor. Sessizce olmuyor.
+// Normal panel kullanimi dakikada ~30 istek (30sn ve 45sn'lik tazelemeler),
+// tavan bunun sekiz kati: gercek kullanici asla gormuyor.
+// ============================================================================
+const HIZ_PENCERE_MS = 60 * 1000;
+const HIZ_SINIR_ISTEK = 240;        // dakikada istek
+const HIZ_SINIR_GIRIS = 12;         // dakikada giris denemesi (kaba kuvvet)
+const TOPLU_OKUMA_ESIGI = 5000;     // dakikada sunulan satir
+const hizKovalari = new Map();
+
+function hizKovasi(kimlik) {
+    const simdi = Date.now();
+    const kova = hizKovalari.get(kimlik);
+    if (kova && simdi - kova.bas < HIZ_PENCERE_MS) return kova;
+    const yeni = { bas: simdi, istek: 0, giris: 0, satir: 0, hizIz: false, topluIz: false };
+    hizKovalari.set(kimlik, yeni);
+    return yeni;
+}
+
+// Yanitta kac satir var. Hangi ucun neyi dondurdugunu bilmeden calissin diye
+// govdedeki dizi alanlarini topluyoruz (messages, users, uyeler, roller...).
+function yanitSatirSayisi(govde) {
+    if (Array.isArray(govde)) return govde.length;
+    if (!govde || typeof govde !== 'object') return 0;
+    let n = 0;
+    Object.keys(govde).forEach((k) => {
+        if (Array.isArray(govde[k])) n += govde[k].length;
+    });
+    return n;
+}
+
+function hizSiniriKatmani(req, res, next) {
+    // tani.ps1 / guncelle.ps1 sunucunun kendi uzerinden konusuyor.
+    if (yerelIstekMi(req)) return next();
+
+    const oturum = getSession(req);
+    const kimlik = oturum
+        ? `u:${oturum.username}`
+        : `ip:${req.ip || (req.socket && req.socket.remoteAddress) || '?'}`;
+    const kova = hizKovasi(kimlik);
+
+    if (req.path === '/login') {
+        kova.giris += 1;
+        if (kova.giris > HIZ_SINIR_GIRIS) {
+            return res.status(429).json({
+                ok: false, error: 'Çok fazla giriş denemesi. Bir dakika bekle.',
+            });
+        }
+    }
+
+    kova.istek += 1;
+    if (kova.istek > HIZ_SINIR_ISTEK) {
+        // Tek kayit yeter: sinira takilan betik saniyede yuzlerce deneyip
+        // gunlugu bosaltmasin.
+        if (!kova.hizIz) {
+            kova.hizIz = true;
+            addAudit('hiz-siniri', oturum ? oturum.username : null,
+                `dakikada ${kova.istek} istek - sınırlandı (${kimlik})`, req);
+        }
+        return res.status(429).json({
+            ok: false, error: 'Çok hızlı istek attın. Bir dakika bekle.',
+        });
+    }
+
+    // Sunulan satirlari saymak icin res.json'i sariyoruz: her ucu tek tek
+    // isaretlemek yerine tek yerden geciyor, yeni uc eklendiginde unutulmuyor.
+    const asilJson = res.json.bind(res);
+    res.json = (govde) => {
+        kova.satir += yanitSatirSayisi(govde);
+        if (kova.satir > TOPLU_OKUMA_ESIGI && !kova.topluIz) {
+            kova.topluIz = true;
+            addAudit('toplu-okuma', oturum ? oturum.username : null,
+                `bir dakikada ${kova.satir} satır çekildi (son uç: ${req.originalUrl})`, req);
+        }
+        return asilJson(govde);
+    };
+    return next();
+}
+app.use('/api', hizSiniriKatmani);
+
+// Kova haritasi benzersiz IP sayisi kadar buyuyebilir; suresi gecenleri atiyoruz.
+const hizTemizlik = setInterval(() => {
+    const simdi = Date.now();
+    hizKovalari.forEach((kova, kimlik) => {
+        if (simdi - kova.bas > 5 * HIZ_PENCERE_MS) hizKovalari.delete(kimlik);
+    });
+}, 5 * 60 * 1000);
+if (hizTemizlik.unref) hizTemizlik.unref();
+
 // Geliştirme sürecinde her güncellemede tarayıcının eski dosyaları
 // önbellekten göstermemesi için (Ctrl+F5 zorunluluğu olmasın diye) statik
 // dosyalarda önbelleklemeyi tamamen kapatıyoruz - bu ölçekte performans
@@ -6565,7 +6663,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-16.20';
+const KOD_SURUMU = '2026-09-16.21';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6584,6 +6682,7 @@ const KOD_OZELLIKLERI = [
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
     'karne',          // Yetkili Karnesi sekmesi + /api/karne/*
+    'hiz-siniri',     // /api hiz tavani + toplu okuma denetim izi
 ];
 
 // Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz
