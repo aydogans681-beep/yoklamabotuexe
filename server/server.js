@@ -287,6 +287,7 @@ const IZIN_SEKMELERI = [
     { key: 'roller', label: 'Rol Ver/Al' },
     { key: 'yetkilialim', label: 'Yetkili Alım' },
     { key: 'tablo', label: 'Tablo' },
+    { key: 'karne', label: 'Yetkili Karnesi' },
     { key: 'aktiflik', label: 'Aktiflik' },
     { key: 'etkinlik', label: 'Etkinlik' },
     { key: 'loglar', label: 'TX Logs' },
@@ -4714,12 +4715,18 @@ async function veriKanaliTopla(gunSayisi = YAYIN_GUN_SAYISI, gecmisGun = 90) {
 
 let veriToplamaCalisiyor = false;
 
+// Son basarili veri-kanali taramasi. Yetkili Karnesi yayin saatini buradan
+// okuyor: her karne acilisinda 90 gunluk kanal taramasi yapmak sayfayi
+// dakikalarca bekletirdi. Saatlik rapor zaten bunu tazeliyor.
+let veriSonSonuc = null;        // { at, sonuc }
+
 // Veri kanalindan toplanan sureleri rapor kanalina yazar (eski mesaji silerek).
 async function veriRaporGonder(sebep = 'elle') {
     if (veriToplamaCalisiyor) return;
     veriToplamaCalisiyor = true;
     try {
         const sonuc = await veriKanaliTopla(YAYIN_GUN_SAYISI);
+        veriSonSonuc = { at: Date.now(), sonuc };
 
         const satirlar = [...sonuc.toplam.entries()]
             .map(([userId, ms]) => ({ userId, ms, yayinda: sonuc.acikKalan.has(userId) }))
@@ -6558,7 +6565,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-16.19';
+const KOD_SURUMU = '2026-09-16.20';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6576,6 +6583,7 @@ const KOD_OZELLIKLERI = [
     'yayin-logsure',  // log'un kendi "Toplam Sure" alani esas aliniyor
     'log-ilk-sinir',  // gozat loglarinda 500'luk ilk cekim siniri
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
+    'karne',          // Yetkili Karnesi sekmesi + /api/karne/*
 ];
 
 // Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz
@@ -8071,6 +8079,209 @@ app.get('/api/aktiflik/tani', requireIzin('aktiflik'), (req, res) => {
         ornekler,
         simdi,
     });
+});
+
+// ============================================================================
+// --- YETKILI KARNESI ---
+// Bir yetkilinin butun verisi TEK sayfada. Yeni veri toplamiyoruz: ses,
+// yayin, yoklama, uyari ve etkinlik kayitlari zaten diskte duruyordu, ama
+// bes ayri sekmeye dagilmisti ve hicbiri otekini bilmiyordu.
+// ============================================================================
+
+// Bugun dahil son n gunun anahtarlari (eskiden yeniye).
+function sonGunler(n) {
+    const bugun = gunToUTC(bugununAnahtari());
+    const gunler = [];
+    for (let i = n - 1; i >= 0; i -= 1) gunler.push(utcToGun(bugun - i * 86400000));
+    return gunler;
+}
+
+// Verilen gunlerde kisinin toplam ses suresi (saniye).
+function sesToplami(id, gunler) {
+    let sn = 0;
+    gunler.forEach((g) => {
+        const o = voiceData[g];
+        if (o && o[id]) sn += o[id];
+    });
+    return Math.round(sn);
+}
+
+// Discord ID'sinden hesap acilis zamani (snowflake icinde gomulu).
+function snowflakeZamani(id) {
+    try {
+        return Number((BigInt(id) >> 22n) + 1420070400000n);
+    } catch (error) {
+        return null;
+    }
+}
+
+// Kisinin ETKINLIK kanallarindaki mesaj sayilari. Etkinlik sekmesi bunu her
+// istekte hesapliyor; ayni yolu kullaniyoruz ki iki sayfa farkli sayi
+// gostermesin.
+// countByPerson depodaki TUM mesajlari geziyor. Amir 20 yetkiliye tek tek
+// bakarken ayni tarama 20 kez donerdi; depo degismedikce sonucu saklıyoruz.
+// Anahtar mesaj sayisini ve son cekim zamanini iceriyor: yeni mesaj gelince
+// ya da kanal yenilenince onbellek kendiliginden gecersiz oluyor.
+const karneSayimOnbellek = new Map();
+function karneSayim(store) {
+    const anahtar = `${store.key}:${store.fetchedAt || 0}:${store.messages.length}`;
+    const onceki = karneSayimOnbellek.get(store.key);
+    if (onceki && onceki.anahtar === anahtar) return onceki.sonuc;
+    const sonuc = countByPerson(store);
+    karneSayimOnbellek.set(store.key, { anahtar, sonuc });
+    return sonuc;
+}
+
+function karneEtkinlik(id) {
+    return ACTIVITY_CHANNELS.map((kanal) => {
+        const store = logStore.get(kanal.key);
+        const temel = { key: kanal.key, label: kanal.label };
+        if (!store || !store.channelId) return { ...temel, hazir: false, sebep: 'kanal tanımlı değil' };
+        if (!store.loaded) return { ...temel, hazir: false, sebep: store.status || 'yüklenmedi' };
+        const { sayac, sonMesaj } = karneSayim(store);
+        return {
+            ...temel,
+            hazir: true,
+            adet: sayac.get(id) || 0,
+            sonMesaj: sonMesaj.get(id) || null,
+            toplam: store.messages.length,
+        };
+    });
+}
+
+// Kisinin uyari gecmisi + KENDI verdigi uyarilarin sayisi.
+function karneUyarilar(id) {
+    const kendi = warningHistory.filter((w) => w.memberId === id);
+    const aktif = lastGivenRole.get(id) || null;
+    return {
+        aktif: aktif ? { label: aktif.label, at: aktif.at || null } : null,
+        aldigi: kendi.filter((w) => w.type === 'given').length,
+        geriAlinan: kendi.filter((w) => w.type === 'undone').length,
+        verdigi: warningHistory.filter((w) => w.type === 'given' && w.byDiscordId === id).length,
+        gecmis: kendi.slice(-15).reverse().map((w) => ({
+            at: w.at, type: w.type, label: w.label, reason: w.reason || null,
+        })),
+    };
+}
+
+// Yoklama katilimi. "Yapilan yoklama" = o gun en az bir kisinin kaydedildigi
+// gun; katilim kaydi yalnizca yoklama yapildiginda olusuyor.
+function karneYoklama(id, gunler) {
+    let yapilan = 0;
+    let katildi = 0;
+    const kacirilan = [];
+    gunler.forEach((g) => {
+        const gun = katilimVerisi[g];
+        if (!gun || !Object.keys(gun).length) return;
+        yapilan += 1;
+        if (gun[id]) katildi += 1;
+        else kacirilan.push(g);
+    });
+    return { yapilan, katildi, kacirilan: kacirilan.slice(-10) };
+}
+
+// Kisinin yayin suresi - saatlik raporun birakigi onbellekten.
+function karneYayin(id) {
+    if (!veriSonSonuc) {
+        return { hazir: false, sebep: 'yayın raporu henüz toplanmadı' };
+    }
+    const { sonuc, at } = veriSonSonuc;
+    return {
+        hazir: true,
+        guncellendi: at,
+        gunSayisi: sonuc.gunSayisi || YAYIN_GUN_SAYISI,
+        ms: sonuc.toplam.get(id) || 0,
+        gecmisMs: sonuc.gecmis.get(id) || 0,
+        gecmisGun: sonuc.gecmisGun || 90,
+        suAnYayinda: sonuc.acikKalan.has(id),
+    };
+}
+
+// Karnenin tamami.
+async function karneOlustur(id, gunSayisi) {
+    const guild = await getReadyGuild();
+    await ensureMembersFetched(guild);
+    const member = guild.members.cache.get(id);
+    if (!member) throw new Error('Bu kişi sunucuda bulunamadı.');
+
+    const gunler = sonGunler(gunSayisi);
+    const son7 = sesToplami(id, sonGunler(7));
+    // Kendi 4 haftalik ortalamasiyla karsilastiriyoruz: sabit bir esik herkese
+    // ayni gelmiyor, kimi yetkili zaten az sesli.
+    const son28 = sesToplami(id, sonGunler(28));
+    const oncekiHaftaOrt = (son28 - son7) / 3;
+    const trend = oncekiHaftaOrt > 0
+        ? Math.round(((son7 - oncekiHaftaOrt) / oncekiHaftaOrt) * 100)
+        : null;
+
+    return {
+        kisi: {
+            id,
+            displayName: member.displayName,
+            tag: member.user.tag,
+            avatarURL: member.displayAvatarURL({ size: 128 }),
+            roller: [...member.roles.cache.values()]
+                .filter((r) => r.name !== '@everyone')
+                .sort((a, b) => b.position - a.position)
+                .map((r) => ({ id: r.id, name: r.name, color: r.hexColor })),
+            katilma: member.joinedTimestamp || null,
+            hesapAcilis: snowflakeZamani(id),
+            suAnSeste: Boolean(member.voice && member.voice.channelId),
+        },
+        gunSayisi,
+        ses: {
+            donem: sesToplami(id, gunler),
+            son7,
+            son30: sesToplami(id, sonGunler(30)),
+            son90: sesToplami(id, sonGunler(90)),
+            trend,
+            gunluk: gunler.map((g) => ({
+                gun: g,
+                sn: Math.round((voiceData[g] && voiceData[g][id]) || 0),
+            })),
+        },
+        yayin: karneYayin(id),
+        yoklama: karneYoklama(id, gunler),
+        uyari: karneUyarilar(id),
+        etkinlik: karneEtkinlik(id),
+    };
+}
+
+// Karne icin yetkili listesi (secici kutusu).
+app.get('/api/karne/uyeler', requireIzin('karne'), async (req, res) => {
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        const uyeler = [...guild.members.cache.values()]
+            .filter((m) => ATTENDANCE_ROLE_IDS.some((rid) => m.roles.cache.has(rid)))
+            .map((m) => ({
+                id: m.id,
+                displayName: m.displayName,
+                tag: m.user.tag,
+                avatarURL: m.displayAvatarURL({ size: 64 }),
+            }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName, 'tr'));
+        return res.json({ ok: true, uyeler });
+    } catch (error) {
+        console.log(`[Karne] Uye listesi alinamadi: ${error.message}`);
+        return res.json({ ok: false, error: error.message });
+    }
+});
+
+app.get('/api/karne/:id', requireIzin('karne'), async (req, res) => {
+    const { id } = req.params;
+    if (!/^\d{17,20}$/.test(id)) {
+        return res.json({ ok: false, error: 'Geçersiz Discord ID.' });
+    }
+    let gunSayisi = Number(req.query.gun);
+    if (!Number.isFinite(gunSayisi) || gunSayisi < 1) gunSayisi = 15;
+    gunSayisi = Math.min(Math.round(gunSayisi), VOICE_GUN_SINIRI);
+    try {
+        return res.json({ ok: true, karne: await karneOlustur(id, gunSayisi) });
+    } catch (error) {
+        console.log(`[Karne] ${id} karnesi olusturulamadi: ${error.message}`);
+        return res.json({ ok: false, error: error.message });
+    }
 });
 
 app.get('/api/aktiflik', requireIzin('aktiflik'), async (req, res) => {

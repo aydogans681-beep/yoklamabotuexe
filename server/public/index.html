@@ -308,6 +308,7 @@
 
                 <div class="nav-grup">
                     <span class="nav-baslik">Raporlar</span>
+                    <button class="tab-btn" data-tab="karne"><span class="ico"><svg><use href="#i-yetkililer"/></svg></span><span class="etiket">Yetkili Karnesi</span></button>
                     <button class="tab-btn" data-tab="aktiflik"><span class="ico"><svg><use href="#i-aktiflik"/></svg></span><span class="etiket">Aktiflik</span></button>
                     <button class="tab-btn" data-tab="etkinlik"><span class="ico"><svg><use href="#i-etkinlik"/></svg></span><span class="etiket">Etkinlik</span></button>
                 </div>
@@ -903,6 +904,81 @@
         <!-- ================= AKTİFLİK ================= -->
         <!-- Belirlenen pencere içinde aktiflik kanalına mesaj atan yetkililer
              "Aktif", atmayanlar "Aktif Değil". Pencere seçilebilir. -->
+        <div class="tab-panel" id="tab-karne">
+            <div class="toolbar" style="margin-bottom:12px;">
+                <span class="logs-title">Yetkili</span>
+                <input class="text-search" id="karneAra" placeholder="İsim ara..." style="max-width:200px;">
+                <select class="text-search" id="karneKisi" style="min-width:220px;"></select>
+                <span class="grow"></span>
+                <div class="filter-chips" id="karneDonem">
+                    <button class="chip" data-gun="7">7 gün</button>
+                    <button class="chip active" data-gun="15">15 gün</button>
+                    <button class="chip" data-gun="30">30 gün</button>
+                    <button class="chip" data-gun="90">90 gün</button>
+                </div>
+                <button class="secondary small" id="karneYenile">Yenile</button>
+            </div>
+
+            <div class="scanStatus" id="karneDurum"></div>
+
+            <div id="karneGovde" style="display:none;">
+                <div class="card" id="karneKimlikKart">
+                    <div class="karne-kimlik">
+                        <img class="karne-avatar" id="karneAvatar" alt="">
+                        <div class="karne-kimlik-bilgi">
+                            <h2 id="karneAd">—</h2>
+                            <span class="muted" id="karneTag"></span>
+                            <div class="karne-roller" id="karneRoller"></div>
+                            <span class="muted karne-tarihler" id="karneTarihler"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="kpi-row" style="margin:12px 0;">
+                    <div class="kpi">
+                        <span class="kpi-label">Ses süresi</span>
+                        <span class="kpi-value" id="karneSes">—</span>
+                        <span class="kpi-alt" id="karneSesTrend"></span>
+                    </div>
+                    <div class="kpi">
+                        <span class="kpi-label">Yayın süresi</span>
+                        <span class="kpi-value" id="karneYayin">—</span>
+                        <span class="kpi-alt" id="karneYayinAlt"></span>
+                    </div>
+                    <div class="kpi">
+                        <span class="kpi-label">Yoklama</span>
+                        <span class="kpi-value" id="karneYoklama">—</span>
+                        <span class="kpi-alt" id="karneYoklamaAlt"></span>
+                    </div>
+                    <div class="kpi" id="karneUyariKpi">
+                        <span class="kpi-label">Aktif uyarı</span>
+                        <span class="kpi-value" id="karneUyari">—</span>
+                        <span class="kpi-alt" id="karneUyariAlt"></span>
+                    </div>
+                </div>
+
+                <div class="card katlanir" data-kat="karne-ses">
+                    <h2>Günlük ses süresi</h2>
+                    <div class="karne-bar" id="karneBar"></div>
+                </div>
+
+                <div class="card katlanir" data-kat="karne-etkinlik">
+                    <h2>Etkinlik</h2>
+                    <div id="karneEtkinlik"></div>
+                </div>
+
+                <div class="card katlanir" data-kat="karne-uyari">
+                    <h2>Uyarı geçmişi</h2>
+                    <div id="karneUyariListe"></div>
+                </div>
+
+                <div class="card katlanir kapali" data-kat="karne-yoklama">
+                    <h2>Kaçırılan yoklamalar</h2>
+                    <div id="karneKacirilan"></div>
+                </div>
+            </div>
+        </div>
+
         <div class="tab-panel" id="tab-aktiflik">
             <div class="toolbar logs-toolbar" style="margin-bottom:12px;">
                 <span class="logs-title">Seste Geçirilen Süre</span>

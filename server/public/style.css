@@ -1689,3 +1689,51 @@ button.brand-btn { box-shadow: none; }
 /* Ticket otomatik mesajı: kategori sekmeleri. Her kategorinin kendi metni var,
    aynı anda biri görünüyor. */
 .tk-sekmeler { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; }
+
+/* ---------- Yetkili Karnesi ---------- */
+.kpi .kpi-alt { font-size: 10px; color: var(--ink-3); line-height: 1.3; }
+.kpi .kpi-alt.iyi  { color: var(--ok); }
+.kpi .kpi-alt.kotu { color: var(--attn); }
+
+.karne-kimlik { display: flex; gap: 14px; align-items: flex-start; }
+.karne-avatar {
+    width: 64px; height: 64px; border-radius: 50%; flex: 0 0 auto;
+    border: 1px solid var(--border-strong); background: var(--surface-2);
+}
+.karne-kimlik-bilgi { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.karne-kimlik-bilgi h2 { margin: 0; font-size: 18px; }
+.karne-roller { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+.karne-rol {
+    font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--ink-2);
+}
+.karne-tarihler { font-size: 11px; }
+
+/* Gunluk ses cubuklari - kutuphane yok, sade div'ler. */
+.karne-bar {
+    display: flex; align-items: flex-end; gap: 3px;
+    height: 132px; overflow-x: auto; padding-top: 6px;
+}
+.karne-bar-sutun {
+    flex: 1 0 14px; min-width: 14px; height: 100%;
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px;
+}
+.karne-bar-dolu {
+    width: 100%; border-radius: 3px 3px 0 0;
+    background: linear-gradient(180deg, var(--accent), var(--accent-fill));
+}
+.karne-bar-etiket {
+    font-size: 8.5px; color: var(--ink-3); white-space: nowrap;
+    transform: rotate(-45deg); transform-origin: center; height: 12px;
+}
+
+.karne-satir {
+    display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+    padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12.5px;
+}
+.karne-satir:last-child { border-bottom: 0; }
+
+@media (max-width: 640px) {
+    .karne-kimlik { flex-direction: column; }
+    .karne-satir { flex-direction: column; gap: 2px; }
+}

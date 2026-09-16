@@ -1481,6 +1481,7 @@ const SEKME_BASLIKLARI = {
     roller:       ['i-roller',       'Rol Ver / Al',   'Seçtiğin kişiye rol ver ya da geri al.'],
     yetkilialim:  ['i-yetkililer',   'Yetkili Alım',   'Mülakat başvuru ticket\'larını gör, onayla ya da reddet.'],
     tablo:        ['i-roller',       'Tablo',          'Seçtiğin roller için sırayla /ticket-top komutu gönderir.'],
+    karne:        ['i-yetkililer',  'Yetkili Karnesi','Bir yetkilinin ses, yayın, yoklama, uyarı ve etkinlik verisi tek sayfada.'],
     aktiflik:     ['i-aktiflik',     'Aktiflik',       'Kim ne kadar süre seste kaldı, gün gün.'],
     etkinlik:     ['i-etkinlik',     'Etkinlik',       'Kanal bazlı mesaj sayıları ve ticket sahiplenme.'],
     loglar:       ['i-loglar',       'TX Logs',        'Ban, unban, kick, warn, DM ve diğer log kanalları.'],
@@ -1515,6 +1516,7 @@ tabButtons.forEach((btn) => {
         document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
         sayfaBasliginiAyarla(btn.dataset.tab);
         if (btn.dataset.tab === 'yoklama') loadKatilim();
+        if (btn.dataset.tab === 'karne') karneAc();
         if (btn.dataset.tab === 'loglar') txLogTab.refreshMenu();
         if (btn.dataset.tab === 'mutelog') muteLogTab.refreshMenu();
         if (btn.dataset.tab === 'felox') feloxLogTab.refreshMenu();
@@ -5777,3 +5779,203 @@ acGonderBtn.addEventListener('click', async () => {
         acGonderBtn.disabled = false;
     }
 });
+
+// ============================================================================
+// --- YETKILI KARNESI ---
+// Bes ayri sekmeye dagilmis veriyi tek sayfada toplar. Veri backend'de
+// birlesiyor; burasi yalnizca ciziyor.
+// ============================================================================
+const karneAra = document.getElementById('karneAra');
+const karneKisi = document.getElementById('karneKisi');
+const karneDurum = document.getElementById('karneDurum');
+const karneGovde = document.getElementById('karneGovde');
+let karneUyeler = [];
+let karneGun = 15;
+let karneAktifId = null;   // karnesi EKRANDA olan kisi
+let karneYukleniyor = false;
+
+function karneTarih(ms) {
+    if (!ms) return '—';
+    return new Date(ms).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function karneGunSecimiCiz() {
+    const terim = (karneAra.value || '').trim().toLocaleLowerCase('tr');
+    const liste = terim
+        ? karneUyeler.filter((u) => u.displayName.toLocaleLowerCase('tr').includes(terim)
+            || u.tag.toLocaleLowerCase('tr').includes(terim))
+        : karneUyeler;
+    karneKisi.innerHTML = liste.map((u) => `<option value="${u.id}">${u.displayName}</option>`).join('');
+    // Ekranda GOSTERILEN kisi listede duruyorsa secili kalsin. Aksi halde
+    // tarayici ilk secenege atliyor ama 'change' olayi atesLENMIYOR: kutuda
+    // bir isim, kartta baska bir isim gorunurdu.
+    if (karneAktifId && liste.some((u) => u.id === karneAktifId)) {
+        karneKisi.value = karneAktifId;
+    } else if (karneKisi.value && karneKisi.value !== karneAktifId) {
+        karneYukle();
+    }
+}
+
+async function karneUyeleriYukle() {
+    karneDurum.textContent = 'Yetkili listesi yükleniyor...';
+    try {
+        const data = await okuJson(await fetch('/api/karne/uyeler'));
+        if (!data.ok) { karneDurum.textContent = `Hata: ${data.error}`; return false; }
+        karneUyeler = data.uyeler || [];
+        if (!karneUyeler.length) {
+            karneDurum.textContent = 'Yetkili rolünde kimse bulunamadı.';
+            return false;
+        }
+        karneGunSecimiCiz();
+        karneDurum.textContent = '';
+        return true;
+    } catch (error) {
+        karneDurum.textContent = `Hata: ${error.message}`;
+        return false;
+    }
+}
+
+function karneBarCiz(gunluk) {
+    const kap = document.getElementById('karneBar');
+    if (!gunluk || !gunluk.length) { kap.innerHTML = '<div class="empty-hint">Kayıt yok.</div>'; return; }
+    const enYuksek = Math.max(...gunluk.map((g) => g.sn), 1);
+    // 90 gunde her cubuga etiket yazilsa hepsi ust uste binip okunmaz olurdu.
+    const adim = Math.ceil(gunluk.length / 15);
+    kap.innerHTML = gunluk.map((g, i) => {
+        const oran = Math.round((g.sn / enYuksek) * 100);
+        const gunAd = `${g.gun.slice(8)}.${g.gun.slice(5, 7)}`;
+        const etiket = i % adim === 0 ? gunAd : '';
+        return `<div class="karne-bar-sutun" title="${gunAd} — ${sureBicimle(g.sn)}">`
+            + `<div class="karne-bar-dolu" style="height:${Math.max(oran, 2)}%"></div>`
+            + `<span class="karne-bar-etiket">${etiket}</span></div>`;
+    }).join('');
+}
+
+function karneCiz(k) {
+    document.getElementById('karneAvatar').src = k.kisi.avatarURL;
+    document.getElementById('karneAd').textContent = k.kisi.displayName;
+    document.getElementById('karneTag').textContent = `${k.kisi.tag} · ${k.kisi.id}`;
+    document.getElementById('karneRoller').innerHTML = k.kisi.roller
+        .map((r) => `<span class="karne-rol" style="border-color:${r.color !== '#000000' ? r.color : 'var(--cizgi)'}">${r.name}</span>`)
+        .join('');
+    document.getElementById('karneTarihler').textContent =
+        `Sunucuya katıldı: ${karneTarih(k.kisi.katilma)} · Hesap açılışı: ${karneTarih(k.kisi.hesapAcilis)}`;
+
+    // --- Ses ---
+    document.getElementById('karneSes').textContent = sureBicimle(k.ses.donem);
+    const trendEl = document.getElementById('karneSesTrend');
+    if (k.ses.trend === null) {
+        trendEl.textContent = 'karşılaştırılacak geçmiş yok';
+        trendEl.className = 'kpi-alt';
+    } else {
+        const yon = k.ses.trend >= 0 ? '▲' : '▼';
+        trendEl.textContent = `${yon} %${Math.abs(k.ses.trend)} (son 7 gün, kendi ortalamasına göre)`;
+        trendEl.className = `kpi-alt ${k.ses.trend < -30 ? 'kotu' : (k.ses.trend > 0 ? 'iyi' : '')}`;
+    }
+
+    // --- Yayin ---
+    const yayinEl = document.getElementById('karneYayin');
+    const yayinAlt = document.getElementById('karneYayinAlt');
+    if (!k.yayin.hazir) {
+        yayinEl.textContent = '—';
+        yayinAlt.textContent = k.yayin.sebep;
+    } else {
+        yayinEl.textContent = sureBicimle(Math.round(k.yayin.ms / 1000));
+        const parcalar = [`son ${k.yayin.gunSayisi} gün`];
+        if (k.yayin.suAnYayinda) parcalar.push('🔴 şu an yayında');
+        if (!k.yayin.ms && k.yayin.gecmisMs) {
+            parcalar.push(`önceki ${k.yayin.gecmisGun} günde ${sureBicimle(Math.round(k.yayin.gecmisMs / 1000))}`);
+        }
+        yayinAlt.textContent = parcalar.join(' · ');
+    }
+
+    // --- Yoklama ---
+    const y = k.yoklama;
+    document.getElementById('karneYoklama').textContent = y.yapilan
+        ? `${y.katildi}/${y.yapilan}` : '—';
+    document.getElementById('karneYoklamaAlt').textContent = y.yapilan
+        ? `son ${k.gunSayisi} günde yapılan yoklama` : 'bu dönemde yoklama yapılmamış';
+
+    // --- Uyari ---
+    const u = k.uyari;
+    const uyariEl = document.getElementById('karneUyari');
+    uyariEl.textContent = u.aktif ? u.aktif.label : 'Temiz';
+    document.getElementById('karneUyariKpi').className = `kpi ${u.aktif ? 'is-attn' : 'is-ok'}`;
+    document.getElementById('karneUyariAlt').textContent =
+        `toplam ${u.aldigi} aldı · ${u.verdigi} verdi`;
+
+    karneBarCiz(k.ses.gunluk);
+
+    // --- Etkinlik tablosu ---
+    document.getElementById('karneEtkinlik').innerHTML = k.etkinlik.map((e) => {
+        if (!e.hazir) return `<div class="karne-satir"><span>${e.label}</span><span class="muted">${e.sebep}</span></div>`;
+        const son = e.sonMesaj ? karneTarih(e.sonMesaj) : 'hiç';
+        return `<div class="karne-satir"><span>${e.label}</span>`
+            + `<span><b>${e.adet}</b> mesaj <span class="muted">· son: ${son}</span></span></div>`;
+    }).join('') || '<div class="empty-hint">Etkinlik kanalı tanımlı değil.</div>';
+
+    // --- Uyari gecmisi ---
+    document.getElementById('karneUyariListe').innerHTML = u.gecmis.length
+        ? u.gecmis.map((w) => {
+            const tip = w.type === 'undone' ? 'geri alındı' : 'verildi';
+            return `<div class="karne-satir"><span>${karneTarih(w.at)} — <b>${w.label || '—'}</b> ${tip}</span>`
+                + `<span class="muted">${w.reason || ''}</span></div>`;
+        }).join('')
+        : '<div class="empty-hint">Uyarı kaydı yok.</div>';
+
+    // --- Kacirilan yoklamalar ---
+    document.getElementById('karneKacirilan').innerHTML = y.kacirilan.length
+        ? y.kacirilan.map((g) => `<div class="karne-satir"><span>${g}</span></div>`).join('')
+        : '<div class="empty-hint">Bu dönemde kaçırılan yoklama yok.</div>';
+
+    karneGovde.style.display = '';
+}
+
+async function karneYukle() {
+    const id = karneKisi.value;
+    if (!id) { karneGovde.style.display = 'none'; return; }
+    if (karneYukleniyor) return;
+    karneYukleniyor = true;
+    karneDurum.textContent = 'Karne hazırlanıyor...';
+    try {
+        const data = await okuJson(await fetch(`/api/karne/${id}?gun=${karneGun}`));
+        if (!data.ok) {
+            karneDurum.textContent = `Hata: ${data.error}`;
+            karneGovde.style.display = 'none';
+            return;
+        }
+        karneAktifId = id;
+        karneCiz(data.karne);
+        karneDurum.textContent = '';
+    } catch (error) {
+        karneDurum.textContent = `Hata: ${error.message}`;
+    } finally {
+        karneYukleniyor = false;
+    }
+}
+
+let karneHazir = false;
+async function karneAc() {
+    if (!karneHazir) {
+        karneHazir = await karneUyeleriYukle();
+        if (!karneHazir) return;
+    }
+    karneYukle();
+}
+
+if (karneKisi) {
+    karneKisi.addEventListener('change', karneYukle);
+    karneAra.addEventListener('input', karneGunSecimiCiz);
+    document.getElementById('karneYenile').addEventListener('click', () => {
+        karneHazir = false;
+        karneAc();
+    });
+    document.getElementById('karneDonem').addEventListener('click', (e) => {
+        const btn = e.target.closest('.chip');
+        if (!btn) return;
+        document.querySelectorAll('#karneDonem .chip').forEach((c) => c.classList.remove('active'));
+        btn.classList.add('active');
+        karneGun = Number(btn.dataset.gun) || 15;
+        karneYukle();
+    });
+}
