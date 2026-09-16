@@ -6535,6 +6535,53 @@ const app = express();
 // bilgisini X-Forwarded-* basliklarindan al - giris deneme siniri dogru IP'yi
 // saysin ve cerez otomatik "secure" isaretlensin diye.
 app.set('trust proxy', 1);
+// ============================================================================
+// --- GUVENLIK BASLIKLARI ---
+// Tarayiciya "bu sayfada neye izin var" diyen basliklar. Hicbiri yoktu.
+// En onemlisi frame-ancestors: bunsuz panel BASKA BIR SITEYE gorunmez bir
+// iframe olarak gomulebiliyor ve giris yapmis bir yonetici, kendi ekraninda
+// masum bir dugmeye basarken aslinda paneldeki "Hesap Sil"e basmis oluyor
+// (clickjacking). SameSite cerezi bunu ENGELLEMEZ: istek kurbanin kendi
+// oturumuyla, kendi sitesine gidiyor.
+// ============================================================================
+app.disable('x-powered-by');   // "Express" surum bilgisini disariya duyurmayalim
+
+app.use((req, res, next) => {
+    // Hicbir sitede iframe'e gomulemez.
+    res.setHeader('X-Frame-Options', 'DENY');
+    // Icerik turunu tarayici "tahmin" etmesin (resim sanilan bir dosyanin
+    // betik olarak calistirilmasi).
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Panel adresi disariya sizmasin (log'daki bir baglantiya tiklandiginda
+    // hedef siteye Referer olarak gitmesin).
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    // Tarayici yeteneklerini kapatiyoruz - panelin hicbirine ihtiyaci yok.
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+    // Icerik Guvenlik Politikasi. Panelde satir ici <style> ve <script>
+    // KULLANILIYOR, o yuzden 'unsafe-inline' acik kalmak zorunda; asil
+    // kazanc disariya baglanmanin kapanmasi: bir XSS bulunsa bile veriyi
+    // disari tasiyacak kanal yok. img'de data: var (gomulu avatarlar),
+    // Discord CDN'i resimler icin acik.
+    res.setHeader('Content-Security-Policy', [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https://cdn.discordapp.com https://media.discordapp.net",
+        "connect-src 'self' ws: wss:",
+        "font-src 'self' data:",
+        "form-action 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+    ].join('; '));
+    // HTTPS arkasindaysa tarayiciya "bir daha hep HTTPS" de. Duz HTTP'de
+    // gondermiyoruz: sertifikasiz bir kurulumu kendi kendine kilitlerdi.
+    if (req.secure) {
+        res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+    }
+    return next();
+});
+
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
@@ -6663,7 +6710,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-16.22';
+const KOD_SURUMU = '2026-09-16.23';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6683,6 +6730,7 @@ const KOD_OZELLIKLERI = [
     'katlanir-kart',  // Yoklama kartlari acilir/kapanir
     'karne',          // Yetkili Karnesi sekmesi + /api/karne/*
     'hiz-siniri',     // /api hiz tavani + toplu okuma denetim izi
+    'guvenlik-baslik',// CSP, frame-ancestors, nosniff, referrer
 ];
 
 // Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz

@@ -42,6 +42,23 @@ function escapeHtml(str) {
     }[c]));
 }
 
+// Bir URL'yi HTML ozniteligine koymadan once semasini suzer.
+// escapeHtml tirnak kacisini halleder ama "javascript:alert(1)" semasini
+// ENGELLEMEZ; encodeURI de etmez (sadece yuzde-kodlar). Boyle bir adres bir
+// href'e girerse tiklandiginda panelde kod calisir. Yalnizca http(s) ve
+// gomulu resim gecirip geri kalanini bosa cikariyoruz. SVG disarida: gomulu
+// SVG betik tasiyabiliyor.
+function guvenliUrlHam(url) {
+    const s = String(url ?? '').trim();
+    if (/^https?:\/\//i.test(s)) return s;
+    if (/^data:image\/(?!svg\b)[a-z0-9.+-]+;base64,/i.test(s)) return s;
+    return '';
+}
+// HTML ozniteligine gomulecek surum (hem suzulmus hem kacirilmis).
+function guvenliUrl(url) {
+    return escapeHtml(guvenliUrlHam(url));
+}
+
 // Sunucu JSON yerine HTML dondurdugunde ("<!DOCTYPE ...") ham bir ayristirma
 // hatasi yerine ne yapilmasi gerektigini soyleyen bir mesaj veriyoruz. Bu
 // pratikte tek bir anlama geliyor: dosyalar guncellendi ama Node sureci hala
@@ -574,7 +591,7 @@ function renderRow(member) {
 
     row.innerHTML = `
         <span class="voiceDot ${voiceClass}"></span>
-        <img class="avatar" src="${member.avatarURL}" alt="">
+        <img class="avatar" src="${guvenliUrl(member.avatarURL)}" alt="">
         <div class="info">
             <div class="name">${escapeHtml(member.displayName)} <span class="tag">${escapeHtml(member.tag)}</span></div>
             <div class="voiceLabel ${voiceClass}">${voiceLabel}</div>
@@ -1186,8 +1203,8 @@ function yaMesajlariCiz(mesajlar) {
     }
     yaMesajKutu.innerHTML = mesajlar.map((m) => {
         const ekler = (m.ekler || []).map((e) => e.gorsel
-            ? `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(e.url)}" alt="${escapeHtml(e.ad)}" style="max-width:220px; max-height:180px; border-radius:8px; margin-top:4px; display:block;"></a>`
-            : `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener" style="font-size:11.5px;">📎 ${escapeHtml(e.ad || e.url)}</a>`).join('');
+            ? `<a href="${guvenliUrl(e.url)}" target="_blank" rel="noopener"><img src="${guvenliUrl(e.url)}" alt="${escapeHtml(e.ad)}" style="max-width:220px; max-height:180px; border-radius:8px; margin-top:4px; display:block;"></a>`
+            : `<a href="${guvenliUrl(e.url)}" target="_blank" rel="noopener" style="font-size:11.5px;">📎 ${escapeHtml(e.ad || e.url)}</a>`).join('');
         const govde = m.icerik ? `<div style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(m.icerik)}</div>` : '';
         const embedNot = (m.embedVar && !m.icerik && !ekler) ? '<div style="font-size:11.5px; color:var(--ink-3);">[gömülü içerik]</div>' : '';
         return `<div style="padding:6px 0; border-bottom:1px solid var(--border);">
@@ -1754,13 +1771,13 @@ function renderLogEntry(entry) {
     const embeds = entry.embeds.map(renderEmbed).join('');
     const attachments = entry.attachments.length
         ? `<div class="log-attach">${entry.attachments
-            .map((a) => `<a href="${encodeURI(a.url)}" target="_blank" rel="noopener noreferrer">📎 ${escapeHtml(a.name)}</a>`)
+            .map((a) => `<a href="${guvenliUrl(a.url)}" target="_blank" rel="noopener noreferrer">📎 ${escapeHtml(a.name)}</a>`)
             .join(' · ')}</div>`
         : '';
     const div = document.createElement('div');
     div.className = 'log-entry';
     div.innerHTML = `
-        ${entry.authorAvatar ? `<img class="log-avatar" src="${encodeURI(entry.authorAvatar)}" alt="">` : '<div class="log-avatar"></div>'}
+        ${entry.authorAvatar ? `<img class="log-avatar" src="${guvenliUrl(entry.authorAvatar)}" alt="">` : '<div class="log-avatar"></div>'}
         <div class="log-body">
             <div class="log-meta">
                 <span class="log-author">${escapeHtml(entry.authorTag)}</span>
@@ -5857,7 +5874,7 @@ function karneBarCiz(gunluk) {
 }
 
 function karneCiz(k) {
-    document.getElementById('karneAvatar').src = k.kisi.avatarURL;
+    document.getElementById('karneAvatar').src = guvenliUrlHam(k.kisi.avatarURL);
     document.getElementById('karneAd').textContent = k.kisi.displayName;
     document.getElementById('karneTag').textContent = `${k.kisi.tag} · ${k.kisi.id}`;
     // Rol ADI Discord'dan geliyor: sunucu sahibi rolu "<img onerror=...>" diye
