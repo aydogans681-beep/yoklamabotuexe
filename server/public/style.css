@@ -97,6 +97,23 @@ body {
 }
 .main-area { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 
+/* --- baglantilar ---
+   Panelde hic genel <a> stili yoktu: log ekleri, AC kapisi ve "Discord ID
+   ekle" baglantilari tarayicinin varsayilan MAVI/MOR rengine dusuyor, koyu
+   kirmizi temanin icinde sirityordu. Alti cizgi yalnizca uzerine gelince
+   cikiyor - duragan halde satir arasinda gurultu yapmasin. */
+a {
+    color: var(--accent);
+    text-decoration: none;
+    border-radius: 3px;
+    transition: color .14s, text-decoration-color .14s;
+}
+a:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 2px; }
+a:visited { color: var(--accent); }
+a:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; text-decoration: none;
+}
+
 /* --- logo --- */
 .brand-mark {
     display: flex; align-items: center; justify-content: center;
@@ -265,7 +282,13 @@ button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
 }
 
 /* iki kartı yan yana koyan ızgara - dar ekranda alt alta düşer */
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
+/* align-items:start SART: izgara ogeleri varsayilan olarak satirin en
+   uzun kartina kadar UZAR. Katlanmis (kapali) bir kart boylece basligi
+   disinda bombos, 200px'lik bir kutu olarak duruyordu. */
+.card-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+    gap: 12px; align-items: start;
+}
 .card-grid > .card { margin-bottom: 0; }
 
 /* Açılır/kapanır kartlar (Yoklama sekmesi çok uzadığı için): başlığa tıklayınca
@@ -906,13 +929,46 @@ select.role-add:disabled { opacity: .5; cursor: wait; }
 /* Dar ekran: kenar çubuğu üste taşınır, gezinme yatay kaydırılır */
 @media (max-width: 860px) {
     #appWrap { flex-direction: column; gap: 12px; }
-    .sidebar { width: 100%; flex-direction: row; align-items: center; gap: 10px; padding: 10px; }
+    /* Yan menu ust seride doner. flex-wrap SART: logo/kullanici bir satirda,
+       sekme seridi ALTINDA tam genislikte. Tek satira sigdirilmaya
+       calisildiginda serit ekranin disina tasiyor ve telefonda sekmeler
+       hic gorunmuyordu. */
+    .sidebar {
+        width: 100%; min-width: 0; flex-direction: row; flex-wrap: wrap;
+        align-items: center; gap: 10px; padding: 10px;
+    }
     .brand-mark { max-width: 78px; padding: 0; }
     .brand-mark .brand-img { max-width: 78px; }
     button.brand-btn { width: auto; }
-    .side-nav { flex-direction: row; overflow-x: auto; gap: 4px; }
-    .side-nav .tab-btn { white-space: nowrap; }
-    .side-foot { flex-direction: row; align-items: center; gap: 10px; padding-top: 0; border-top: none; border-left: 1px solid var(--border); padding-left: 10px; }
+
+    /* Sekme seridi: kendi satirinda, yatay kaydirmali. */
+    .side-nav {
+        order: 3; flex: 1 0 100%; min-width: 0;
+        flex-direction: row; overflow-x: auto; overflow-y: hidden;
+        gap: 4px; padding-bottom: 2px;
+        scrollbar-width: thin;
+    }
+    /* Gruplar da yan yana aksin - dikey kaldiklari icin serit tasiyordu.
+       flex:0 0 auto SART: grup kutulari varsayilan olarak kuculup sifira
+       yaklasiyor, icindeki dugmeler ust uste biniyordu. */
+    .nav-grup { flex: 0 0 auto; flex-direction: row; gap: 4px; }
+    /* Grup basliklari ("YOKLAMA", "RAPORLAR") seritte yalnizca yer yiyor. */
+    .nav-baslik { display: none; }
+    /* width:100% masaustu kurali: seritte her dugmeyi seridin tamamina
+       yaymaya calisiyordu. Genislik iceriginden gelsin. */
+    .side-nav .tab-btn { white-space: nowrap; flex: 0 0 auto; width: auto; overflow: visible; }
+    .side-nav::-webkit-scrollbar { height: 4px; }
+    .side-nav::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+
+    /* Canli ozet dar ekranda yer yiyor; ayni bilgi Aktiflik sekmesinde var. */
+    .side-canli { display: none !important; }
+
+    .side-foot {
+        flex: 1 1 auto; min-width: 0;
+        flex-direction: row; align-items: center; gap: 10px;
+        padding-top: 0; border-top: none; padding-left: 0; border-left: none;
+        justify-content: flex-end;
+    }
     .audit-row { flex-wrap: wrap; }
 }
 
