@@ -6732,7 +6732,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-17.26';
+const KOD_SURUMU = '2026-09-17.27';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6758,6 +6758,7 @@ const KOD_OZELLIKLERI = [
     'haftalik-ozet',  // hedef/dusus ozeti Discord'a
     'sicil',          // yetkili sicil notlari
     'izinli-ayrimi',  // onayli mazereti olan raporlarda ayriliyor
+    'yedek',          // yedek-al / yedek-geri-yukle / ilk-hesap
 ];
 
 // Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz
