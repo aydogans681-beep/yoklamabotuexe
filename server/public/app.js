@@ -1502,6 +1502,7 @@ const SEKME_BASLIKLARI = {
     roller:       ['i-roller',       'Rol Ver / Al',   'Seçtiğin kişiye rol ver ya da geri al.'],
     yetkilialim:  ['i-yetkililer',   'Yetkili Alım',   'Mülakat başvuru ticket\'larını gör, onayla ya da reddet.'],
     tablo:        ['i-roller',       'Tablo',          'Seçtiğin roller için sırayla /ticket-top komutu gönderir.'],
+    hedefler:     ['i-aktiflik',    'Hedefler',       'Rol başına haftalık hedef; kim tutturdu, kim tutturamadı.'],
     karne:        ['i-yetkililer',  'Yetkili Karnesi','Bir yetkilinin ses, yayın, yoklama, uyarı ve etkinlik verisi tek sayfada.'],
     aktiflik:     ['i-aktiflik',     'Aktiflik',       'Kim ne kadar süre seste kaldı, gün gün.'],
     etkinlik:     ['i-etkinlik',     'Etkinlik',       'Kanal bazlı mesaj sayıları ve ticket sahiplenme.'],
@@ -1538,6 +1539,7 @@ tabButtons.forEach((btn) => {
         sayfaBasliginiAyarla(btn.dataset.tab);
         if (btn.dataset.tab === 'yoklama') loadKatilim();
         if (btn.dataset.tab === 'karne') karneAc();
+        if (btn.dataset.tab === 'hedefler') hedeflerAc();
         if (btn.dataset.tab === 'loglar') txLogTab.refreshMenu();
         if (btn.dataset.tab === 'mutelog') muteLogTab.refreshMenu();
         if (btn.dataset.tab === 'felox') feloxLogTab.refreshMenu();
@@ -3119,6 +3121,10 @@ const AUDIT_TYPES = {
     // Kotuye kullanim izleri - normal kullanimda hic gorunmezler.
     'hiz-siniri':     { label: 'Hız Sınırı',      sinif: 't-girishata' },
     'toplu-okuma':    { label: 'Toplu Veri Çekme', sinif: 't-girishata' },
+    'hedef-guncelle': { label: 'Hedef Değişikliği', sinif: 't-hesap' },
+    'sicil-not':      { label: 'Sicil Notu',       sinif: 't-islem' },
+    'sicil-not-sil':  { label: 'Sicil Notu Silme', sinif: 't-islem' },
+    'ozet-gonder':    { label: 'Haftalık Özet',    sinif: 't-islem' },
 };
 
 let auditOffset = 0;
@@ -5938,6 +5944,8 @@ function karneCiz(k) {
         `toplam ${u.aldigi} aldı · ${u.verdigi} verdi`;
 
     karneBarCiz(k.ses.gunluk);
+    karneHedefCiz(k.hedef);
+    karneSicilCiz(k.sicil);
 
     // --- Etkinlik tablosu ---
     document.getElementById('karneEtkinlik').innerHTML = k.etkinlik.map((e) => {
@@ -6184,3 +6192,279 @@ async function gorunumYukle() {
 }
 
 gorunumKur();
+
+// ============================================================================
+// --- HEDEFLER ---
+// Ham sayıları geçti/kaldı'ya çeviren ekran. Rol başına haftalık hedef
+// tanımlanır; bütün raporlar bu hedefe göre okunur.
+// ============================================================================
+const hdDurumEl = document.getElementById('hdDurum');
+let hdGun = 7;
+let hdHedefler = [];
+let hdRoller = [];
+
+function hdBirim(deger, birim) {
+    if (birim === 'saat') {
+        const dk = Math.round(deger * 60);
+        return `${Math.floor(dk / 60)} sa ${dk % 60} dk`;
+    }
+    return String(Math.round(deger));
+}
+
+function hdOlcumCubugu(ad, o) {
+    const oran = Math.min(100, Math.round((o.olan / o.hedef) * 100));
+    const yeter = o.olan >= o.hedef;
+    return `<div class="hd-olcum">
+        <span class="hd-olcum-ad">${escapeHtml(ad)}</span>
+        <span class="hd-cubuk"><span class="hd-cubuk-dolu${yeter ? ' yeter' : ''}"
+            style="width:${oran}%"></span></span>
+        <span class="hd-olcum-deger${yeter ? ' yeter' : ''}">${escapeHtml(hdBirim(o.olan, o.birim))}`
+        + ` / ${escapeHtml(hdBirim(o.hedef, o.birim))}</span>
+    </div>`;
+}
+
+function hdSatirCiz(r) {
+    const rozet = r.izinli ? '<span class="hd-rozet izinli">İzinli</span>'
+        : (r.gecti ? '<span class="hd-rozet gecti">Tuttu</span>'
+            : '<span class="hd-rozet kaldi">Tutmadı</span>');
+    const olcumler = Object.entries(r.olcumler).map(([ad, o]) => hdOlcumCubugu(ad, o)).join('');
+    return `<div class="hd-satir${r.gecti ? ' ok' : (r.izinli ? ' izin' : ' eksik')}">
+        <div class="hd-bas">
+            <b>${escapeHtml(r.ad)}</b>
+            <span class="muted">${escapeHtml(r.hedefAd)}</span>
+            ${rozet}
+            <span class="grow"></span>
+            <span class="hd-yuzde">%${Number(r.yuzde) || 0}</span>
+        </div>
+        ${olcumler}
+    </div>`;
+}
+
+async function hdDurumYukle() {
+    hdDurumEl.textContent = 'Hesaplanıyor...';
+    try {
+        const [d, dus] = await Promise.all([
+            okuJson(await fetch(`/api/hedef-durum?gun=${hdGun}`)),
+            okuJson(await fetch('/api/dusus')),
+        ]);
+        if (!d.ok) { hdDurumEl.textContent = `Hata: ${d.error}`; return; }
+        const k = d.durum;
+        document.getElementById('hdGecen').textContent = k.gecen;
+        document.getElementById('hdKalan').textContent = k.kalan;
+        document.getElementById('hdIzinli').textContent = k.izinli;
+        document.getElementById('hdDusus').textContent = dus.ok ? dus.dusenler.length : '—';
+
+        document.getElementById('hdListe').innerHTML = k.satirlar.length
+            ? k.satirlar.map(hdSatirCiz).join('')
+            : `<div class="empty-hint">${k.hedefSayisi
+                ? 'Tanımlı hedeflerdeki rollerde kimse bulunamadı.'
+                : 'Henüz hedef tanımlanmamış. Aşağıdaki "Hedefleri tanımla" bölümünü kullan.'}</div>`;
+
+        document.getElementById('hdDususListe').innerHTML = (dus.ok && dus.dusenler.length)
+            ? dus.dusenler.map((x) => `<div class="karne-satir">
+                <span><b>${escapeHtml(x.ad || x.userId)}</b>${x.ayrilmis
+                    ? ' <span class="muted">(sunucuda değil)</span>' : ''}</span>
+                <span><b class="hd-dusus">%${Number(x.dusus) || 0} düşüş</b>
+                <span class="muted">· ${escapeHtml(sureBicimle(Math.round(x.oncekiOrt)))}
+                → ${escapeHtml(sureBicimle(Math.round(x.bu)))}</span></span></div>`).join('')
+            : '<div class="empty-hint">Belirgin tempo düşüşü yok.</div>';
+
+        hdDurumEl.textContent = `${k.satirlar.length} yetkili · son ${k.gunSayisi} gün`
+            + ` · ${k.yoklamaGunSayisi} yoklama yapılmış`;
+    } catch (error) {
+        hdDurumEl.textContent = `Hata: ${error.message}`;
+    }
+}
+
+function hdHedefListeCiz() {
+    const kap = document.getElementById('hdHedefListe');
+    if (!kap) return;
+    kap.innerHTML = hdHedefler.length
+        ? hdHedefler.map((h) => {
+            const rol = hdRoller.find((r) => r.id === h.rolId);
+            const kalemler = [
+                h.ses ? `ses ${h.ses} sa` : null,
+                h.yayin ? `yayın ${h.yayin} sa` : null,
+                h.yoklama ? `${h.yoklama} yoklama` : null,
+                h.mesaj ? `${h.mesaj} mesaj` : null,
+            ].filter(Boolean).join(' · ') || 'kalem yok';
+            return `<div class="karne-satir">
+                <span><b>${escapeHtml(h.ad)}</b>
+                <span class="muted">· ${escapeHtml(rol ? rol.name : h.rolId)}</span></span>
+                <span><span class="muted">${escapeHtml(kalemler)}</span>
+                <button class="ghost small" data-hd-sil="${escapeHtml(h.id)}">Sil</button></span>
+            </div>`;
+        }).join('')
+        : '<div class="empty-hint">Hedef yok.</div>';
+}
+
+async function hdAyarKaydet(sessiz) {
+    const msg = document.getElementById('hdAyarMsg');
+    try {
+        const data = await okuJson(await fetch('/api/hedefler', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                hedefler: hdHedefler,
+                ozetKanal: document.getElementById('hdOzetKanal').value.trim() || null,
+                ozetGun: Number(document.getElementById('hdOzetGun').value),
+                ozetSaat: Number(document.getElementById('hdOzetSaat').value),
+                dususEsik: Number(document.getElementById('hdEsik').value),
+            }),
+        }));
+        if (!data.ok) { msg.textContent = `Hata: ${data.error}`; return; }
+        hdHedefler = data.hedefler;
+        hdHedefListeCiz();
+        msg.textContent = 'Kaydedildi ✓';
+        if (!sessiz) hdDurumYukle();
+    } catch (error) {
+        msg.textContent = `Hata: ${error.message}`;
+    }
+}
+
+async function hdAyarYukle() {
+    try {
+        const [a, r] = await Promise.all([
+            okuJson(await fetch('/api/hedefler')),
+            okuJson(await fetch('/api/roller')).catch(() => ({ ok: false })),
+        ]);
+        if (a.ok) {
+            hdHedefler = a.hedefler || [];
+            document.getElementById('hdOzetKanal').value = a.ozetKanal || '';
+            document.getElementById('hdOzetGun').value = String(a.ozetGun);
+            document.getElementById('hdOzetSaat').value = String(a.ozetSaat);
+            document.getElementById('hdEsik').value = String(a.dususEsik);
+        }
+        if (r && r.ok) {
+            hdRoller = r.roles || r.roller || [];
+            document.getElementById('hdYeniRol').innerHTML = hdRoller
+                .map((x) => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join('');
+        }
+        hdHedefListeCiz();
+    } catch (error) { /* yetkisi yoksa sessiz geç */ }
+}
+
+let hdHazir = false;
+function hedeflerAc() {
+    if (!hdHazir) {
+        hdHazir = true;
+        const saatSec = document.getElementById('hdOzetSaat');
+        saatSec.innerHTML = Array.from({ length: 24 }, (_, i) =>
+            `<option value="${i}">${String(i).padStart(2, '0')}:00</option>`).join('');
+        hdAyarYukle();
+    }
+    hdDurumYukle();
+}
+
+if (hdDurumEl) {
+    document.getElementById('hdYenile').addEventListener('click', hdDurumYukle);
+    document.getElementById('hdDonem').addEventListener('click', (e) => {
+        const c = e.target.closest('.chip');
+        if (!c) return;
+        document.querySelectorAll('#hdDonem .chip').forEach((x) => x.classList.remove('active'));
+        c.classList.add('active');
+        hdGun = Number(c.dataset.gun) || 7;
+        hdDurumYukle();
+    });
+    document.getElementById('hdOzetGonder').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        hdDurumEl.textContent = 'Özet gönderiliyor...';
+        try {
+            const d = await okuJson(await fetch('/api/ozet-gonder', { method: 'POST' }));
+            hdDurumEl.textContent = d.ok
+                ? `Özet gönderildi: ${d.gecen} tuttu, ${d.kalan} tutmadı.`
+                : `Hata: ${d.error}`;
+        } catch (error) {
+            hdDurumEl.textContent = `Hata: ${error.message}`;
+        } finally { e.target.disabled = false; }
+    });
+    document.getElementById('hdEkle').addEventListener('click', () => {
+        const rolId = document.getElementById('hdYeniRol').value;
+        const ad = document.getElementById('hdYeniAd').value.trim();
+        if (!rolId || !ad) {
+            document.getElementById('hdAyarMsg').textContent = 'Rol ve ad gerekli.';
+            return;
+        }
+        hdHedefler.push({
+            ad, rolId,
+            ses: Number(document.getElementById('hdYeniSes').value) || 0,
+            yayin: Number(document.getElementById('hdYeniYayin').value) || 0,
+            yoklama: Number(document.getElementById('hdYeniYoklama').value) || 0,
+            mesaj: Number(document.getElementById('hdYeniMesaj').value) || 0,
+        });
+        document.getElementById('hdYeniAd').value = '';
+        hdAyarKaydet();
+    });
+    document.getElementById('hdHedefListe').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-hd-sil]');
+        if (!b) return;
+        hdHedefler = hdHedefler.filter((h) => h.id !== b.dataset.hdSil);
+        hdAyarKaydet();
+    });
+    document.getElementById('hdAyarKaydet').addEventListener('click', () => hdAyarKaydet());
+}
+
+// --- Karne: hedef durumu ve sicil notları ---
+function karneHedefCiz(h) {
+    const kart = document.getElementById('karneHedefKart');
+    const kap = document.getElementById('karneHedef');
+    if (!kap) return;
+    if (!h) {
+        // Hedefsiz kişi için boş kart göstermek yerine kartı tamamen kaldırıyoruz.
+        if (kart) kart.style.display = 'none';
+        return;
+    }
+    if (kart) kart.style.display = '';
+    const rozet = h.izinli ? '<span class="hd-rozet izinli">İzinli</span>'
+        : (h.gecti ? '<span class="hd-rozet gecti">Tuttu</span>'
+            : '<span class="hd-rozet kaldi">Tutmadı</span>');
+    kap.innerHTML = `<div class="hd-bas" style="margin-bottom:9px;">
+            <span class="muted">${escapeHtml(h.hedefAd)} · son 7 gün</span>
+            ${rozet}<span class="grow"></span>
+            <span class="hd-yuzde">%${Number(h.yuzde) || 0}</span>
+        </div>`
+        + Object.entries(h.olcumler).map(([ad, o]) => hdOlcumCubugu(ad, o)).join('');
+}
+
+const KARNE_NOT_TUR = { bilgi: 'ℹ️', olumlu: '👍', olumsuz: '⚠️' };
+
+function karneSicilCiz(notlar) {
+    const kap = document.getElementById('karneSicil');
+    if (!kap) return;
+    kap.innerHTML = (notlar && notlar.length)
+        ? notlar.map((n) => `<div class="karne-satir">
+            <span>${KARNE_NOT_TUR[n.tur] || 'ℹ️'} ${escapeHtml(n.metin)}</span>
+            <span class="muted">${escapeHtml(karneTarih(n.at))} · ${escapeHtml(n.by || '')}
+            <button class="ghost small" data-not-sil="${escapeHtml(n.id)}">Sil</button></span>
+        </div>`).join('')
+        : '<div class="empty-hint">Not yok.</div>';
+}
+
+async function karneNotIsle(yol, secenek) {
+    try {
+        const d = await okuJson(await fetch(yol, secenek));
+        if (d.ok) karneSicilCiz(d.notlar);
+        else karneDurum.textContent = `Hata: ${d.error}`;
+    } catch (error) {
+        karneDurum.textContent = `Hata: ${error.message}`;
+    }
+}
+
+if (document.getElementById('karneNotEkle')) {
+    document.getElementById('karneNotEkle').addEventListener('click', async () => {
+        const kutu = document.getElementById('karneNotMetin');
+        const metin = kutu.value.trim();
+        if (!metin || !karneAktifId) return;
+        await karneNotIsle(`/api/sicil/${karneAktifId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ metin, tur: document.getElementById('karneNotTur').value }),
+        });
+        kutu.value = '';
+    });
+    document.getElementById('karneSicil').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-not-sil]');
+        if (!b || !karneAktifId) return;
+        karneNotIsle(`/api/sicil/${karneAktifId}/${b.dataset.notSil}`, { method: 'DELETE' });
+    });
+}

@@ -397,6 +397,7 @@
 
                 <div class="nav-grup">
                     <span class="nav-baslik">Raporlar</span>
+                    <button class="tab-btn" data-tab="hedefler"><span class="ico"><svg><use href="#i-aktiflik"/></svg></span><span class="etiket">Hedefler</span></button>
                     <button class="tab-btn" data-tab="karne"><span class="ico"><svg><use href="#i-yetkililer"/></svg></span><span class="etiket">Yetkili Karnesi</span></button>
                     <button class="tab-btn" data-tab="aktiflik"><span class="ico"><svg><use href="#i-aktiflik"/></svg></span><span class="etiket">Aktiflik</span></button>
                     <button class="tab-btn" data-tab="etkinlik"><span class="ico"><svg><use href="#i-etkinlik"/></svg></span><span class="etiket">Etkinlik</span></button>
@@ -997,6 +998,83 @@
         <!-- ================= AKTİFLİK ================= -->
         <!-- Belirlenen pencere içinde aktiflik kanalına mesaj atan yetkililer
              "Aktif", atmayanlar "Aktif Değil". Pencere seçilebilir. -->
+        <div class="tab-panel" id="tab-hedefler">
+            <div class="toolbar" style="margin-bottom:12px;">
+                <span class="logs-title">Hedef Durumu</span>
+                <div class="filter-chips" id="hdDonem">
+                    <button class="chip active" data-gun="7">Son 7 gün</button>
+                    <button class="chip" data-gun="14">14 gün</button>
+                    <button class="chip" data-gun="30">30 gün</button>
+                </div>
+                <span class="grow"></span>
+                <button class="secondary small" id="hdOzetGonder">Özeti şimdi gönder</button>
+                <button class="secondary small" id="hdYenile">Yenile</button>
+            </div>
+            <div class="scanStatus" id="hdDurum"></div>
+
+            <div class="kpi-row" style="margin-bottom:12px;">
+                <div class="kpi is-ok">
+                    <span class="kpi-label">Hedefi tutturan</span>
+                    <span class="kpi-value" id="hdGecen">—</span>
+                </div>
+                <div class="kpi is-attn">
+                    <span class="kpi-label">Tutturamayan</span>
+                    <span class="kpi-value" id="hdKalan">—</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">İzinli</span>
+                    <span class="kpi-value" id="hdIzinli">—</span>
+                </div>
+                <div class="kpi">
+                    <span class="kpi-label">Tempo düşüşü</span>
+                    <span class="kpi-value" id="hdDusus">—</span>
+                </div>
+            </div>
+
+            <div class="card katlanir" data-kat="hd-liste">
+                <h2>Kişi kişi durum</h2>
+                <div id="hdListe"></div>
+            </div>
+
+            <div class="card katlanir" data-kat="hd-dusus">
+                <h2>Tempo düşüşü</h2>
+                <div id="hdDususListe"></div>
+            </div>
+
+            <div class="card katlanir kapali admin-only" data-kat="hd-ayar">
+                <h2>Hedefleri tanımla</h2>
+                <p class="card-desc">
+                    Rol başına <b>haftalık</b> hedef. Sıfır bıraktığın kalem o rol için
+                    aranmaz. Bir kişinin birden çok hedefli rolü varsa en yükseği geçerli.
+                </p>
+                <div id="hdHedefListe"></div>
+                <div class="toolbar" style="margin-top:10px;">
+                    <select class="text-search" id="hdYeniRol" style="min-width:190px;"></select>
+                    <input class="text-search" id="hdYeniAd" placeholder="Hedef adı" style="max-width:150px;">
+                    <input class="text-search" id="hdYeniSes" type="number" min="0" step="0.5" placeholder="ses sa" style="max-width:90px;">
+                    <input class="text-search" id="hdYeniYayin" type="number" min="0" step="0.5" placeholder="yayın sa" style="max-width:90px;">
+                    <input class="text-search" id="hdYeniYoklama" type="number" min="0" placeholder="yoklama" style="max-width:90px;">
+                    <input class="text-search" id="hdYeniMesaj" type="number" min="0" placeholder="mesaj" style="max-width:90px;">
+                    <button class="secondary small" id="hdEkle">Ekle</button>
+                </div>
+                <div class="toolbar" style="margin-top:14px; border-top:1px solid var(--border); padding-top:14px;">
+                    <span class="scanStatus">Haftalık özet:</span>
+                    <input class="text-search" id="hdOzetKanal" placeholder="Kanal ID" style="max-width:190px;">
+                    <select class="text-search" id="hdOzetGun" style="max-width:130px;">
+                        <option value="1">Pazartesi</option><option value="2">Salı</option>
+                        <option value="3">Çarşamba</option><option value="4">Perşembe</option>
+                        <option value="5">Cuma</option><option value="6">Cumartesi</option>
+                        <option value="0">Pazar</option>
+                    </select>
+                    <select class="text-search" id="hdOzetSaat" style="max-width:100px;"></select>
+                    <span class="scanStatus">Düşüş eşiği %</span>
+                    <input class="text-search" id="hdEsik" type="number" min="10" max="90" style="max-width:80px;">
+                    <button class="secondary small" id="hdAyarKaydet">Kaydet</button>
+                    <span class="scanStatus" id="hdAyarMsg"></span>
+                </div>
+            </div>
+        </div>
+
         <div class="tab-panel" id="tab-karne">
             <div class="toolbar" style="margin-bottom:12px;">
                 <span class="logs-title">Yetkili</span>
@@ -1053,6 +1131,25 @@
                 <div class="card katlanir" data-kat="karne-ses">
                     <h2>Günlük ses süresi</h2>
                     <div class="karne-bar" id="karneBar"></div>
+                </div>
+
+                <div class="card katlanir" data-kat="karne-hedef" id="karneHedefKart">
+                    <h2>Hedef durumu</h2>
+                    <div id="karneHedef"></div>
+                </div>
+
+                <div class="card katlanir" data-kat="karne-sicil">
+                    <h2>Sicil notları</h2>
+                    <div id="karneSicil"></div>
+                    <div class="toolbar" style="margin-top:10px;">
+                        <select class="text-search" id="karneNotTur" style="max-width:120px;">
+                            <option value="bilgi">Bilgi</option>
+                            <option value="olumlu">Olumlu</option>
+                            <option value="olumsuz">Olumsuz</option>
+                        </select>
+                        <input class="text-search" id="karneNotMetin" placeholder="Not yaz...">
+                        <button class="secondary small" id="karneNotEkle">Ekle</button>
+                    </div>
                 </div>
 
                 <div class="card katlanir" data-kat="karne-etkinlik">

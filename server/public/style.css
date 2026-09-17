@@ -1904,3 +1904,43 @@ html[data-hareket="kapali"] *::after {
    #appWrap/#loginWrap'e veriliyor, body'ye DEGIL: zemin gradyani
    background-attachment:fixed ve zoom altinda kayiyordu. */
 #appWrap, #loginWrap { zoom: var(--olcek, 1); }
+
+/* ---------- Hedefler ---------- */
+.hd-satir {
+    padding: 11px 13px; margin-bottom: 7px; border-radius: var(--radius-s);
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong);
+}
+.hd-satir.ok    { border-left-color: var(--ok); }
+.hd-satir.eksik { border-left-color: var(--attn); }
+.hd-satir.izin  { border-left-color: var(--ink-3); }
+.hd-bas { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: 12.5px; }
+.hd-yuzde { font-weight: 750; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+.hd-rozet {
+    font-size: 9.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .05em;
+}
+.hd-rozet.gecti  { color: var(--ok);    background: var(--ok-soft);    border: 1px solid var(--ok-line); }
+.hd-rozet.kaldi  { color: var(--attn);  background: var(--attn-soft);  border: 1px solid var(--attn-line); }
+.hd-rozet.izinli { color: var(--ink-3); background: var(--surface-3);  border: 1px solid var(--border); }
+
+.hd-olcum {
+    display: grid; grid-template-columns: 62px 1fr auto; gap: 9px;
+    align-items: center; margin-top: 6px; font-size: 11px;
+}
+.hd-olcum-ad { color: var(--ink-3); text-transform: capitalize; }
+.hd-cubuk { height: 5px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.hd-cubuk-dolu {
+    display: block; height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent-fill), var(--accent));
+}
+.hd-cubuk-dolu.yeter { background: linear-gradient(90deg, #24925580, var(--ok)); }
+.hd-olcum-deger { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.hd-olcum-deger.yeter { color: var(--ok); }
+.hd-dusus { color: var(--attn); }
+
+@media (max-width: 640px) {
+    .hd-olcum { grid-template-columns: 54px 1fr; }
+    .hd-olcum-deger { grid-column: 2; text-align: right; }
+}

@@ -288,6 +288,7 @@ const IZIN_SEKMELERI = [
     { key: 'yetkilialim', label: 'Yetkili Alım' },
     { key: 'tablo', label: 'Tablo' },
     { key: 'karne', label: 'Yetkili Karnesi' },
+    { key: 'hedefler', label: 'Hedefler' },
     { key: 'aktiflik', label: 'Aktiflik' },
     { key: 'etkinlik', label: 'Etkinlik' },
     { key: 'loglar', label: 'TX Logs' },
@@ -745,6 +746,9 @@ function markConnected(source) {
         yayinTakibiBaslat()
             .then(() => yayinRaporZamanlayici())
             .catch((error) => console.log(`[Yayin] Takip baslatilamadi: ${error.message}`));
+        // Haftalik ozet yayin takibinden BAGIMSIZ: yayin kanali okunamasa bile
+        // hedef/dusus ozeti gitmeye devam etsin.
+        haftalikOzetZamanlayici();
     }
 }
 
@@ -4206,7 +4210,8 @@ const YAYIN_RAPOR_ARALIK_MS = 60 * 60 * 1000;   // saatte bir
 
 // acik: "tur:userId" -> { channelId, baslangic }
 // tamam: [{ tur, userId, channelId, baslangic, bitis }]
-let yayinKayit = { acik: {}, tamam: [], sonKayit: 0, raporMesajId: null, yokRaporMesajId: null, veriRaporMesajId: null, veriYokRaporMesajId: null };
+let yayinKayit = { acik: {}, tamam: [], sonKayit: 0, raporMesajId: null, yokRaporMesajId: null, veriRaporMesajId: null,
+    veriYokRaporMesajId: null, ozetMesajId: null };
 
 function yayinKayitYukle() {
     try {
@@ -4220,6 +4225,7 @@ function yayinKayitYukle() {
             yokRaporMesajId: ham.yokRaporMesajId || null,
             veriRaporMesajId: ham.veriRaporMesajId || null,
             veriYokRaporMesajId: ham.veriYokRaporMesajId || null,
+            ozetMesajId: ham.ozetMesajId || null,
         };
         console.log(`[Yayin] Kayitlar yuklendi: ${yayinKayit.tamam.length} oturum, `
             + `${Object.keys(yayinKayit.acik).length} acik.`);
@@ -4797,12 +4803,24 @@ async function veriRaporGonder(sebep = 'elle') {
             if (!kadro.has(userId)) kadro.set(userId, 'gecmis');
         });
 
-        const acmayanlar = [...kadro.entries()]
+        // Onayli uzun mazereti olanlar AYRI tutuluyor: izni onaylanmis biri
+        // "yayin acmayanlar" listesinde kaytariyor gibi gorunmesin. Mazeret
+        // sistemi bugune kadar yalnizca yoklamaya bagliydi.
+        let izinliler = new Set();
+        try {
+            izinliler = await izinlileriGetir();
+        } catch (error) {
+            console.log(`[Veri] Izinli listesi alinamadi: ${error.message}`);
+        }
+        const tumAcmayanlar = [...kadro.entries()]
             .filter(([userId]) => !sonuc.toplam.has(userId))
-            .map(([userId, kaynak]) => ({ userId, kaynak }));
+            .map(([userId, kaynak]) => ({ userId, kaynak, izinli: izinliler.has(userId) }));
+        const acmayanlar = tumAcmayanlar.filter((r) => !r.izinli);
+        const izinliAcmayanlar = tumAcmayanlar.filter((r) => r.izinli);
 
         const yokBas = `# 🚫 Bu Dönem Yayın Açmayanlar — son ${YAYIN_GUN_SAYISI} gün\n`
-            + `**${acmayanlar.length}/${kadro.size}** kişi bu dönemde hiç yayın açmamış.\n`
+            + `**${acmayanlar.length}/${kadro.size}** kişi bu dönemde hiç yayın açmamış`
+            + `${izinliAcmayanlar.length ? ` · 🌴 **${izinliAcmayanlar.length}** izinli (listeye alınmadı)` : ''}.\n`
             + `_Kadro kaynağı: ${rolBulundu ? `${rolBulundu} yayıncı rolü + ` : ''}`
             + `veri kanalı geçmişi (${sonuc.gecmisGun} gün)_\n`
             + `_Son güncelleme: ${damga}_\n`;
@@ -4830,6 +4848,10 @@ async function veriRaporGonder(sebep = 'elle') {
             for (let i = 0; i < metin.length; i += 15) {
                 yokBloklar.push(metin.slice(i, i + 15).join('\n'));
             }
+        }
+        if (izinliAcmayanlar.length) {
+            yokBloklar.push(`**🌴 Onaylı mazereti olanlar (${izinliAcmayanlar.length}):**`);
+            yokBloklar.push(izinliAcmayanlar.map((r) => `<@${r.userId}>`).join(' · '));
         }
         if (!rolBulundu) {
             yokBloklar.push('⚠️ _Yayıncı rolleri bulunamadığı için "hiç yayın açmamış" '
@@ -6710,7 +6732,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-17.25';
+const KOD_SURUMU = '2026-09-17.26';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6732,6 +6754,10 @@ const KOD_OZELLIKLERI = [
     'hiz-siniri',     // /api hiz tavani + toplu okuma denetim izi
     'guvenlik-baslik',// CSP, frame-ancestors, nosniff, referrer
     'gorunum',        // kisi basina tema: renk, zemin, yogunluk, olcek
+    'hedef',          // rol basina haftalik hedef + gecti/kaldi
+    'haftalik-ozet',  // hedef/dusus ozeti Discord'a
+    'sicil',          // yetkili sicil notlari
+    'izinli-ayrimi',  // onayli mazereti olan raporlarda ayriliyor
 ];
 
 // Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz
@@ -7657,7 +7683,7 @@ app.post('/api/yoklama/al-uygula', requireIzin('yoklama'), async (req, res) => {
 });
 
 // --- YETKILILER + ROL VER/AL ---
-app.get('/api/roller', requireIzin('roller', 'yetkililer'), async (req, res) => {
+app.get('/api/roller', requireIzin('roller', 'yetkililer', 'karne', 'hedefler'), async (req, res) => {
     try {
         res.json({ ok: true, ...(await listGuildRoles()) });
     } catch (error) {
@@ -8482,6 +8508,10 @@ async function karneOlustur(id, gunSayisi) {
         yoklama: karneYoklama(id, gunler),
         uyari: karneUyarilar(id),
         etkinlik: karneEtkinlik(id),
+        // Sicil notlari ve hedef durumu karnede: amirin bes yere bakmasi
+        // gerekmesin diye zaten burada topluyoruz.
+        sicil: sicilListe(id).slice(-10).reverse(),
+        hedef: null,        // asenkron: asagida dolduruluyor
     };
 }
 
@@ -8515,10 +8545,495 @@ app.get('/api/karne/:id', requireIzin('karne'), async (req, res) => {
     if (!Number.isFinite(gunSayisi) || gunSayisi < 1) gunSayisi = 15;
     gunSayisi = Math.min(Math.round(gunSayisi), VOICE_GUN_SINIRI);
     try {
-        return res.json({ ok: true, karne: await karneOlustur(id, gunSayisi) });
+        const karne = await karneOlustur(id, gunSayisi);
+        // Hedef degerlendirmesi butun kadroyu tariyor; karne acilisini
+        // bekletmemek icin patlamasina izin verip karneyi yine donduruyoruz.
+        try {
+            const durum = await hedefDegerlendir(7);
+            karne.hedef = durum.satirlar.find((r) => r.userId === id) || null;
+        } catch (error) {
+            console.log(`[Karne] Hedef durumu eklenemedi: ${error.message}`);
+        }
+        return res.json({ ok: true, karne });
     } catch (error) {
         console.log(`[Karne] ${id} karnesi olusturulamadi: ${error.message}`);
         return res.json({ ok: false, error: error.message });
+    }
+});
+
+// ============================================================================
+// --- HEDEF & KOTA ---
+// Panelde bes ayri rapor ham sayi veriyordu ama hicbiri "bu yeterli mi?"
+// sorusunu cevaplamiyordu: "3 sa 30 dk" iyi mi kotu mu, her seferinde amirin
+// kafasindan karar vermesi gerekiyordu. Rol basina haftalik hedef konunca
+// ayni sayilar gecti/kaldi'ya donuyor.
+// ============================================================================
+const HEDEF_PATH = path.join(ROOT_DIR, 'panel-hedefler.json');
+
+const HEDEF_VARSAYILAN = {
+    hedefler: [],           // [{id, ad, rolId, ses, yayin, yoklama, mesaj}]
+    ozetKanal: null,        // haftalik ozetin dusecegi kanal
+    ozetGun: 1,             // 0=Pazar ... 1=Pazartesi
+    ozetSaat: 10,           // 0-23
+    dususEsik: 50,          // kendi ortalamasina gore yuzde kac dususte uyari
+    sonOzet: null,          // en son ne zaman ozet gonderildi (tekrar gonderme)
+};
+
+function hedefleriYukle() {
+    try {
+        const d = JSON.parse(fs.readFileSync(HEDEF_PATH, 'utf8'));
+        return { ...HEDEF_VARSAYILAN, ...(d && typeof d === 'object' ? d : {}) };
+    } catch (error) {
+        return { ...HEDEF_VARSAYILAN };
+    }
+}
+const hedefAyar = hedefleriYukle();
+if (!Array.isArray(hedefAyar.hedefler)) hedefAyar.hedefler = [];
+
+function hedefleriYaz() {
+    try {
+        fs.writeFileSync(HEDEF_PATH, JSON.stringify(hedefAyar, null, 2));
+    } catch (error) {
+        console.log(`[Hedef] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+// Sayi alanlarini suzer: eksi deger ya da sacma buyukluk kabul edilmiyor.
+function hedefSayi(ham, ust) {
+    const n = Number(ham);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(ust, Math.round(n * 10) / 10);
+}
+
+function hedefSuz(ham) {
+    if (!ham || typeof ham !== 'object') return null;
+    const ad = String(ham.ad || '').trim().slice(0, 60);
+    const rolId = String(ham.rolId || '').trim();
+    if (!ad || !/^\d{17,20}$/.test(rolId)) return null;
+    return {
+        id: /^[a-z0-9-]{1,40}$/i.test(String(ham.id || '')) ? String(ham.id) : `h${Date.now()}${Math.floor(Math.random() * 1000)}`,
+        ad,
+        rolId,
+        ses: hedefSayi(ham.ses, 168),        // saat/hafta
+        yayin: hedefSayi(ham.yayin, 168),    // saat/hafta
+        yoklama: hedefSayi(ham.yoklama, 100),
+        mesaj: hedefSayi(ham.mesaj, 100000),
+    };
+}
+
+// --- IZINLI MI? ---
+// Uzun mazeret kanalinda ONAY tepkisi almis mazereti olan kisi "izinli"
+// sayiliyor. Bu baglanti kurulmadan once izni onaylanmis biri raporlarda
+// kaytariyor gibi gorunuyordu; mazeret sistemi yalnizca yoklamaya bagliydi.
+let izinliOnbellek = { at: 0, kume: new Set() };
+const IZINLI_ONBELLEK_MS = 5 * 60 * 1000;
+
+async function izinlileriGetir() {
+    if (Date.now() - izinliOnbellek.at < IZINLI_ONBELLEK_MS) return izinliOnbellek.kume;
+    const kume = new Set();
+    try {
+        const uzun = await fetchRecentExcusesFrom(
+            LONG_EXCUSE_CHANNEL_ID, LONG_EXCUSE_LOOKBACK_MS, 'Uzun mazeret',
+        );
+        uzun.forEach((mazeret, userId) => {
+            if (classifyReactions(mazeret.reactions) === 'approved') kume.add(userId);
+        });
+    } catch (error) {
+        console.log(`[Hedef] Izinli listesi alinamadi: ${error.message}`);
+    }
+    izinliOnbellek = { at: Date.now(), kume };
+    return kume;
+}
+
+// Yayin sureleri Discord taramasi gerektiriyor; hedef ekrani her acilista
+// kanali bastan taramasin diye kisa sureli onbellek.
+let hedefYayinOnbellek = { at: 0, gun: 0, toplam: new Map() };
+const HEDEF_YAYIN_ONBELLEK_MS = 10 * 60 * 1000;
+
+async function hedefYayinSureleri(gunSayisi) {
+    const taze = Date.now() - hedefYayinOnbellek.at < HEDEF_YAYIN_ONBELLEK_MS
+        && hedefYayinOnbellek.gun === gunSayisi;
+    if (taze) return hedefYayinOnbellek.toplam;
+    try {
+        const sonuc = await veriKanaliTopla(gunSayisi, gunSayisi);
+        hedefYayinOnbellek = { at: Date.now(), gun: gunSayisi, toplam: sonuc.toplam };
+    } catch (error) {
+        console.log(`[Hedef] Yayin sureleri alinamadi: ${error.message}`);
+        hedefYayinOnbellek = { at: Date.now(), gun: gunSayisi, toplam: new Map() };
+    }
+    return hedefYayinOnbellek.toplam;
+}
+
+// Bir kisiye hangi hedef uygulanir? Uyenin sahip oldugu rollerden hedefi
+// tanimli olan ILKI. Birden fazlasi varsa EN YUKSEK ses hedefi olan gecerli -
+// "iki rolu var, hangisi?" sorusu her seferinde ayni cevabi versin.
+function uyeninHedefi(member) {
+    const adaylar = hedefAyar.hedefler.filter((h) => member.roles.cache.has(h.rolId));
+    if (!adaylar.length) return null;
+    return adaylar.sort((a, b) => (b.ses + b.yayin) - (a.ses + a.yayin))[0];
+}
+
+const SAAT_MS = 3600000;
+
+// Hedefleri degerlendirir: kim tutturdu, kim tutturamadi, kim izinli.
+async function hedefDegerlendir(gunSayisi = 7) {
+    const guild = await getReadyGuild();
+    await ensureMembersFetched(guild);
+    const gunler = sonGunler(gunSayisi);
+    const [yayin, izinliler] = await Promise.all([
+        hedefYayinSureleri(gunSayisi),
+        izinlileriGetir(),
+    ]);
+
+    // Mesaj sayilari: etkinlik kanallarinin toplami.
+    const mesajSayaci = new Map();
+    ACTIVITY_CHANNELS.forEach((kanal) => {
+        const store = logStore.get(kanal.key);
+        if (!store || !store.loaded || !store.channelId) return;
+        const { sayac } = karneSayim(store);
+        sayac.forEach((adet, id) => mesajSayaci.set(id, (mesajSayaci.get(id) || 0) + adet));
+    });
+
+    const yoklamaGunleri = gunler.filter((g) => katilimVerisi[g]
+        && Object.keys(katilimVerisi[g]).length);
+
+    const satirlar = [];
+    guild.members.cache.forEach((member) => {
+        const hedef = uyeninHedefi(member);
+        if (!hedef) return;
+        const olcumler = {};
+        // Her olcum: hedef 0 ise "bu rol icin bu kalem aranmiyor" demek.
+        if (hedef.ses > 0) {
+            olcumler.ses = { olan: sesToplami(member.id, gunler) / 3600, hedef: hedef.ses, birim: 'saat' };
+        }
+        if (hedef.yayin > 0) {
+            olcumler.yayin = { olan: (yayin.get(member.id) || 0) / SAAT_MS, hedef: hedef.yayin, birim: 'saat' };
+        }
+        if (hedef.yoklama > 0) {
+            const katildi = yoklamaGunleri.filter((g) => katilimVerisi[g][member.id]).length;
+            olcumler.yoklama = { olan: katildi, hedef: hedef.yoklama, birim: 'yoklama' };
+        }
+        if (hedef.mesaj > 0) {
+            olcumler.mesaj = { olan: mesajSayaci.get(member.id) || 0, hedef: hedef.mesaj, birim: 'mesaj' };
+        }
+
+        const anahtarlar = Object.keys(olcumler);
+        if (!anahtarlar.length) return;     // hedefin hicbir kalemi tanimli degil
+        // Genel yuzde: her kalemin kendi yuzdesinin ortalamasi, kalem basina
+        // %100'de kirpiliyor - bir kalemde 3 kat yapan, digerini hic
+        // yapmadigi halde "hedefi tutturdu" gorunmesin.
+        const yuzdeler = anahtarlar.map((k) => Math.min(100,
+            Math.round((olcumler[k].olan / olcumler[k].hedef) * 100)));
+        const yuzde = Math.round(yuzdeler.reduce((t, v) => t + v, 0) / yuzdeler.length);
+        const eksikler = anahtarlar.filter((k) => olcumler[k].olan < olcumler[k].hedef);
+
+        satirlar.push({
+            userId: member.id,
+            ad: member.displayName,
+            hedefAd: hedef.ad,
+            olcumler,
+            yuzde,
+            gecti: eksikler.length === 0,
+            eksikler,
+            izinli: izinliler.has(member.id),
+        });
+    });
+
+    satirlar.sort((a, b) => b.yuzde - a.yuzde || a.ad.localeCompare(b.ad, 'tr'));
+    return {
+        gunSayisi,
+        hedefSayisi: hedefAyar.hedefler.length,
+        yoklamaGunSayisi: yoklamaGunleri.length,
+        satirlar,
+        gecen: satirlar.filter((r) => r.gecti).length,
+        kalan: satirlar.filter((r) => !r.gecti && !r.izinli).length,
+        izinli: satirlar.filter((r) => r.izinli && !r.gecti).length,
+    };
+}
+
+app.get('/api/hedefler', requireIzin('hedefler', 'karne'), (req, res) => {
+    res.json({
+        ok: true,
+        hedefler: hedefAyar.hedefler,
+        ozetKanal: hedefAyar.ozetKanal,
+        ozetGun: hedefAyar.ozetGun,
+        ozetSaat: hedefAyar.ozetSaat,
+        dususEsik: hedefAyar.dususEsik,
+    });
+});
+
+app.post('/api/hedefler', requireAdmin, (req, res) => {
+    const ham = req.body || {};
+    if (Array.isArray(ham.hedefler)) {
+        hedefAyar.hedefler = ham.hedefler.map(hedefSuz).filter(Boolean).slice(0, 40);
+    }
+    if (ham.ozetKanal === null || /^\d{17,20}$/.test(String(ham.ozetKanal || ''))) {
+        hedefAyar.ozetKanal = ham.ozetKanal || null;
+    }
+    const gun = Number(ham.ozetGun);
+    if (Number.isInteger(gun) && gun >= 0 && gun <= 6) hedefAyar.ozetGun = gun;
+    const saat = Number(ham.ozetSaat);
+    if (Number.isInteger(saat) && saat >= 0 && saat <= 23) hedefAyar.ozetSaat = saat;
+    const esik = Number(ham.dususEsik);
+    if (Number.isFinite(esik) && esik >= 10 && esik <= 90) hedefAyar.dususEsik = Math.round(esik);
+    hedefleriYaz();
+    addAudit('hedef-guncelle', req.session.username,
+        `${hedefAyar.hedefler.length} hedef tanimli`, req);
+    res.json({ ok: true, hedefler: hedefAyar.hedefler });
+});
+
+// ============================================================================
+// --- SICIL NOTU ---
+// Amirin kisiye yazdigi tarihli not. Karnede gorunuyor; karne boylece bir
+// rapor sayfasi olmaktan cikip personel dosyasi oluyor.
+// ============================================================================
+const SICIL_PATH = path.join(ROOT_DIR, 'panel-sicil.json');
+const SICIL_KISI_SINIRI = 100;      // kisi basina saklanan not sayisi
+
+function sicilYukle() {
+    try {
+        const d = JSON.parse(fs.readFileSync(SICIL_PATH, 'utf8'));
+        return (d && typeof d === 'object' && !Array.isArray(d)) ? d : {};
+    } catch (error) {
+        return {};
+    }
+}
+const sicilKayitlari = sicilYukle();
+
+function sicilYaz() {
+    try {
+        fs.writeFileSync(SICIL_PATH, JSON.stringify(sicilKayitlari, null, 2));
+    } catch (error) {
+        console.log(`[Sicil] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+function sicilListe(userId) {
+    const liste = sicilKayitlari[userId];
+    return Array.isArray(liste) ? liste : [];
+}
+
+app.get('/api/sicil/:id', requireIzin('karne'), (req, res) => {
+    if (!/^\d{17,20}$/.test(req.params.id)) {
+        return res.json({ ok: false, error: 'Geçersiz Discord ID.' });
+    }
+    return res.json({ ok: true, notlar: sicilListe(req.params.id).slice().reverse() });
+});
+
+app.post('/api/sicil/:id', requireIzin('karne'), (req, res) => {
+    const { id } = req.params;
+    if (!/^\d{17,20}$/.test(id)) {
+        return res.json({ ok: false, error: 'Geçersiz Discord ID.' });
+    }
+    const metin = String((req.body && req.body.metin) || '').trim().slice(0, 1000);
+    if (!metin) return res.json({ ok: false, error: 'Not boş olamaz.' });
+    const tur = ['bilgi', 'olumlu', 'olumsuz'].includes(req.body && req.body.tur)
+        ? req.body.tur : 'bilgi';
+    const liste = sicilListe(id);
+    liste.push({
+        id: `n${Date.now()}${Math.floor(Math.random() * 1000)}`,
+        at: Date.now(), by: req.session.username, tur, metin,
+    });
+    while (liste.length > SICIL_KISI_SINIRI) liste.shift();
+    sicilKayitlari[id] = liste;
+    sicilYaz();
+    addAudit('sicil-not', req.session.username, `${id} -> "${metin.slice(0, 60)}"`, req);
+    return res.json({ ok: true, notlar: liste.slice().reverse() });
+});
+
+app.delete('/api/sicil/:id/:notId', requireIzin('karne'), (req, res) => {
+    const { id, notId } = req.params;
+    const liste = sicilListe(id);
+    const kalan = liste.filter((n) => n.id !== notId);
+    if (kalan.length === liste.length) return res.json({ ok: false, error: 'Not bulunamadı.' });
+    sicilKayitlari[id] = kalan;
+    sicilYaz();
+    addAudit('sicil-not-sil', req.session.username, `${id} / ${notId}`, req);
+    return res.json({ ok: true, notlar: kalan.slice().reverse() });
+});
+
+// ============================================================================
+// --- DUSUS ERKEN UYARISI ---
+// Kisinin KENDI onceki uc haftalik ortalamasina gore bu haftaki dususu.
+// Sabit bir esik herkese ayni gelmiyordu: kimi yetkili zaten az sesli,
+// kimi cok; onemli olan kisinin kendi temposundan kopmasi.
+// ============================================================================
+function dususTespit(esikYuzde) {
+    const son7 = sonGunler(7);
+    const son28 = sonGunler(28);
+    const dusenler = [];
+    const kisiler = new Set();
+    son28.forEach((g) => {
+        Object.keys(voiceData[g] || {}).forEach((id) => kisiler.add(id));
+    });
+    kisiler.forEach((id) => {
+        const bu = sesToplami(id, son7);
+        const oncekiOrt = (sesToplami(id, son28) - bu) / 3;
+        // Onceki tempo cok dusukse yuzde anlamsiz olur (10 dk -> 4 dk %60
+        // dusus gorunur ama haber degeri yok). En az 1 saatlik gecmis ariyoruz.
+        if (oncekiOrt < 3600) return;
+        const dusus = Math.round(((oncekiOrt - bu) / oncekiOrt) * 100);
+        if (dusus >= esikYuzde) dusenler.push({ userId: id, dusus, bu, oncekiOrt });
+    });
+    dusenler.sort((a, b) => b.dusus - a.dusus);
+    return dusenler;
+}
+
+// ============================================================================
+// --- HAFTALIK OZET ---
+// Panele girmeyen amir hicbir seyden haberdar olmuyordu: butun raporlar
+// "cekme" idi. Bu, haftada bir kez sonuclari Discord'a getiriyor.
+// ============================================================================
+function sayiBicimle(deger, birim) {
+    if (birim === 'saat') {
+        const dk = Math.round(deger * 60);
+        return `${Math.floor(dk / 60)} sa ${dk % 60} dk`;
+    }
+    return `${Math.round(deger)}`;
+}
+
+function hedefSatirMetni(r) {
+    const eksikMetin = r.eksikler
+        .map((k) => `${k}: ${sayiBicimle(r.olcumler[k].olan, r.olcumler[k].birim)}`
+            + `/${sayiBicimle(r.olcumler[k].hedef, r.olcumler[k].birim)}`)
+        .join(' · ');
+    return `<@${r.userId}> — **%${r.yuzde}**${eksikMetin ? ` _(${eksikMetin})_` : ''}`;
+}
+
+async function haftalikOzetOlustur() {
+    const durum = await hedefDegerlendir(7);
+    const dusenler = dususTespit(hedefAyar.dususEsik);
+    const damga = `<t:${Math.floor(Date.now() / 1000)}:f>`;
+
+    const bas = `# 📋 Haftalık Yetkili Özeti\n`
+        + `Son 7 gün · **${durum.satirlar.length}** yetkili değerlendirildi\n`
+        + `✅ **${durum.gecen}** hedefi tutturdu · ❌ **${durum.kalan}** tutturamadı`
+        + `${durum.izinli ? ` · 🌴 **${durum.izinli}** izinli` : ''}\n`
+        + `_Son güncelleme: ${damga}_\n`;
+
+    const bloklar = [];
+    if (!durum.hedefSayisi) {
+        bloklar.push('_(hiç hedef tanımlanmamış: Ayarlar > Hedefler bölümünden rol '
+            + 'başına haftalık hedef koyabilirsin)_');
+        return { bas, bloklar, durum, dusenler };
+    }
+    if (!durum.satirlar.length) {
+        bloklar.push('_(tanımlı hedeflerdeki rollerde kimse bulunamadı)_');
+        return { bas, bloklar, durum, dusenler };
+    }
+
+    const kalanlar = durum.satirlar.filter((r) => !r.gecti && !r.izinli);
+    const izinliler = durum.satirlar.filter((r) => r.izinli && !r.gecti);
+    const gecenler = durum.satirlar.filter((r) => r.gecti);
+
+    if (kalanlar.length) {
+        bloklar.push(`## ❌ Hedefi tutturamayanlar (${kalanlar.length})`);
+        const metin = kalanlar.map(hedefSatirMetni);
+        for (let i = 0; i < metin.length; i += 12) bloklar.push(metin.slice(i, i + 12).join('\n'));
+    }
+    if (izinliler.length) {
+        bloklar.push(`## 🌴 İzinli (${izinliler.length}) — hedefe bakılmadı`);
+        bloklar.push(izinliler.map((r) => `<@${r.userId}> — _onaylı mazereti var_`).join('\n'));
+    }
+    if (gecenler.length) {
+        bloklar.push(`## ✅ Hedefi tutturanlar (${gecenler.length})`);
+        const metin = gecenler.map((r) => `<@${r.userId}> — **%${r.yuzde}**`);
+        for (let i = 0; i < metin.length; i += 15) bloklar.push(metin.slice(i, i + 15).join('\n'));
+    }
+    if (dusenler.length) {
+        bloklar.push(`## 📉 Tempo düşüşü (${dusenler.length}) — kendi ortalamasına göre`);
+        const metin = dusenler.slice(0, 15).map((d) => `<@${d.userId}> — **%${d.dusus}** düşüş `
+            + `_(${sureBicimle(Math.round(d.oncekiOrt))} → ${sureBicimle(Math.round(d.bu))})_`);
+        bloklar.push(metin.join('\n'));
+    }
+    return { bas, bloklar, durum, dusenler };
+}
+
+let ozetCalisiyor = false;
+async function haftalikOzetGonder(sebep = 'elle') {
+    if (ozetCalisiyor) return { ok: false, error: 'Zaten çalışıyor.' };
+    if (!hedefAyar.ozetKanal) return { ok: false, error: 'Özet kanalı ayarlanmamış.' };
+    ozetCalisiyor = true;
+    try {
+        const { bas, bloklar, durum } = await haftalikOzetOlustur();
+        // Rol/ses raporlariyla ayni yayinlayici: uzun icerik parcalaniyor,
+        // eski mesaj silinip yenisi atiliyor.
+        await yayinRaporYayinla(hedefAyar.ozetKanal, bas, bloklar, 'ozetMesajId');
+        hedefAyar.sonOzet = Date.now();
+        hedefleriYaz();
+        console.log(`[Ozet] Haftalik ozet gonderildi (${sebep}): `
+            + `${durum.gecen} gecti, ${durum.kalan} kaldi.`);
+        return { ok: true, gecen: durum.gecen, kalan: durum.kalan };
+    } catch (error) {
+        console.log(`[Ozet] Gonderilemedi: ${error.message}`);
+        return { ok: false, error: error.message };
+    } finally {
+        ozetCalisiyor = false;
+    }
+}
+
+// Saat basi bakiliyor: gun ve saat tutuyorsa ve BU HAFTA henuz
+// gonderilmediyse gonder. Sunucu yeniden baslasa da hafta icinde ikinci kez
+// gonderilmiyor - sonOzet diskte duruyor.
+function ayniHaftaMi(a, b) {
+    const gun = 24 * 3600000;
+    return Math.abs(a - b) < 6 * gun;
+}
+
+function haftalikOzetZamanlayici() {
+    const kontrol = () => {
+        try {
+            if (!hedefAyar.ozetKanal) return;
+            const simdi = new Date();
+            if (simdi.getDay() !== hedefAyar.ozetGun) return;
+            if (simdi.getHours() !== hedefAyar.ozetSaat) return;
+            if (hedefAyar.sonOzet && ayniHaftaMi(Date.now(), hedefAyar.sonOzet)) return;
+            haftalikOzetGonder('zamanlayici').catch(() => {});
+        } catch (error) {
+            console.log(`[Ozet] Zamanlayici hatasi: ${error.message}`);
+        }
+    };
+    setInterval(kontrol, 10 * 60 * 1000);   // 10 dk: saat penceresi kacmasin
+    setTimeout(kontrol, 60 * 1000);
+    console.log('[Ozet] Haftalik ozet zamanlayicisi kuruldu.');
+}
+
+app.post('/api/ozet-gonder', requireIzin('hedefler', 'karne'), async (req, res) => {
+    const sonuc = await haftalikOzetGonder('elle');
+    if (sonuc.ok) addAudit('ozet-gonder', req.session.username, 'haftalık özet elle gönderildi', req);
+    res.json(sonuc);
+});
+
+app.get('/api/dusus', requireIzin('hedefler', 'karne'), async (req, res) => {
+    let esik = Number(req.query.esik);
+    if (!Number.isFinite(esik)) esik = hedefAyar.dususEsik;
+    esik = Math.min(90, Math.max(10, Math.round(esik)));
+    const dusenler = dususTespit(esik);
+    // Ham ID amire hicbir sey anlatmiyor - ismi ekliyoruz. Sunucuda
+    // bulunamayanlar (ayrilmis olabilir) ID'siyle kaliyor ama isaretleniyor.
+    try {
+        const guild = await getReadyGuild();
+        await ensureMembersFetched(guild);
+        dusenler.forEach((d) => {
+            const uye = guild.members.cache.get(d.userId);
+            d.ad = uye ? uye.displayName : null;
+            d.ayrilmis = !uye;
+        });
+    } catch (error) {
+        console.log(`[Dusus] Isimler alinamadi: ${error.message}`);
+    }
+    res.json({ ok: true, esik, dusenler });
+});
+
+app.get('/api/hedef-durum', requireIzin('hedefler', 'karne'), async (req, res) => {
+    let gun = Number(req.query.gun);
+    if (!Number.isFinite(gun) || gun < 1) gun = 7;
+    gun = Math.min(Math.round(gun), VOICE_GUN_SINIRI);
+    try {
+        res.json({ ok: true, durum: await hedefDegerlendir(gun) });
+    } catch (error) {
+        console.log(`[Hedef] Durum cikarilamadi: ${error.message}`);
+        res.json({ ok: false, error: error.message });
     }
 });
 
