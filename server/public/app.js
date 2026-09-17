@@ -163,6 +163,8 @@ function showApp() {
         currentIsAdmin ? 'Yönetici' : (currentTip === 'ac' ? 'AC' : 'Yetkili');
     acExeKur();            // applyAdminVisibility'den ONCE: bkz. acExeKur
     applyAdminVisibility();
+    // Hesabin kendi gorunum tercihi - baska bir cihazdan girmis olabilir.
+    gorunumYukle();
     sideCanliTazele();
     connectWebSocket();
     refreshLogMenu();
@@ -335,6 +337,8 @@ loginBtn.addEventListener('click', doLogin);
 
 logoutBtn.addEventListener('click', async () => {
     await fetch('/api/logout', { method: 'POST' });
+    // Ortak bilgisayarda bir sonraki kisi oncekinin temasiyla karsilasmasin.
+    try { localStorage.removeItem('panelGorunum'); } catch (e) { /* yoksay */ }
     if (ws) ws.close();
     showLogin();
 });
@@ -6015,3 +6019,168 @@ if (karneKisi) {
         karneYukle();
     });
 }
+
+// ============================================================================
+// --- GÖRÜNÜM (KİŞİSELLEŞTİRME) ---
+// Her panel hesabı kendi vurgu rengini, zemin tonunu, yoğunluğunu ve
+// puntosunu seçer. Tercih SUNUCUDA hesaba bağlı tutuluyor (kişi başka
+// cihazdan girince de kendi görünümünü buluyor); tarayıcıdaki kopya yalnızca
+// açılışta tema sıçramasını önlemek için.
+// ============================================================================
+const GORUNUM_VARSAYILAN = {
+    vurgu: '#ff3b47', zemin: 'marka', yogunluk: 'normal', punto: 13, hareket: true,
+};
+// Hazır renkler: hepsi koyu zeminde okunabilirliği ölçülmüş tonlar.
+const GORUNUM_HAZIR = [
+    ['#ff3b47', 'Kırmızı'], ['#f97316', 'Turuncu'], ['#eab308', 'Sarı'],
+    ['#22c55e', 'Yeşil'], ['#14b8a6', 'Turkuaz'], ['#3b82f6', 'Mavi'],
+    ['#8b5cf6', 'Mor'], ['#ec4899', 'Pembe'], ['#94a3b8', 'Gri'],
+];
+
+let gorunum = { ...GORUNUM_VARSAYILAN };
+let gorunumYazTimer = null;
+
+function hexRgb(hex) {
+    const h = String(hex || '').replace('#', '');
+    return [
+        parseInt(h.slice(0, 2), 16),
+        parseInt(h.slice(2, 4), 16),
+        parseInt(h.slice(4, 6), 16),
+    ];
+}
+
+// Dolgu ve hover tonları seçilen renkten TÜRETİLİYOR. Sabit bırakılsalardı
+// kullanıcı maviyi seçtiğinde düğmelerin dolgusu kırmızı kalırdı.
+function renkKoyult(hex, oran) {
+    const [r, g, b] = hexRgb(hex);
+    const f = (v) => Math.max(0, Math.round(v * oran));
+    return `rgb(${f(r)}, ${f(g)}, ${f(b)})`;
+}
+
+function gorunumUygula(g) {
+    const k = document.documentElement;
+    const [r, y, m] = hexRgb(g.vurgu);
+    if ([r, y, m].every(Number.isFinite)) {
+        k.style.setProperty('--accent-rgb', `${r}, ${y}, ${m}`);
+        k.style.setProperty('--accent', g.vurgu);
+        k.style.setProperty('--accent-fill', renkKoyult(g.vurgu, 0.83));
+        k.style.setProperty('--accent-hover', renkKoyult(g.vurgu, 0.88));
+    }
+    k.setAttribute('data-zemin', g.zemin);
+    k.setAttribute('data-yogunluk', g.yogunluk);
+    // 13 taban kabul edilip orana ceviriliyor: 11 -> 0.85, 17 -> 1.31
+    k.style.setProperty('--olcek', String(Math.round((g.punto / 13) * 100) / 100));
+    if (g.hareket) k.removeAttribute('data-hareket');
+    else k.setAttribute('data-hareket', 'kapali');
+    try { localStorage.setItem('panelGorunum', JSON.stringify(g)); } catch (e) { /* özel pencere */ }
+}
+
+// Sunucuya yazma gecikmeli: renk kaydırıcısı saniyede onlarca olay üretiyor,
+// her birinde disk yazmanın anlamı yok.
+function gorunumKaydet() {
+    const msg = document.getElementById('gorunumMsg');
+    if (gorunumYazTimer) clearTimeout(gorunumYazTimer);
+    gorunumYazTimer = setTimeout(async () => {
+        gorunumYazTimer = null;
+        try {
+            const data = await okuJson(await fetch('/api/gorunum', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(gorunum),
+            }));
+            if (msg) msg.textContent = data.ok ? 'Kaydedildi ✓' : `Hata: ${data.error}`;
+        } catch (error) {
+            if (msg) msg.textContent = `Kaydedilemedi: ${error.message}`;
+        }
+    }, 400);
+}
+
+function gorunumDegistir(alan, deger) {
+    gorunum[alan] = deger;
+    gorunumUygula(gorunum);
+    gorunumSeciliCiz();
+    gorunumKaydet();
+}
+
+function gorunumSeciliCiz() {
+    document.querySelectorAll('#gorunumRenkler .gr-renk').forEach((b) => {
+        b.classList.toggle('secili', b.dataset.deger === gorunum.vurgu);
+        b.setAttribute('aria-pressed', b.dataset.deger === gorunum.vurgu ? 'true' : 'false');
+    });
+    [['gorunumZemin', 'zemin'], ['gorunumYogunluk', 'yogunluk']].forEach(([id, alan]) => {
+        document.querySelectorAll(`#${id} .chip`).forEach((c) => {
+            c.classList.toggle('active', c.dataset.deger === gorunum[alan]);
+        });
+    });
+    const punto = document.getElementById('gorunumPunto');
+    if (punto) punto.value = gorunum.punto;
+    const puntoDeger = document.getElementById('gorunumPuntoDeger');
+    if (puntoDeger) puntoDeger.textContent = `%${Math.round((gorunum.punto / 13) * 100)}`;
+    const hareket = document.getElementById('gorunumHareket');
+    if (hareket) hareket.checked = gorunum.hareket !== false;
+    const ozel = document.getElementById('gorunumOzelRenk');
+    if (ozel) ozel.value = gorunum.vurgu;
+    const kod = document.getElementById('gorunumRenkKod');
+    if (kod) kod.textContent = gorunum.vurgu;
+}
+
+function gorunumKur() {
+    const kap = document.getElementById('gorunumRenkler');
+    if (!kap) return;
+    kap.innerHTML = GORUNUM_HAZIR.map(([hex, ad]) => `<button class="gr-renk" type="button"
+        data-deger="${hex}" style="--gr: ${hex}" title="${escapeHtml(ad)}"
+        aria-label="${escapeHtml(ad)}" aria-pressed="false"></button>`).join('');
+    kap.addEventListener('click', (e) => {
+        const b = e.target.closest('.gr-renk');
+        if (b) gorunumDegistir('vurgu', b.dataset.deger);
+    });
+
+    const ozel = document.getElementById('gorunumOzelRenk');
+    ozel.addEventListener('input', () => gorunumDegistir('vurgu', ozel.value.toLowerCase()));
+
+    [['gorunumZemin', 'zemin'], ['gorunumYogunluk', 'yogunluk']].forEach(([id, alan]) => {
+        document.getElementById(id).addEventListener('click', (e) => {
+            const c = e.target.closest('.chip');
+            if (c) gorunumDegistir(alan, c.dataset.deger);
+        });
+    });
+
+    const punto = document.getElementById('gorunumPunto');
+    punto.addEventListener('input', () => gorunumDegistir('punto', Number(punto.value)));
+
+    document.getElementById('gorunumHareket').addEventListener('change', (e) => {
+        gorunumDegistir('hareket', e.target.checked);
+    });
+
+    document.getElementById('gorunumSifirla').addEventListener('click', () => {
+        gorunum = { ...GORUNUM_VARSAYILAN };
+        gorunumUygula(gorunum);
+        gorunumSeciliCiz();
+        gorunumKaydet();
+    });
+
+    const modal = document.getElementById('gorunumModal');
+    const ac = () => { modal.style.display = 'flex'; gorunumSeciliCiz(); };
+    const kapa = () => { modal.style.display = 'none'; };
+    document.getElementById('gorunumBtn').addEventListener('click', ac);
+    document.getElementById('gorunumKapat').addEventListener('click', kapa);
+    modal.addEventListener('click', (e) => { if (e.target === modal) kapa(); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display !== 'none') kapa();
+    });
+}
+
+// Sunucudaki tercihi al. Tarayıcı kopyası zaten <head>'de uygulandı; burada
+// yalnızca sunucu farklı diyorsa üstüne yazıyoruz.
+async function gorunumYukle() {
+    try {
+        const data = await okuJson(await fetch('/api/gorunum'));
+        if (data.ok && data.gorunum) {
+            gorunum = { ...GORUNUM_VARSAYILAN, ...data.gorunum };
+            gorunumUygula(gorunum);
+            gorunumSeciliCiz();
+        }
+    } catch (error) { /* sunucuya ulaşılamadıysa yerel kopya yürürlükte kalır */ }
+}
+
+gorunumKur();

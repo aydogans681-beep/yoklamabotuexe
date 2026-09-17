@@ -6710,7 +6710,7 @@ const SUNUCU_BASLANGIC = Date.now();
 // degisir. guncelle.ps1 bunu diskteki server.js'ten okuyup /api/surum'un
 // dondurdugu degerle karsilastiriyor: FARKLIYSA calisan surec bayattir.
 // Yeni bir ozellik eklendiginde bu degeri artir.
-const KOD_SURUMU = '2026-09-16.24';
+const KOD_SURUMU = '2026-09-17.25';
 
 // Yuklu kodun icerdigi ozellikler. "Menu gelmedi / uc taninmiyor" derdinde tek
 // bakista ayrisir: ozellik burada yoksa calisan kod ESKIDIR.
@@ -6731,6 +6731,7 @@ const KOD_OZELLIKLERI = [
     'karne',          // Yetkili Karnesi sekmesi + /api/karne/*
     'hiz-siniri',     // /api hiz tavani + toplu okuma denetim izi
     'guvenlik-baslik',// CSP, frame-ancestors, nosniff, referrer
+    'gorunum',        // kisi basina tema: renk, zemin, yogunluk, olcek
 ];
 
 // Calisan kodun hangi commit'ten geldigini soyler. Git ikilisini cagirmiyoruz
@@ -6893,6 +6894,88 @@ app.get('/api/me', (req, res) => {
         loglar: yetki.loglar,
     });
 });
+
+// ============================================================================
+// --- GORUNUM (KISISELLESTIRME) ---
+// Her panel hesabi kendi vurgu rengini, zemin tonunu, yogunlugunu ve
+// puntosunu seciyor. Tarayicida degil SUNUCUDA tutuluyor: yetkili evden
+// telefondan girdiginde de kendi gorunumunu buluyor, onbellek temizleyince
+// kaybolmuyor. Tarayici yine de bir kopya sakliyor - acilista sunucu cevabi
+// beklenmeden uygulanip "once varsayilan tema, sonra zipladi" goruntusu
+// engelleniyor.
+// ============================================================================
+const GORUNUM_PATH = path.join(ROOT_DIR, 'panel-gorunum.json');
+
+const GORUNUM_VARSAYILAN = {
+    vurgu: '#ff3b47', zemin: 'marka', yogunluk: 'normal', punto: 13, hareket: true,
+};
+const GORUNUM_ZEMIN = ['marka', 'soluk', 'duz'];
+const GORUNUM_YOGUNLUK = ['siki', 'normal', 'genis'];
+const GORUNUM_PUNTO_ALT = 11;
+const GORUNUM_PUNTO_UST = 17;
+
+function gorunumleriYukle() {
+    try {
+        const d = JSON.parse(fs.readFileSync(GORUNUM_PATH, 'utf8'));
+        return (d && typeof d === 'object' && !Array.isArray(d)) ? d : {};
+    } catch (error) {
+        return {};
+    }
+}
+const gorunumler = gorunumleriYukle();
+
+function gorunumleriYaz() {
+    try {
+        fs.writeFileSync(GORUNUM_PATH, JSON.stringify(gorunumler, null, 2));
+    } catch (error) {
+        console.log(`[Gorunum] Kaydedilemedi: ${error.message}`);
+    }
+}
+
+// Gelen degeri SUZUYOR - gecersiz alan varsayilana duser, hicbir zaman
+// dogrudan CSS'e yazilacak ham metin kabul edilmez.
+function gorunumSuz(ham) {
+    const g = { ...GORUNUM_VARSAYILAN };
+    if (!ham || typeof ham !== 'object') return g;
+    // Renk: YALNIZCA #rrggbb. Serbest metin kabul edilseydi stil alanina
+    // istedigini yazan biri sayfaya kendi CSS'ini sokabilirdi.
+    if (typeof ham.vurgu === 'string' && /^#[0-9a-fA-F]{6}$/.test(ham.vurgu.trim())) {
+        g.vurgu = ham.vurgu.trim().toLowerCase();
+    }
+    if (GORUNUM_ZEMIN.includes(ham.zemin)) g.zemin = ham.zemin;
+    if (GORUNUM_YOGUNLUK.includes(ham.yogunluk)) g.yogunluk = ham.yogunluk;
+    const punto = Number(ham.punto);
+    if (Number.isFinite(punto)) {
+        g.punto = Math.min(GORUNUM_PUNTO_UST, Math.max(GORUNUM_PUNTO_ALT, Math.round(punto)));
+    }
+    if (typeof ham.hareket === 'boolean') g.hareket = ham.hareket;
+    return g;
+}
+
+// Gorunum HERKESE acik: yetki sekmesi yok, sadece giris yetiyor.
+app.get('/api/gorunum', requireAuth, (req, res) => {
+    res.json({
+        ok: true,
+        gorunum: gorunumSuz(gorunumler[req.session.username]),
+        varsayilan: GORUNUM_VARSAYILAN,
+    });
+});
+
+app.post('/api/gorunum', requireAuth, (req, res) => {
+    const temiz = gorunumSuz(req.body);
+    gorunumler[req.session.username] = temiz;
+    gorunumleriYaz();
+    res.json({ ok: true, gorunum: temiz });
+});
+
+// Hesap silinince gorunum kaydi da gitsin - kullanici adi yeniden
+// acildiginda eski sahibinin temasini devralmasin.
+function gorunumSil(username) {
+    if (gorunumler[username]) {
+        delete gorunumler[username];
+        gorunumleriYaz();
+    }
+}
 
 app.get('/api/status', requireAuth, (req, res) => {
     res.json({ state: discordStatus, detail: discordStatusDetail });
@@ -7208,6 +7291,7 @@ app.post('/api/hesaplar/sil', requireAdmin, (req, res) => {
         return res.json({ ok: false, error: `Kaydedilemedi: ${error.message}` });
     }
     dropSessionsFor(username); // silinen hesabin acik oturumlari da dussun
+    gorunumSil(username);      // gorunum tercihi de silinsin
     console.log(`[Hesap] Panel hesabı silindi: ${username} (silen: ${req.session.username})`);
     addAudit('hesap-sil', req.session.username, `"${username}" hesabı silindi`, req);
     return res.json({ ok: true, selfDeleted: username === req.session.username });
@@ -7373,6 +7457,13 @@ app.post('/api/hesap/guncelle', requireAuth, (req, res) => {
     // Onceki oturumun "beni hatirla" tercihi korunuyor: sifresini degistiren
     // biri, isaretlemis olmasina ragmen bir anda oturumluk cereze dusmesin.
     const eskiHatirla = Boolean(req.session && req.session.hatirla);
+    // Kullanici adi degistiyse gorunum tercihi de yeni ada tasinsin - yoksa
+    // kisi adini degistirir degistirmez temasi varsayilana donerdi.
+    if (newUsername !== me && gorunumler[me]) {
+        gorunumler[newUsername] = gorunumler[me];
+        delete gorunumler[me];
+        gorunumleriYaz();
+    }
     dropSessionsFor(me);
     const token = createSession(newUsername, eskiHatirla);
     res.cookie(SESSION_COOKIE, token, {

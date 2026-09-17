@@ -17,6 +17,9 @@ yetkili-listesi.json
 warning-history.json
 panel-audit.json
 panel-settings.json
+# Her panel hesabinin gorunum tercihi (renk, zemin, yogunluk, punto) -
+# sunucuda olusur, kisiye ozel, depoda yeri yok.
+panel-gorunum.json
 voice-activity.json
 yoklama-katilim.json
 canli-sahiplenme.json

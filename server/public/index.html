@@ -5,6 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MD PvP Yoklama Botu - Web Paneli</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Gorunum onyukleyici: app.js yuklenip sunucudan tercih gelene kadar
+         gecen surede varsayilan kirmizi tema goruntuluyor, sonra kullanicinin
+         temasina "ziplayan" bir sayfa oluyordu. Tarayicidaki kopyayi ilk boya
+         ONCESINDE uyguluyoruz. Sunucu cevabi gelince zaten ustune yaziliyor. -->
+    <script>
+    (function () {
+        try {
+            var g = JSON.parse(localStorage.getItem('panelGorunum') || 'null');
+            if (!g) return;
+            var k = document.documentElement;
+            if (/^#[0-9a-fA-F]{6}$/.test(g.vurgu || '')) {
+                var h = g.vurgu.slice(1);
+                var r = parseInt(h.slice(0, 2), 16), y = parseInt(h.slice(2, 4), 16),
+                    m = parseInt(h.slice(4, 6), 16);
+                var koyu = function (o) {
+                    var f = function (v) { return Math.max(0, Math.round(v * o)); };
+                    return 'rgb(' + f(r) + ',' + f(y) + ',' + f(m) + ')';
+                };
+                k.style.setProperty('--accent-rgb', r + ', ' + y + ', ' + m);
+                k.style.setProperty('--accent', g.vurgu);
+                k.style.setProperty('--accent-fill', koyu(0.83));
+                k.style.setProperty('--accent-hover', koyu(0.88));
+            }
+            if (g.zemin) k.setAttribute('data-zemin', g.zemin);
+            if (g.yogunluk) k.setAttribute('data-yogunluk', g.yogunluk);
+            if (g.punto) k.style.setProperty('--olcek', String(Math.round((g.punto / 13) * 100) / 100));
+            if (g.hareket === false) k.setAttribute('data-hareket', 'kapali');
+        } catch (e) { /* bozuk kayit tema sayfayi acmasin diye yutuluyor */ }
+    }());
+    </script>
 </head>
 <body>
     <!-- --- IKON SETI ---
@@ -279,6 +309,65 @@
         </div>
     </div>
 
+    <!-- Görünüm: her panel hesabı kendi temasını seçer. Yetki sekmesine
+         bağlı DEĞİL - giriş yapan herkes açabilir. -->
+    <div class="modal-backdrop" id="gorunumModal" style="display:none;">
+        <div class="modal">
+            <div class="modal-head">
+                <span class="modal-title">Görünüm</span>
+                <button class="secondary small" id="gorunumKapat">Kapat</button>
+            </div>
+            <div class="modal-body">
+                <div class="gr-blok">
+                    <div class="gr-baslik">Vurgu rengi</div>
+                    <div class="gr-renkler" id="gorunumRenkler"></div>
+                    <label class="gr-ozel">
+                        <span>Kendi rengin</span>
+                        <input type="color" id="gorunumOzelRenk" value="#ff3b47">
+                        <code id="gorunumRenkKod">#ff3b47</code>
+                    </label>
+                </div>
+
+                <div class="gr-blok">
+                    <div class="gr-baslik">Zemin</div>
+                    <div class="filter-chips" id="gorunumZemin">
+                        <button class="chip" data-deger="marka">Marka parıltısı</button>
+                        <button class="chip" data-deger="soluk">Soluk</button>
+                        <button class="chip" data-deger="duz">Düz koyu</button>
+                    </div>
+                </div>
+
+                <div class="gr-blok">
+                    <div class="gr-baslik">Yoğunluk</div>
+                    <div class="filter-chips" id="gorunumYogunluk">
+                        <button class="chip" data-deger="siki">Sıkı</button>
+                        <button class="chip" data-deger="normal">Normal</button>
+                        <button class="chip" data-deger="genis">Geniş</button>
+                    </div>
+                    <p class="gr-not">Sıkı mod satırları kısaltır; ekrana daha çok kayıt sığar.</p>
+                </div>
+
+                <div class="gr-blok">
+                    <div class="gr-baslik">Arayüz boyutu <span id="gorunumPuntoDeger">%100</span></div>
+                    <input type="range" id="gorunumPunto" min="11" max="17" step="1" value="13">
+                </div>
+
+                <div class="gr-blok">
+                    <label class="gr-anahtar">
+                        <input type="checkbox" id="gorunumHareket" checked>
+                        <span>Animasyonlar açık</span>
+                    </label>
+                    <p class="gr-not">Kapatırsan geçiş ve parıltı efektleri durur.</p>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <span class="scanStatus" id="gorunumMsg"></span>
+                <span class="grow"></span>
+                <button class="secondary small" id="gorunumSifirla">Varsayılana dön</button>
+            </div>
+        </div>
+    </div>
+
     <!-- --- ANA PANEL (giriş sonrası) --- -->
     <div id="appWrap" style="display:none;">
         <!-- Sol kenar çubuğu: logo, gezinme, altta bağlantı durumu -->
@@ -361,6 +450,10 @@
                 <div class="side-status">
                     <span class="status-dot warn" id="statusDot"></span>
                     <span id="statusText">Bağlanıyor...</span>
+                    <!-- Görünüm: kullanıcı satırına sığmıyordu (avatar + ad + iki
+                         düğme) ve fazladan bir satır açınca gezinme menüsünü
+                         kısaltıyordu. Durum satırında zaten boş yer var. -->
+                    <button class="ghost small" id="gorunumBtn" title="Görünümü kişiselleştir">Görünüm</button>
                 </div>
                 <div class="side-user">
                     <span class="avatar" id="whoAvatar" aria-hidden="true">?</span>

@@ -25,13 +25,26 @@
     --ink-2:  #adacae;
     --ink-3:  #78777a;
 
-    /* marka - kontrasti dogrulanmis degerler korunuyor */
+    /* marka - kontrasti dogrulanmis degerler VARSAYILAN olarak korunuyor.
+       Kullanici kendi rengini secerse app.js bu uc degeri (--accent-rgb,
+       --accent, --accent-fill, --accent-hover) degistiriyor; soft/line/glow
+       ve butun parilti efektleri --accent-rgb'den TUREDIGI icin tema tek
+       yerden doner. Sabit kodlanmis renk birakmak, secilen rengin yaninda
+       eski kirmizinin sirittigi yamali bir arayuz demekti. */
+    --accent-rgb:   255, 59, 71;
     --accent:       #ff3b47;  /* metin/kenarlik - koyu zeminde 5.45:1 */
     --accent-fill:  #d4242f;  /* buton dolgusu - beyaz yazi 5.13:1 */
     --accent-hover: #e02b38;
-    --accent-soft:  rgba(255, 59, 71, 0.10);
-    --accent-line:  rgba(255, 59, 71, 0.28);
-    --accent-glow:  rgba(255, 59, 71, 0.30);
+    --accent-soft:  rgba(var(--accent-rgb), 0.10);
+    --accent-line:  rgba(var(--accent-rgb), 0.28);
+    --accent-glow:  rgba(var(--accent-rgb), 0.30);
+
+    /* --- kisisellestirme --- */
+    /* Yogunluk carpani: kart/satir dolgularini olcekler. 0.82 siki, 1 normal,
+       1.18 genis. */
+    --yog: 1;
+    /* Zemindeki marka parildamasinin siddeti: 1 normal, 0 kapali (duz koyu). */
+    --parilti: 1;
 
     /* durum - yesil "sesde", amber "sesde degil" (renk korlugu icin ayrildi) */
     --ok:        #2fb86b;
@@ -64,11 +77,13 @@ body {
        kosePARILTIlari guclendirildi, ayrica tum sayfaya cok koyu bir kirmizi
        taban katildi ki zemin "cok siyah" gorunmesin. Metin tokenlari parlak
        kaldigi icin okunabilirlik korunuyor. */
+    /* Alfalar --parilti ile carpiliyor: "Zemin" secimi 1 (marka), 0.4 (soluk)
+       ya da 0 (duz koyu) yaparak ayni bildirimi tek degiskenden ceviriyor. */
     background-image:
-        radial-gradient(ellipse 1100px 460px at 8% -14%, rgba(255,59,71,.13), transparent 60%),
-        radial-gradient(ellipse 900px 440px at 98% -6%, rgba(255,59,71,.09), transparent 60%),
-        radial-gradient(ellipse 1400px 900px at 50% 120%, rgba(212,36,47,.07), transparent 70%),
-        linear-gradient(180deg, rgba(158,26,34,.05), rgba(158,26,34,.05));
+        radial-gradient(ellipse 1100px 460px at 8% -14%, rgba(var(--accent-rgb), calc(.13 * var(--parilti))), transparent 60%),
+        radial-gradient(ellipse 900px 440px at 98% -6%, rgba(var(--accent-rgb), calc(.09 * var(--parilti))), transparent 60%),
+        radial-gradient(ellipse 1400px 900px at 50% 120%, rgba(var(--accent-rgb), calc(.07 * var(--parilti))), transparent 70%),
+        linear-gradient(180deg, rgba(var(--accent-rgb), calc(.05 * var(--parilti))), rgba(var(--accent-rgb), calc(.05 * var(--parilti))));
     background-repeat: no-repeat;
     background-attachment: fixed;
     color: var(--ink);
@@ -135,7 +150,7 @@ button.brand-btn {
 button.brand-btn:hover:not(:disabled) {
     background: none; border-color: var(--accent-line);
     transform: translateY(-2px) scale(1.03);
-    filter: drop-shadow(0 4px 14px rgba(255, 59, 71, .45));
+    filter: drop-shadow(0 4px 14px rgba(var(--accent-rgb), .45));
 }
 button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
 
@@ -158,7 +173,8 @@ button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
     position: relative; overflow: hidden;
     display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
     background: none; border: 1px solid transparent; border-radius: var(--radius-s);
-    color: var(--ink-3); padding: 8px 11px 8px 10px; cursor: pointer;
+    color: var(--ink-3); cursor: pointer;
+    padding: calc(8px * var(--yog)) 11px calc(8px * var(--yog)) 10px;
     font-size: 12.5px; font-weight: 600; font-family: inherit;
     transition: color .14s, background .14s;
 }
@@ -211,6 +227,9 @@ button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
 /* --- kenar çubuğu altı: bağlantı + kullanıcı --- */
 .side-foot { display: flex; flex-direction: column; gap: 9px; padding-top: 12px; border-top: 1px solid var(--border); }
 .side-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-2); }
+/* Gorunum dugmesi durum yazisini itmesin, sagda dursun. */
+.side-status #gorunumBtn { margin-left: auto; flex: 0 0 auto; padding: 4px 9px; font-size: 11px; }
+.side-status #statusText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Giriş ekranı "Beni hatırla" kutusu. Tarayıcının varsayılan onay kutusu
    koyu zeminde beyaz bir kare olarak patlıyordu; accent-color ile markanın
@@ -268,7 +287,9 @@ button.brand-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
 .card {
     background: linear-gradient(180deg, var(--surface-2), var(--surface) 55%);
     border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 17px 19px; margin-bottom: 13px;
+    border-radius: var(--radius);
+    padding: calc(17px * var(--yog)) calc(19px * var(--yog));
+    margin-bottom: calc(13px * var(--yog));
     box-shadow: var(--edge), var(--shadow-s);
 }
 .card h2 {
@@ -410,7 +431,8 @@ button.ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--i
     background: linear-gradient(180deg, var(--surface-2), var(--surface) 60%);
     border: 1px solid var(--border);
     border-left: 3px solid var(--border-strong);
-    border-radius: var(--radius); padding: 13px 16px;
+    border-radius: var(--radius);
+    padding: calc(13px * var(--yog)) calc(16px * var(--yog));
     box-shadow: var(--edge);
     transition: border-color .14s, box-shadow .14s;
 }
@@ -553,7 +575,9 @@ button.ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--i
 /* Log satirlari kasten yogun: bir log kanalinda binlerce kayit var, ekrana
    sigan satir sayisi taramayi dogrudan belirliyor. */
 .log-entry {
-    display: flex; gap: 9px; padding: 7px 10px; border-radius: var(--radius-s);
+    display: flex; gap: 9px;
+    padding: calc(7px * var(--yog)) calc(10px * var(--yog));
+    border-radius: var(--radius-s);
     background: var(--surface-2); border: 1px solid var(--border);
 }
 .log-entry .log-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; margin-top: 1px; }
@@ -616,12 +640,12 @@ code.md-block { display: block; padding: 6px 8px; margin: 4px 0; white-space: pr
 }
 .login-bg .glow-a {
     width: 520px; height: 520px; top: -140px; left: -120px;
-    background: radial-gradient(circle, rgba(255,59,71,.30), transparent 68%);
+    background: radial-gradient(circle, rgba(var(--accent-rgb), .30), transparent 68%);
     animation: gezin-a 22s ease-in-out infinite alternate;
 }
 .login-bg .glow-b {
     width: 620px; height: 620px; bottom: -220px; right: -160px;
-    background: radial-gradient(circle, rgba(255,59,71,.17), transparent 70%);
+    background: radial-gradient(circle, rgba(var(--accent-rgb), .17), transparent 70%);
     animation: gezin-b 27s ease-in-out infinite alternate;
 }
 /* Ince izgara - kenarlarda yumusayarak kayboluyor */
@@ -658,7 +682,7 @@ code.md-block { display: block; padding: 6px 8px; margin: 4px 0; white-space: pr
     padding: 46px 40px; display: flex; flex-direction: column; justify-content: center;
     border-right: 1px solid var(--border);
     background:
-        radial-gradient(ellipse 90% 60% at 15% 0%, rgba(255,59,71,.13), transparent 60%),
+        radial-gradient(ellipse 90% 60% at 15% 0%, rgba(var(--accent-rgb), .13), transparent 60%),
         linear-gradient(180deg, rgba(255,255,255,.022), transparent 45%);
 }
 .login-brand .brand-mark-lg { margin: 0 0 26px; justify-content: flex-start; }
@@ -1058,7 +1082,8 @@ input[type="date"].text-search { color-scheme: dark; padding: 8px 11px; }
     border-radius: var(--radius); padding: 10px;
 }
 .pres-row {
-    display: flex; align-items: center; gap: 11px; padding: 10px 13px;
+    display: flex; align-items: center; gap: 11px;
+    padding: calc(10px * var(--yog)) calc(13px * var(--yog));
     border-radius: var(--radius-s);
     background: var(--surface-2); border: 1px solid var(--border);
     border-left: 3px solid var(--border-strong); box-shadow: var(--edge);
@@ -1419,7 +1444,7 @@ textarea:focus-visible {
    Başlık ve gövde arasındaki fark çok azdı, kartlar düz bir yüzey gibi
    okunuyordu.
    -------------------------------------------------------------------------- */
-.card { padding: 19px 21px; }
+.card { padding: calc(19px * var(--yog)) calc(21px * var(--yog)); }
 .card h2 {
     font-size: 14.5px; font-weight: 750; letter-spacing: -.02em;
     margin: 0 0 7px;
@@ -1663,17 +1688,17 @@ button.brand-btn { box-shadow: none; }
 /* Halkalar fareyle TERS yönde kayıyor: dışarıdakiler daha çok, içeridekiler
    daha az. Logo ileri, halkalar geri - beynin derinlik olarak okuduğu şey bu
    fark (parallaks). */
-.halka-1 { width: 98%; height: 98%; border: 1px solid rgba(255,59,71,.13);
+.halka-1 { width: 98%; height: 98%; border: 1px solid rgba(var(--accent-rgb), .13);
     transform: translate(calc(-50% - var(--fx) * 26px), calc(-50% - var(--fy) * 26px)); }
-.halka-2 { width: 76%; height: 76%; border: 1px solid rgba(255,59,71,.22);
+.halka-2 { width: 76%; height: 76%; border: 1px solid rgba(var(--accent-rgb), .22);
     transform: translate(calc(-50% - var(--fx) * 16px), calc(-50% - var(--fy) * 16px)); }
-.halka-3 { width: 54%; height: 54%; border: 1px solid rgba(255,59,71,.34);
+.halka-3 { width: 54%; height: 54%; border: 1px solid rgba(var(--accent-rgb), .34);
     transform: translate(calc(-50% - var(--fx) * 8px), calc(-50% - var(--fy) * 8px)); }
 
 /* Parıltı imlecin olduğu tarafa doğru kayıyor - ışık oradan geliyormuş gibi. */
 .hero-parilti {
     position: absolute; width: 86%; height: 86%; border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,59,71,.30), transparent 65%);
+    background: radial-gradient(circle, rgba(var(--accent-rgb), .30), transparent 65%);
     filter: blur(58px);
     transform: translate(calc(var(--fx) * 44px), calc(var(--fy) * 44px));
     /* Taban %82: hover'da 1'e cikinca gercek bir fark oluyor. Once taban 1'di
@@ -1696,7 +1721,7 @@ button.brand-btn { box-shadow: none; }
     transition: filter .25s;
 }
 .hero-sag:hover .hero-logo {
-    filter: drop-shadow(calc(var(--fx) * -22px) calc(var(--fy) * -16px + 16px) 46px rgba(255,59,71,.34));
+    filter: drop-shadow(calc(var(--fx) * -22px) calc(var(--fy) * -16px + 16px) 46px rgba(var(--accent-rgb), .34));
 }
 .hero-sag:active .hero-logo { transform: perspective(900px) translateZ(10px) scale(.985); }
 
@@ -1706,8 +1731,8 @@ button.brand-btn { box-shadow: none; }
 .hero-sag.nabiz .halka-2 { animation: halka-nabiz .62s ease-out .07s; }
 .hero-sag.nabiz .halka-1 { animation: halka-nabiz .62s ease-out .14s; }
 @keyframes halka-nabiz {
-    0%   { border-color: rgba(255,59,71,.75); }
-    100% { border-color: rgba(255,59,71,.13); }
+    0%   { border-color: rgba(var(--accent-rgb), .75); }
+    100% { border-color: rgba(var(--accent-rgb), .13); }
 }
 .hero-logo .brand-img { width: 100%; max-width: none; }
 .hero-logo .brand-fallback span  { font-size: 68px; }
@@ -1793,3 +1818,89 @@ button.brand-btn { box-shadow: none; }
     .karne-kimlik { flex-direction: column; }
     .karne-satir { flex-direction: column; gap: 2px; }
 }
+
+
+/* ==========================================================================
+   KISISELLESTIRME - her panel hesabi kendi gorunumunu secer
+   Renk/punto app.js tarafindan satir ici degisken olarak yaziliyor; asagidaki
+   data-* kancalar yalnizca sayisal carpanlari degistiriyor, yani hicbir
+   bilesenin kendi kurali ezilmiyor.
+   ========================================================================== */
+
+/* --- zemin tonu --- */
+html[data-zemin="soluk"]  { --parilti: .4; }
+html[data-zemin="duz"]    { --parilti: 0; }
+/* Duz zeminde kirmizi taban da kalkiyor: "tamamen notr koyu" istegi. */
+html[data-zemin="duz"] body { --bg: #0b0b0c; --surface: #141416; --surface-2: #1a1a1d; --surface-3: #232327; --border: #2c2c31; --border-strong: #3b3b42; }
+
+/* --- yogunluk --- */
+html[data-yogunluk="siki"]  { --yog: .78; }
+html[data-yogunluk="genis"] { --yog: 1.2; }
+
+/* Sıkı modda satır araları ve avatarlar da küçülsün - yalnızca dolguyu
+   kısmak satırları "boş ama uzun" bırakıyordu. */
+html[data-yogunluk="siki"] .pres-row img { width: 26px; height: 26px; }
+html[data-yogunluk="siki"] .presence-list { gap: 3px; }
+html[data-yogunluk="siki"] .card h2 { margin-bottom: 5px; }
+
+/* ---------- Görünüm penceresi ---------- */
+.gr-blok { margin-bottom: 20px; }
+.gr-blok:last-child { margin-bottom: 0; }
+.gr-baslik {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 9px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.gr-baslik span { color: var(--ink-2); letter-spacing: 0; text-transform: none; font-size: 11.5px; }
+.gr-not { font-size: 11px; color: var(--ink-3); margin: 7px 0 0; }
+
+.gr-renkler { display: flex; flex-wrap: wrap; gap: 8px; }
+.gr-renk {
+    width: 30px; height: 30px; padding: 0; border-radius: 50%; cursor: pointer;
+    background: var(--gr); border: 2px solid transparent;
+    box-shadow: var(--edge), 0 1px 3px rgba(0,0,0,.45);
+    transition: transform .12s, border-color .12s;
+}
+.gr-renk:hover:not(:disabled) { transform: scale(1.12); background: var(--gr); }
+/* Seçili halka rengin KENDİSİNDEN değil zeminden çiziliyor - koyu bir renk
+   seçildiğinde halka kaybolmasın. */
+.gr-renk.secili { border-color: var(--ink); transform: scale(1.08); }
+
+.gr-ozel {
+    display: flex; align-items: center; gap: 10px; margin-top: 12px;
+    font-size: 12px; color: var(--ink-2);
+}
+.gr-ozel input[type="color"] {
+    width: 42px; height: 28px; padding: 0; cursor: pointer;
+    background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-s);
+}
+.gr-ozel code {
+    font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+
+#gorunumPunto { width: 100%; accent-color: var(--accent); cursor: pointer; }
+
+.gr-anahtar { display: flex; align-items: center; gap: 9px; font-size: 12.5px; cursor: pointer; }
+.gr-anahtar input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+/* Animasyonları kapat: kullanıcı tercihi. prefers-reduced-motion işletim
+   sisteminden gelir, bu ise panele özel bir anahtar. */
+html[data-hareket="kapali"] *,
+html[data-hareket="kapali"] *::before,
+html[data-hareket="kapali"] *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+}
+
+
+/* --- arayuz olcegi ---
+   Ilk denemede yalnizca govdenin font-size'ini degistiriyordum; olctugumde
+   gorunur metnin ancak %27'si buyuyordu (bilesenlerin cogu sabit px
+   kullaniyor), yani "yazi boyutu 17px" deyip arayuzun cogu ayni kaliyordu -
+   yarim calisan bir dugme. zoom TUM arayuzu (metin, ikon, dolgu, cizgi)
+   ayni oranda olcekliyor; kullanicinin "boyut" dedigi sey zaten bu.
+   #appWrap/#loginWrap'e veriliyor, body'ye DEGIL: zemin gradyani
+   background-attachment:fixed ve zoom altinda kayiyordu. */
+#appWrap, #loginWrap { zoom: var(--olcek, 1); }
