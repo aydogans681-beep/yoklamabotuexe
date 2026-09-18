@@ -1,25 +1,46 @@
 {
   "name": "rozet-tarayici",
   "version": "0.1.0",
-  "description": "/goster <davet linki> ile bir sunucuya kullanıcı hesabıyla girip üyelerin nadir Discord rozetlerini listeler. Masaüstü panel + .exe.",
-  "main": "panel.js",
-  "bin": "panel.js",
+  "description": "/goster <davet linki> ile bir sunucuya kullanıcı hesabıyla girip üyelerin nadir Discord rozetlerini listeler. Electron masaüstü uygulaması + .exe.",
+  "main": "main.js",
+  "author": "Rozet Tarayıcı",
   "scripts": {
-    "start": "node panel.js",
+    "start": "electron .",
     "test": "node test.js",
-    "build": "pkg . --targets node22-win-x64 --output dist/RozetTarayici.exe"
+    "build": "electron-builder --win portable"
   },
-  "pkg": {
-    "scripts": ["tarayici.js", "rozetler.js", "panel-html.js"],
-    "assets": ["node_modules/discord.js-selfbot-v13/**/*", "node_modules/discord.js/**/*"],
-    "targets": ["node22-win-x64"],
-    "outputPath": "dist"
+  "build": {
+    "appId": "com.rozet.tarayici",
+    "productName": "Rozet Tarayıcı",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.html",
+      "tarayici.js",
+      "rozetler.js",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": "x64"
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "RozetTarayici.exe"
+    }
   },
   "dependencies": {
     "discord.js": "^14.16.3",
     "discord.js-selfbot-v13": "^2.15.0"
   },
   "devDependencies": {
-    "@yao-pkg/pkg": "^6.3.0"
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
   }
 }

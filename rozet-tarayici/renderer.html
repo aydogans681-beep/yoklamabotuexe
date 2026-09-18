@@ -1,7 +1,7 @@
-// Panel arayüzü tek bir HTML string (harici dosya yok -> pkg ile exe'ye sorunsuz gömülür).
-module.exports = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="tr"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>Rozet Tarayıcı</title>
 <style>
   :root{ --bg:#0e0f13; --card:#171922; --line:#262a37; --ink:#e8e9ee; --ink2:#9aa0b4; --acc:#5865F2; --ok:#2fb86b; --err:#ff4d55; }
@@ -30,7 +30,7 @@ module.exports = `<!DOCTYPE html>
   <div class="uyari">⚠️ Kullanıcı hesabının otomatik sunucuya girip üye taraması <b>Discord ToS ihlali</b>. Hesap banlanabilir — ana hesabını değil, gözden çıkarabileceğin bir hesabı kullan.</div>
 
   <div class="card">
-    <h2>1) Token & Ayarlar</h2>
+    <h2>1) Token &amp; Ayarlar</h2>
     <label>Hesap (kullanıcı) token'ı — <b>zorunlu</b>, taramayı bu yapar</label>
     <input type="password" id="userToken" placeholder="kullanıcı hesabı token'ı" spellcheck="false">
     <label>Bot token'ı — isteğe bağlı (Discord içinde /goster slash komutu istersen)</label>
@@ -44,7 +44,7 @@ module.exports = `<!DOCTYPE html>
       <input type="checkbox" id="ayril" style="width:auto"> Tarama bitince sunucudan çık (iz bırakma)
     </label>
     <div class="row" style="margin-top:14px">
-      <button id="kaydetBtn">Kaydet & Bağlan</button>
+      <button id="kaydetBtn">Kaydet &amp; Bağlan</button>
       <span class="msg" id="tokenMsg"></span>
     </div>
     <div class="durum">
@@ -67,7 +67,7 @@ module.exports = `<!DOCTYPE html>
 const $ = (id) => document.getElementById(id);
 async function durumYukle(){
   try{
-    const d = await (await fetch('/api/durum')).json();
+    const d = await window.api.durum();
     $('hesapDot').className = 'dot' + (d.hesapBagli?' on':''); $('hesapDurum').textContent = 'Hesap: ' + (d.hesapBagli? d.hesapTag : 'bağlı değil');
     $('botDot').className = 'dot' + (d.botBagli?' on':''); $('botDurum').textContent = 'Bot: ' + (d.botBagli? d.botTag : 'bağlı değil');
     if(!$('izinli').value) $('izinli').value = (d.izinli||[]).join(', ');
@@ -87,7 +87,7 @@ $('kaydetBtn').onclick = async () => {
   if($('userToken').value.trim()) govde.userToken = $('userToken').value.trim();
   if($('botToken').value.trim()) govde.botToken = $('botToken').value.trim();
   try{
-    const d = await (await fetch('/api/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(govde)})).json();
+    const d = await window.api.kaydet(govde);
     $('tokenMsg').textContent = d.ok ? 'Kaydedildi, bağlandı ✓' : ('Hata: ' + (d.hatalar||[]).join(' | '));
     $('userToken').value=''; $('botToken').value='';
     setTimeout(durumYukle, 1500);
@@ -99,7 +99,7 @@ $('taraBtn').onclick = async () => {
   if(!link){ $('taraMsg').textContent='Link boş.'; return; }
   $('taraBtn').disabled = true; $('taraMsg').textContent = 'Taranıyor... (girip üyeleri okuyor, biraz sürebilir)'; $('sonuc').innerHTML='';
   try{
-    const d = await (await fetch('/api/tara',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({link})})).json();
+    const d = await window.api.tara(link);
     if(!d.ok){ $('taraMsg').textContent = 'Hata: ' + d.error; return; }
     const s = d.sonuc;
     $('taraMsg').textContent = s.sunucuAdi + ' — ' + s.taranan + '/' + s.toplamUye + ' üye tarandı';
@@ -112,4 +112,4 @@ $('taraBtn').onclick = async () => {
 };
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 durumYukle(); setInterval(durumYukle, 5000);
-</script></body></html>`;
+</script></body></html>

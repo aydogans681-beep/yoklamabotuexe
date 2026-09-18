@@ -1,7 +1,8 @@
 # Rozet Tarayıcı (.exe)
 
-Çift tıkla çalışır → tarayıcıda panel açılır → **token'ı yapıştır**, **davet linkini**
-gir, **Tara** de → o sunucudaki üyelerin **nadir Discord rozetlerini** listeler.
+Çift tıkla çalışır → **kendi penceresinde** açılır (tarayıcı/web sitesi DEĞİL) →
+**token'ı yapıştır**, **davet linkini** gir, **Tara** de → o sunucudaki üyelerin
+**nadir Discord rozetlerini** listeler.
 
 - **Hesap (kullanıcı) token'ı** taramayı yapar (zorunlu).
 - **Bot token'ı** isteğe bağlı — Discord içinde `/goster` slash komutu da istersen.
@@ -15,33 +16,34 @@ Geliştirici, Moderatör Programı Mezunu.
 
 ## .exe nasıl elde edilir?
 
-> Not: .exe **Windows'ta** derlenmeli (Linux'ta pkg Windows binary'si üretemiyor).
-> Aşağıdaki iki yoldan biri:
+> Not: .exe **Windows'ta** derlenir (electron-builder). En kolay yol GitHub Actions.
 
-### Yol 1 — Kendi Windows bilgisayarında (Node bir kereliğine gerekir)
+### Yol 1 — GitHub Actions ile otomatik (bilgisayarına hiçbir şey kurmadan) ✅
+1. Bu repoya push edilince `rozet-exe-derle` çalışması otomatik başlar.
+2. Bitince repo → **Releases** → `Rozet Tarayıcı (exe)` sürümündeki
+   `RozetTarayici.exe`'yi **tek tıkla** indir. (Windows runner exe'yi senin
+   yerine derler; telefondan bile indirilir.)
+
+### Yol 2 — Kendi Windows bilgisayarında (Node bir kereliğine gerekir)
 1. [Node.js](https://nodejs.org) kur (LTS).
 2. Bu klasörde:
    ```bash
    npm install
    npm run build
    ```
-3. `dist\RozetTarayici.exe` oluşur. Artık **Node olmadan** çift tıklayıp çalıştırırsın
-   (exe'yi başka bilgisayara da taşıyabilirsin). Yanında oluşan `config.json`'da
-   token'ların saklanır — o dosyayı kimseyle paylaşma.
-
-### Yol 2 — GitHub Actions ile otomatik (bilgisayarına Node kurmadan)
-1. Bu projeyi bir GitHub reposuna at (`main` dalı).
-2. Repo → **Actions** sekmesi → `exe-derle` çalışması biter → **Artifacts**'tan
-   `RozetTarayici-exe`'yi indir. (Windows runner exe'yi senin yerine derler.)
+3. `dist\RozetTarayici.exe` (portable, tek dosya) oluşur. Artık **Node olmadan**
+   çift tıklayıp çalıştırırsın; exe'yi başka bilgisayara da taşıyabilirsin.
 
 ## Çalıştırınca
-- Panel `http://localhost:3000`'de açılır.
+- Uygulama **kendi penceresinde** açılır (web sitesi açılmaz).
 - **1) Token & Ayarlar:** hesap token'ını yapıştır, izinli ID'leri gir, **Kaydet & Bağlan**.
 - **2) Tara:** davet linkini yapıştır → **Tara** → nadir rozetli üyeler listelenir.
+- Token'ların, işletim sistemindeki uygulama verisi klasöründe (`config.json`)
+  saklanır — o dosyayı kimseyle paylaşma.
 
 ## Geliştirme / test
 ```bash
 npm install
-npm start      # paneli Node ile çalıştır (localhost:3000)
+npm start      # uygulamayı Electron ile aç (kendi penceresi)
 npm test       # saf mantık testleri (Discord gerektirmez)
 ```

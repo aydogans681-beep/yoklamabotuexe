@@ -1,6 +1,6 @@
-# Rozet Tarayıcı .exe'sini GitHub'ın Windows sunucusunda derler.
-# Bu dosya push edilince (ya da elle "Run workflow") çalışır; exe'yi çalışmanın
-# "Artifacts" bölümünden indirebilirsin - bilgisayarına Node kurmana gerek yok.
+# Rozet Tarayıcı .exe'sini (Electron masaüstü uygulaması) GitHub'ın Windows
+# sunucusunda derler. Bu dosya push edilince (ya da elle "Run workflow") çalışır.
+# exe'yi Releases'tan tek tıkla indirebilirsin - bilgisayarına Node kurmana gerek yok.
 name: rozet-exe-derle
 on:
   push:
@@ -25,6 +25,9 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run build
+        env:
+          # electron-builder yayınlama yapmasın, sadece derlesin.
+          GH_TOKEN: ${{ github.token }}
       # 1) Actions artifact (bilgisayardan + girişliyken)
       - uses: actions/upload-artifact@v4
         with:
@@ -36,5 +39,5 @@ jobs:
         with:
           tag_name: rozet-exe
           name: Rozet Tarayıcı (exe)
-          body: "Çift tıkla çalışır; panelde token gir + davet linki gir + Tara. ⚠️ Kullanıcı hesabı taraması ToS ihlali, ana hesabını kullanma."
+          body: "Çift tıkla çalışır; kendi penceresinde (tarayıcı değil) açılır. Token gir + davet linki gir + Tara. ⚠️ Kullanıcı hesabı taraması ToS ihlali, ana hesabını kullanma."
           files: rozet-tarayici/dist/RozetTarayici.exe
