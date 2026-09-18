@@ -7,12 +7,12 @@
   "scripts": {
     "start": "node panel.js",
     "test": "node test.js",
-    "build": "pkg . --targets node18-win-x64 --output dist/RozetTarayici.exe"
+    "build": "pkg . --targets node22-win-x64 --output dist/RozetTarayici.exe"
   },
   "pkg": {
     "scripts": ["tarayici.js", "rozetler.js", "panel-html.js"],
     "assets": ["node_modules/discord.js-selfbot-v13/**/*", "node_modules/discord.js/**/*"],
-    "targets": ["node18-win-x64"],
+    "targets": ["node22-win-x64"],
     "outputPath": "dist"
   },
   "dependencies": {
