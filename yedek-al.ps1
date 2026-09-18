@@ -10,6 +10,13 @@
 #  Calismazsa: powershell -ExecutionPolicy Bypass -File .\yedek-al.ps1
 # ============================================================================
 
+# -Hedef: zip'in yazilacagi klasor. Varsayilan masaustu, ama ZAMANLANMIS
+# GOREV olarak calisirken masaustu yolu kullaniciya gore degistiginden
+# (ya da hic olmadigindan) disaridan verilebilmesi gerekiyor.
+param(
+    [string]$Hedef = ''
+)
+
 $ErrorActionPreference = 'Continue'
 
 # Betigin kendi klasoru = proje kokü. Cift tiklayarak da calissin diye
@@ -22,7 +29,12 @@ Write-Host "  Kaynak klasor: $kaynak" -ForegroundColor Cyan
 Write-Host ""
 
 $zaman = Get-Date -Format 'yyyy-MM-dd_HHmm'
-$masaustu = [Environment]::GetFolderPath('Desktop')
+if ($Hedef) {
+    $masaustu = $Hedef
+    New-Item -ItemType Directory -Force -Path $masaustu | Out-Null
+} else {
+    $masaustu = [Environment]::GetFolderPath('Desktop')
+}
 if (-not $masaustu) { $masaustu = $kaynak }
 $gecici = Join-Path $masaustu "yoklama-yedek-$zaman"
 New-Item -ItemType Directory -Force -Path $gecici | Out-Null
