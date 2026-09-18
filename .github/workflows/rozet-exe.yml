@@ -9,6 +9,9 @@ on:
       - '.github/workflows/rozet-exe.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -22,8 +25,16 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run build
+      # 1) Actions artifact (bilgisayardan + girişliyken)
       - uses: actions/upload-artifact@v4
         with:
           name: RozetTarayici-exe
           path: rozet-tarayici/dist/RozetTarayici.exe
           if-no-files-found: error
+      # 2) Releases sürümü olarak da yayınla -> tek tıkla direkt indirme linki
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: rozet-exe
+          name: Rozet Tarayıcı (exe)
+          body: "Çift tıkla çalışır; panelde token gir + davet linki gir + Tara. ⚠️ Kullanıcı hesabı taraması ToS ihlali, ana hesabını kullanma."
+          files: rozet-tarayici/dist/RozetTarayici.exe
