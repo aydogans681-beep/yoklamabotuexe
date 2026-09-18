@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node test.js",
-    "build": "electron-builder --win portable"
+    "build": "electron-builder --win portable --publish never"
   },
   "build": {
     "appId": "com.rozet.tarayici",

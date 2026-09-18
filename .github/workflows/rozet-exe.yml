@@ -24,10 +24,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      # electron-builder kendi yayınlamasını yapmaz (--publish never); exe'yi
+      # aşağıdaki adım Release olarak yükler.
       - run: npm run build
-        env:
-          # electron-builder yayınlama yapmasın, sadece derlesin.
-          GH_TOKEN: ${{ github.token }}
       # 1) Actions artifact (bilgisayardan + girişliyken)
       - uses: actions/upload-artifact@v4
         with:
