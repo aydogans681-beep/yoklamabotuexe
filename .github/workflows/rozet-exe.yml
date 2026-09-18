@@ -1,0 +1,29 @@
+# Rozet Tarayıcı .exe'sini GitHub'ın Windows sunucusunda derler.
+# Bu dosya push edilince (ya da elle "Run workflow") çalışır; exe'yi çalışmanın
+# "Artifacts" bölümünden indirebilirsin - bilgisayarına Node kurmana gerek yok.
+name: rozet-exe-derle
+on:
+  push:
+    paths:
+      - 'rozet-tarayici/**'
+      - '.github/workflows/rozet-exe.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rozet-tarayici
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RozetTarayici-exe
+          path: rozet-tarayici/dist/RozetTarayici.exe
+          if-no-files-found: error

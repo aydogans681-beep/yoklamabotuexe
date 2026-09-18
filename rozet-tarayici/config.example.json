@@ -1,0 +1,10 @@
+{
+  "botToken": "RESMI_BOT_TOKEN_BURAYA",
+  "userToken": "KULLANICI_HESABI_TOKEN_BURAYA",
+
+  "izinliKullanicilar": ["SENIN_DISCORD_ID"],
+
+  "taramadanSonraAyril": true,
+  "maxUye": 3000,
+  "sonuctaKisiSiniri": 60
+}

@@ -1,0 +1,5 @@
+node_modules/
+# GİZLİ: bot token'ı ve KULLANICI HESABI token'ı burada - asla commit etme!
+config.json
+*.log
+.DS_Store
